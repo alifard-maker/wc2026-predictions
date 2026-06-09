@@ -61,6 +61,8 @@ from engagement import (
     tournament_picks_revealed,
 )
 
+APP_VERSION = "Beta 1.0"
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -95,6 +97,7 @@ def get_comments_seen(pool_id: int) -> str | None:
 @app.context_processor
 def inject_public_url():
     ctx = {
+        "app_version": APP_VERSION,
         "public_base_url": lambda: get_public_base_url(),
         "invite_url_for": invite_url_for,
         "opening_kickoff_iso": opening_kickoff_iso(),
@@ -251,7 +254,7 @@ def find_next_prediction_needed(enriched_matches: list[dict]) -> dict | None:
 def health():
     if MAINTENANCE_MODE:
         return jsonify({"status": "maintenance", "retry_minutes": 5}), 503
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "version": APP_VERSION})
 
 
 @app.route("/")

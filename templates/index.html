@@ -20,14 +20,24 @@
   </div>
 
   <div class="card">
-    <h2>Join a Pool</h2>
-    <p style="color: var(--muted)">Got an invite link from a friend? Paste the code below.</p>
-    <form method="get" action="" onsubmit="event.preventDefault(); const c=document.getElementById('invite_code').value.trim(); if(c) window.location='/join/'+c;">
-      <label for="invite_code">Invite code</label>
-      <input type="text" id="invite_code" name="invite_code" placeholder="Paste code from invite link" required>
-      <button type="submit" class="btn btn-secondary">Join Pool</button>
+    <h2>Join or return to a pool</h2>
+    <p style="color: var(--muted)">Paste your <strong>invite link</strong> or <strong>invite code</strong> below. Returning player? Use the same link, then enter your <strong>exact same name</strong> on the next screen.</p>
+    <form method="get" action="" id="join-pool-form">
+      <label for="invite_code">Invite link or code</label>
+      <input type="text" id="invite_code" name="invite_code" placeholder="e.g. GCU7kjqy or https://…/join/GCU7kjqy" required>
+      <button type="submit" class="btn btn-secondary">Continue</button>
     </form>
   </div>
+  <script>
+    document.getElementById('join-pool-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      let raw = document.getElementById('invite_code').value.trim();
+      if (!raw) return;
+      const m = raw.match(/\/join\/([A-Za-z0-9]+)\/?$/);
+      const code = m ? m[1] : raw.replace(/^.*\/join\//, '').replace(/\/$/, '');
+      if (code) window.location = '/join/' + encodeURIComponent(code);
+    });
+  </script>
 </div>
 
 <div class="card" style="margin-top: 2rem">

@@ -2333,6 +2333,27 @@ a.bracket-match:hover {
   font-size: 0.9rem;
 }
 
+.site-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 2.5rem 0 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.site-version {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--accent-2);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
 .record-highlight {
   display: flex;
   align-items: baseline;
