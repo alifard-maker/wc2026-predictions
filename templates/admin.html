@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% from "_scorer_picker.html" import scorer_picker %}
+{% block title %}{{ pool.name }} — Admin{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0; text-align: left">
+  <h1 style="text-align: left">Admin Panel</h1>
+  <p style="margin: 0; text-align: left">{{ pool.name }}</p>
+</section>
+
+{% if not is_admin %}
+<div class="card" style="max-width: 420px">
+  <h2>Admin login</h2>
+  <p style="color: var(--muted)">Enter the admin secret you received when creating the pool.</p>
+  <form method="post">
+    <input type="hidden" name="action" value="login">
+    <label for="admin_secret">Admin secret</label>
+    <input type="password" id="admin_secret" name="admin_secret" required>
+    <button type="submit" class="btn btn-primary">Login</button>
+  </form>
+</div>
+{% else %}
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Invite link</h3>
+  <div class="invite-box">{{ invite_url }}</div>
+</div>
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Add knockout match</h3>
+  <p style="color: var(--muted)">Once group stage teams are confirmed, add Round of 32, R16, etc.</p>
+  <form method="post" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem">
+    <input type="hidden" name="action" value="add_match">
+    <div>
+      <label>Home team</label>
+      <input type="text" name="home_team" required>
+    </div>
+    <div>
+      <label>Away team</label>
+      <input type="text" name="away_team" required>
+    </div>
+    <div>
+      <label>Date</label>
+      <input type="date" name="match_date" required>
+    </div>
+    <div>
+      <label>Time (ET, 24h)</label>
+      <input type="time" name="match_time" required>
+    </div>
+    <div>
+      <label>Stage</label>
+      <select name="stage">
+        <option value="round_of_32">Round of 32</option>
+        <option value="round_of_16">Round of 16</option>
+        <option value="quarter_final">Quarter Final</option>
+        <option value="semi_final">Semi Final</option>
+        <option value="third_place">Third Place</option>
+        <option value="final">Final</option>
+      </select>
+    </div>
+    <div>
+      <label>Venue</label>
+      <input type="text" name="venue">
+    </div>
+    <div style="grid-column: 1 / -1">
+      <button type="submit" class="btn btn-gold">Add Match</button>
+    </div>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom: 2rem; border-color: var(--accent-2)">
+  <h3>Tournament results (bonus points)</h3>
+  <p style="color: var(--muted)">Enter after the World Cup ends. Winner = 50 pts · 2nd = 25 pts · 3rd = 15 pts · Top scorer = 25 pts.</p>
+  <form method="post" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem">
+    <input type="hidden" name="action" value="tournament_results">
+    <div style="grid-column: 1 / -1">
+      {{ scorer_picker('top_scorer', 'admin_top_scorer', tournament_results.top_scorer if tournament_results else '', scorer_squads, allow_other=true) }}
+    </div>
+    <div>
+      <label>Winner</label>
+      <select name="winner" required>
+        <option value="">Select team</option>
+        {% for team in teams %}
+        <option value="{{ team }}" {% if tournament_results and tournament_results.winner == team %}selected{% endif %}>{{ team }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>2nd place</label>
+      <select name="second_place" required>
+        <option value="">Select team</option>
+        {% for team in teams %}
+        <option value="{{ team }}" {% if tournament_results and tournament_results.second_place == team %}selected{% endif %}>{{ team }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>3rd place</label>
+      <select name="third_place" required>
+        <option value="">Select team</option>
+        {% for team in teams %}
+        <option value="{{ team }}" {% if tournament_results and tournament_results.third_place == team %}selected{% endif %}>{{ team }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="grid-column: 1 / -1">
+      <button type="submit" class="btn btn-gold">Save tournament results</button>
+    </div>
+  </form>
+</div>
+
+<h2 class="section-title">Enter Match Results</h2>
+<p style="color: var(--muted)">Saving a result automatically recalculates points for every player.</p>
+
+<div class="card">
+  {% for m in matches %}
+  <div class="admin-match-block">
+    <form method="post" class="admin-match">
+      <input type="hidden" name="action" value="live">
+      <input type="hidden" name="match_id" value="{{ m.id }}">
+      <div>
+        <strong>{{ m.home_team }}</strong> vs <strong>{{ m.away_team }}</strong>
+        <div style="font-size: 0.8rem; color: var(--muted)">
+          {% if m.group_name %}Group {{ m.group_name }} · {% endif %}
+          {{ m.match_date }} {{ m.match_time }} ET
+          {% if m.is_live %}<span class="badge badge-live">LIVE</span>{% endif %}
+        </div>
+      </div>
+      <input type="number" name="live_home" min="0" max="20" value="{{ m.live_home if m.live_home is not none else '' }}" placeholder="H">
+      <input type="number" name="live_away" min="0" max="20" value="{{ m.live_away if m.live_away is not none else '' }}" placeholder="A">
+      <input type="number" name="live_minute" min="0" max="120" value="{{ m.live_minute if m.live_minute is not none else '' }}" placeholder="Min" style="width:4rem">
+      <select name="status">
+        <option value="live" {% if m.status == 'live' %}selected{% endif %}>Live</option>
+        <option value="halftime" {% if m.status == 'halftime' %}selected{% endif %}>HT</option>
+        <option value="scheduled" {% if m.status == 'scheduled' %}selected{% endif %}>Scheduled</option>
+      </select>
+      <button type="submit" class="btn btn-secondary">Live</button>
+    </form>
+    <form method="post" class="admin-match">
+      <input type="hidden" name="action" value="result">
+      <input type="hidden" name="match_id" value="{{ m.id }}">
+      <div style="color: var(--muted); font-size: 0.85rem">Final result</div>
+      <input type="number" name="actual_home" min="0" max="20" value="{{ m.actual_home if m.actual_home is not none else '' }}" placeholder="H" required>
+      <input type="number" name="actual_away" min="0" max="20" value="{{ m.actual_away if m.actual_away is not none else '' }}" placeholder="A" required>
+      <button type="submit" class="btn btn-gold">FT</button>
+    </form>
+    <form method="post" class="admin-goal-form">
+      <input type="hidden" name="action" value="add_goal">
+      <input type="hidden" name="match_id" value="{{ m.id }}">
+      <div style="color: var(--muted); font-size: 0.85rem; grid-column: 1 / -1">Add goal scorer</div>
+      <select name="team_side" required>
+        <option value="home">{{ m.home_team }}</option>
+        <option value="away">{{ m.away_team }}</option>
+      </select>
+      <input type="text" name="scorer_name" placeholder="Player name" maxlength="60" required>
+      <input type="number" name="minute" min="0" max="120" placeholder="Min" required>
+      <input type="number" name="injury_minute" min="0" max="15" placeholder="+Min" title="Injury time (optional)">
+      <label class="admin-checkbox"><input type="checkbox" name="is_penalty" value="1"> Penalty goal</label>
+      <button type="submit" class="btn btn-secondary">Add goal</button>
+    </form>
+    {% if m.goals %}
+    <div class="admin-goals-list">
+      {% for g in m.goals %}
+      <span class="admin-goal-chip">
+        {{ g.minute_label }} {{ g.scorer_name }}{% if g.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %} ({{ g.team_name }})
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="delete_goal">
+          <input type="hidden" name="goal_id" value="{{ g.id }}">
+          <button type="submit" class="btn-link btn-link-danger" title="Remove">×</button>
+        </form>
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <form method="post" class="admin-goal-form admin-penalty-form">
+      <input type="hidden" name="action" value="add_penalty">
+      <input type="hidden" name="match_id" value="{{ m.id }}">
+      <div style="color: var(--muted); font-size: 0.85rem; grid-column: 1 / -1">Add penalty</div>
+      <select name="taker_team" required>
+        <option value="{{ m.home_team }}">{{ m.home_team }}</option>
+        <option value="{{ m.away_team }}">{{ m.away_team }}</option>
+      </select>
+      <input type="text" name="taker_name" placeholder="Taker (optional)" maxlength="60">
+      <input type="text" name="goalkeeper_name" placeholder="GK (for saves)" maxlength="60">
+      <select name="outcome" required>
+        <option value="scored">Scored</option>
+        <option value="saved">Saved</option>
+        <option value="missed">Missed</option>
+      </select>
+      <input type="number" name="minute" min="0" max="120" placeholder="Min" required>
+      <input type="number" name="injury_minute" min="0" max="15" placeholder="+Min">
+      <button type="submit" class="btn btn-secondary">Add penalty</button>
+    </form>
+    {% if m.penalties %}
+    <div class="admin-goals-list">
+      {% for p in m.penalties %}
+      <span class="admin-goal-chip admin-penalty-chip">
+        {% if p.outcome == 'scored' %}⚽{% elif p.outcome == 'saved' %}🧤{% else %}✗{% endif %}
+        {{ p.minute_label }} {{ p.taker_name or p.taker_team }}
+        {% if p.goalkeeper_name and p.outcome == 'saved' %}(saved by {{ p.goalkeeper_name }}){% endif %}
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="delete_penalty">
+          <input type="hidden" name="penalty_id" value="{{ p.id }}">
+          <button type="submit" class="btn-link btn-link-danger" title="Remove">×</button>
+        </form>
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top: 2rem; border-color: var(--accent-2)">
+  <h3>Tournament top scorers</h3>
+  <p style="color: var(--muted)">Auto-updated from goal scorers entered above.</p>
+  <table class="leaderboard-table">
+    <thead><tr><th>#</th><th>Player</th><th>Team</th><th>Goals</th></tr></thead>
+    <tbody>
+      {% for row in scorer_board[:15] %}
+      <tr><td>{{ loop.index }}</td><td>{{ row.player_name }}</td><td>{{ row.team }}</td><td>{{ row.goals }}</td></tr>
+      {% else %}
+      <tr><td colspan="4" style="color:var(--muted)">No goals yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">Yellow & red cards</h2>
+<div class="card" style="margin-bottom: 2rem">
+  <form method="post" class="admin-goal-form" style="grid-template-columns: 2fr 1fr 1fr 1fr auto">
+    <input type="hidden" name="action" value="add_card">
+    <select name="match_id" required>
+      <option value="">Select match</option>
+      {% for m in matches %}
+      <option value="{{ m.id }}">{{ m.home_team }} vs {{ m.away_team }} ({{ m.match_date }})</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="player_name" placeholder="Player name" required>
+    <input type="text" name="team" placeholder="Team" required>
+    <select name="card_type" required>
+      <option value="yellow">Yellow</option>
+      <option value="red">Red</option>
+    </select>
+    <input type="number" name="minute" min="0" max="120" placeholder="Min">
+    <button type="submit" class="btn btn-secondary">Add card</button>
+  </form>
+  {% if card_events %}
+  <table class="leaderboard-table" style="margin-top: 1rem">
+    <thead><tr><th>Player</th><th>Team</th><th>Card</th><th>Match</th><th></th></tr></thead>
+    <tbody>
+      {% for c in card_events %}
+      <tr>
+        <td>{{ c.player_name }}</td>
+        <td>{{ c.team }}</td>
+        <td>{{ c.card_type }}</td>
+        <td>{{ c.match_label }}</td>
+        <td>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="delete_card">
+            <input type="hidden" name="card_id" value="{{ c.id }}">
+            <button type="submit" class="btn-link btn-link-danger">×</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+

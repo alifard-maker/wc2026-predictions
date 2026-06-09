@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ pool.name }} — Top Scorers{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0; text-align: left">
+  <h1 style="text-align: left">Tournament Top Scorers</h1>
+  <p style="margin: 0; text-align: left">Actual goals in the World Cup — track your top scorer pick</p>
+</section>
+
+{% if user_vote %}
+<div class="card" style="margin-bottom: 2rem; border-color: var(--accent-2)">
+  <h3>Your pick: {{ user_vote.top_scorer }}</h3>
+  {% if user_pick %}
+  <p style="margin: 0.5rem 0 0">
+    Currently <strong>#{{ user_pick.rank }}</strong> with <strong>{{ user_pick.goals }}</strong> goal{{ 's' if user_pick.goals != 1 else '' }}
+    {% if user_pick.goals > 0 %}({{ user_pick.team }}){% endif %}
+  </p>
+  {% else %}
+  <p style="margin: 0.5rem 0 0; color: var(--muted)">No goals yet — keep watching!</p>
+  {% endif %}
+  <a href="{{ url_for('tournament_page', invite_code=pool.invite_code) }}" style="display:inline-block;margin-top:0.75rem">Your tournament picks →</a>
+</div>
+{% endif %}
+
+<h2 class="section-title">Goal standings</h2>
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>#</th><th>Player</th><th>Team</th><th>Goals</th></tr>
+    </thead>
+    <tbody>
+      {% for row in leaderboard %}
+      <tr class="{% if user_vote and row.player_name|lower == user_vote.top_scorer|lower %}rank-1{% endif %}">
+        <td>{{ loop.index }}</td>
+        <td>
+          {{ row.player_name }}
+          {% if user_vote and row.player_name|lower == user_vote.top_scorer|lower %} (your pick){% endif %}
+        </td>
+        <td>{{ row.team }}</td>
+        <td><strong>{{ row.goals }}</strong></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="color: var(--muted)">No goals recorded yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">All goals</h2>
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>Player</th><th>Team</th><th>Min</th><th>Match</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td><strong>{{ e.player_name }}</strong></td>
+        <td>{{ e.team }}</td>
+        <td>{{ e.minute_label }}</td>
+        <td>{{ e.match_label }}</td>
+        <td style="color: var(--muted)">{{ e.match_date }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="color: var(--muted)">Goals appear here as matches are played</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

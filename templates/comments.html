@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% from "_comment_emoji_picker.html" import comment_emoji_picker %}
+{% block title %}{{ pool.name }} — Comments{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0; text-align: left">
+  <h1 style="text-align: left">Pool Chat</h1>
+  <p style="margin: 0; text-align: left">{{ pool.name }} · trash talk, hot takes, excuses &amp; emojis welcome ⚽🔥</p>
+</section>
+
+{% if filter_match_id %}
+<div style="margin-bottom: 1rem">
+  <a href="{{ url_for('comments_page', invite_code=pool.invite_code) }}">← All pool chat</a>
+</div>
+{% endif %}
+
+<template id="emoji-picker-template">{{ comment_emoji_picker() }}</template>
+
+<div id="new-comment-toast" class="comment-toast hidden"></div>
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Leave a comment</h3>
+  <form method="post">
+    <input type="hidden" name="action" value="create">
+    <label for="body">Posting as <strong>{{ session.display_name }}</strong></label>
+    <div class="comment-compose">
+      {{ comment_emoji_picker() }}
+      <textarea id="body" name="body" rows="3" maxlength="500" placeholder="Bold prediction? Salty take? Tap an emoji below…" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Post comment</button>
+  </form>
+</div>
+
+<h2 class="section-title"><span id="comment-count">{{ comments|length }}</span> comment{{ 's' if comments|length != 1 else '' }}</h2>
+
+<div class="comment-list" id="comment-list">
+  {% for c in comments %}
+  <div class="comment" data-id="{{ c.id }}" id="comment-{{ c.id }}">
+    <div class="comment-header">
+      <div>
+        <strong>{{ c.display_name }}</strong>{% if c.user_id == session.user_id %} (you){% endif %}
+        {% if c.match_id and c.home_team %}<span class="comment-match-tag">⚽ {{ c.home_team }} vs {{ c.away_team }}</span>{% endif %}
+        <span class="comment-time">{{ c.created_at }}{% if c.updated_at %} · edited{% endif %}</span>
+      </div>
+      {% if c.user_id == session.user_id %}
+      <div class="comment-actions">
+        <button type="button" class="btn-link" onclick="startEdit({{ c.id }})">Edit</button>
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this comment?')">
+          <input type="hidden" name="action" value="delete">
+          <input type="hidden" name="comment_id" value="{{ c.id }}">
+          <button type="submit" class="btn-link btn-link-danger">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    <p class="comment-body" id="comment-body-{{ c.id }}">{{ c.body }}</p>
+    {% if c.user_id == session.user_id %}
+    <form method="post" class="comment-edit-form hidden" id="comment-edit-{{ c.id }}">
+      <input type="hidden" name="action" value="edit">
+      <input type="hidden" name="comment_id" value="{{ c.id }}">
+      <div class="comment-compose">
+        {{ comment_emoji_picker() }}
+        <textarea name="body" rows="3" maxlength="500" required>{{ c.body }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-secondary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="cancelEdit({{ c.id }})">Cancel</button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card" id="empty-comments">
+    <p style="color: var(--muted); margin: 0">No comments yet — be the first!</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='comment-emoji.js') }}"></script>
+<script>
+  const feedUrl = "{{ url_for('comments_feed', invite_code=pool.invite_code) }}";
+  const inviteCode = "{{ pool.invite_code }}";
+  let lastTotal = {{ comments|length }};
+  let editingId = null;
+
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
+  function emojiPickerMarkup() {
+    const tpl = document.getElementById('emoji-picker-template');
+    return tpl ? tpl.innerHTML : '';
+  }
+
+  function startEdit(id) {
+    if (editingId !== null) cancelEdit(editingId);
+    editingId = id;
+    document.getElementById('comment-body-' + id).classList.add('hidden');
+    document.getElementById('comment-edit-' + id).classList.remove('hidden');
+  }
+
+  function cancelEdit(id) {
+    document.getElementById('comment-body-' + id).classList.remove('hidden');
+    document.getElementById('comment-edit-' + id).classList.add('hidden');
+    if (editingId === id) editingId = null;
+  }
+
+  function renderComments(comments) {
+    if (editingId !== null) return;
+    const list = document.getElementById('comment-list');
+    if (!comments.length) {
+      list.innerHTML = '<div class="card" id="empty-comments"><p style="color: var(--muted); margin: 0">No comments yet — be the first!</p></div>';
+      return;
+    }
+    list.innerHTML = comments.map(c => {
+      const edited = c.updated_at ? ' · edited' : '';
+      const actions = c.is_you ? `
+        <div class="comment-actions">
+          <button type="button" class="btn-link" onclick="startEdit(${c.id})">Edit</button>
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete this comment?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="comment_id" value="${c.id}">
+            <button type="submit" class="btn-link btn-link-danger">Delete</button>
+          </form>
+        </div>` : '';
+      const editForm = c.is_you ? `
+        <form method="post" class="comment-edit-form hidden" id="comment-edit-${c.id}">
+          <input type="hidden" name="action" value="edit">
+          <input type="hidden" name="comment_id" value="${c.id}">
+          <div class="comment-compose">
+            ${emojiPickerMarkup()}
+            <textarea name="body" rows="3" maxlength="500" required>${escapeHtml(c.body)}</textarea>
+          </div>
+          <button type="submit" class="btn btn-secondary">Save</button>
+          <button type="button" class="btn btn-secondary" onclick="cancelEdit(${c.id})">Cancel</button>
+        </form>` : '';
+      return `
+        <div class="comment" data-id="${c.id}" id="comment-${c.id}">
+          <div class="comment-header">
+            <div>
+              <strong>${escapeHtml(c.display_name)}</strong>${c.is_you ? ' (you)' : ''}
+              <span class="comment-time">${c.created_at}${edited}</span>
+            </div>
+            ${actions}
+          </div>
+          <p class="comment-body" id="comment-body-${c.id}">${escapeHtml(c.body)}</p>
+          ${editForm}
+        </div>`;
+    }).join('');
+  }
+
+  async function refreshComments() {
+    const res = await fetch(feedUrl + '?mark_seen=1');
+    if (!res.ok) return;
+    const data = await res.json();
+    document.getElementById('comment-count').textContent = data.total;
+    const badge = document.getElementById('comment-badge');
+    if (badge) {
+      badge.textContent = data.unread;
+      badge.classList.toggle('hidden', data.unread === 0);
+    }
+    if (data.total > lastTotal) {
+      const toast = document.getElementById('new-comment-toast');
+      const n = data.total - lastTotal;
+      toast.textContent = n === 1 ? 'New comment!' : `${n} new comments!`;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 4000);
+    }
+    lastTotal = data.total;
+    renderComments(data.comments);
+  }
+
+  setInterval(refreshComments, 30000);
+</script>
+{% endblock %}

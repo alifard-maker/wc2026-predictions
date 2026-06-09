@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ pool.name }} — Matchday Recaps{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Matches</a>
+
+<section class="hero" style="padding-top: 1rem; text-align: left">
+  <h1 style="text-align: left">Matchday Recaps</h1>
+  <p style="margin: 0; text-align: left">Pick-party drama as soon as deadlines pass — then final-whistle awards</p>
+</section>
+
+{% if recaps %}
+{% for r in recaps %}
+<div class="card recap-card">
+  <div class="recap-card-head">
+    <h2 class="recap-title">Matchday {{ r.matchday }}</h2>
+    <span class="recap-phase recap-phase-{{ r.phase }}">
+      {% if r.phase == 'pre_match' %}Picks revealed{% elif r.phase == 'in_progress' %}In play{% else %}Complete{% endif %}
+    </span>
+  </div>
+  <p class="muted-inline">
+    {{ r.matches_revealed }} picks unlocked
+    {% if r.matches_awaiting %}· {{ r.matches_awaiting }} awaiting kickoff{% endif %}
+    {% if r.matches_live %}· {{ r.matches_live }} live now{% endif %}
+    {% if r.matches_played %}· {{ r.matches_played }} final{% endif %}
+  </p>
+
+  {% set pp = r.pick_party %}
+  {% if pp.hive_mind or pp.split_camp or pp.boldest or pp.lone_wolf or pp.on_track %}
+  <h3 class="recap-section-title">🎉 Pick party</h3>
+  <p class="recap-section-desc muted-inline">Highlights from revealed picks — before and during the match</p>
+  <div class="recap-grid">
+    {% if pp.hive_mind %}
+    <div class="recap-item">
+      <span class="recap-emoji">🤝</span>
+      <strong>Hive mind</strong>
+      <span>{{ pp.hive_mind.pct }}% picked {{ pp.hive_mind.score }} on {{ pp.hive_mind.match }} ({{ pp.hive_mind.count }}/{{ pp.hive_mind.total }})</span>
+    </div>
+    {% endif %}
+    {% if pp.split_camp %}
+    <div class="recap-item">
+      <span class="recap-emoji">⚔️</span>
+      <strong>Split camp</strong>
+      <span>{{ pp.split_camp.match }} — {{ pp.split_camp.home_pct }}% home · {{ pp.split_camp.draw_pct }}% draw · {{ pp.split_camp.away_pct }}% away</span>
+    </div>
+    {% endif %}
+    {% if pp.boldest %}
+    <div class="recap-item">
+      <span class="recap-emoji">🎰</span>
+      <strong>Boldest call</strong>
+      <span>{{ pp.boldest.player }} went {{ pp.boldest.prediction }} on {{ pp.boldest.match }}{% if pp.boldest.is_bold %} (bold){% endif %}</span>
+    </div>
+    {% endif %}
+    {% if pp.lone_wolf %}
+    <div class="recap-item">
+      <span class="recap-emoji">🐺</span>
+      <strong>Lone wolf</strong>
+      <span>Only {{ pp.lone_wolf.player }} called {{ pp.lone_wolf.prediction }} on {{ pp.lone_wolf.match }}</span>
+    </div>
+    {% endif %}
+    {% if pp.on_track %}
+    <div class="recap-item recap-item-live">
+      <span class="recap-emoji">📡</span>
+      <strong>On track</strong>
+      <span>{{ pp.on_track.pct }}% still right at {{ pp.on_track.score }} ({{ pp.on_track.minute }}) — {{ pp.on_track.match }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if r.matches_played %}
+  <h3 class="recap-section-title">🏁 Final whistle</h3>
+  <p class="recap-section-desc muted-inline">Awards once results are in</p>
+  <div class="recap-grid">
+    {% if r.top_player %}
+    <div class="recap-item">
+      <span class="recap-emoji">👑</span>
+      <strong>Top scorer</strong>
+      <span>{{ r.top_player.name }} — {{ r.top_player.points }} pts</span>
+    </div>
+    {% endif %}
+    {% if r.exact_hero %}
+    <div class="recap-item">
+      <span class="recap-emoji">🎯</span>
+      <strong>Exact score</strong>
+      <span>{{ r.exact_hero.player }} nailed {{ r.exact_hero.prediction }} on {{ r.exact_hero.match }} (+{{ r.exact_hero.points }})</span>
+    </div>
+    {% endif %}
+    {% if r.hardest_match %}
+    <div class="recap-item">
+      <span class="recap-emoji">😱</span>
+      <strong>Hardest to call</strong>
+      <span>{{ r.hardest_match.label }} (only {{ r.hardest_match.correct_rate }}% got points)</span>
+    </div>
+    {% endif %}
+    {% if r.contrarian_pick %}
+    <div class="recap-item">
+      <span class="recap-emoji">🦄</span>
+      <strong>Lone correct</strong>
+      <span>{{ r.contrarian_pick.player }} on {{ r.contrarian_pick.match }} ({{ r.contrarian_pick.prediction }}) +{{ r.contrarian_pick.points }}</span>
+    </div>
+    {% endif %}
+    {% if r.worst_call %}
+    <div class="recap-item">
+      <span class="recap-emoji">💀</span>
+      <strong>Way off</strong>
+      <span>{{ r.worst_call.player }} said {{ r.worst_call.prediction }} — ended {{ r.worst_call.actual }} ({{ r.worst_call.match }})</span>
+    </div>
+    {% endif %}
+    {% if r.ai_hero %}
+    <div class="recap-item">
+      <span class="recap-emoji">🤖</span>
+      <strong>AI slayer</strong>
+      <span>{{ r.ai_hero.name }} outscored every bot on {{ r.ai_hero.matches }} match(es)</span>
+    </div>
+    {% endif %}
+    {% if r.funniest_comment %}
+    <div class="recap-item recap-item-wide">
+      <span class="recap-emoji">😂</span>
+      <strong>Emoji overload</strong>
+      <span class="recap-quote">“{{ r.funniest_comment.body }}{% if r.funniest_comment.body|length >= 120 %}…{% endif %}” — {{ r.funniest_comment.player }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="card">
+  <p style="color: var(--muted); margin: 0">Recaps unlock once prediction deadlines pass for a matchday. After picks are revealed you&rsquo;ll see hive minds, bold calls, and lone wolves — then final-whistle awards as results land.</p>
+</div>
+{% endif %}
+{% endblock %}

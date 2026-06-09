@@ -1,0 +1,108 @@
+{# WC 2026 pool chat — curated emoji reactions #}
+{% macro comment_emoji_picker() %}
+<div class="emoji-picker" role="toolbar" aria-label="Insert emoji">
+  <div class="emoji-picker-head">
+    <span class="emoji-picker-title">⚡ Quick reactions</span>
+    <span class="emoji-picker-hint">tap to spice up your take</span>
+  </div>
+  <div class="emoji-picker-groups">
+    <div class="emoji-group">
+      <span class="emoji-group-label">Match day</span>
+      <div class="emoji-row">
+        <button type="button" class="emoji-btn" title="Goal!" data-emoji="⚽">⚽</button>
+        <button type="button" class="emoji-btn" title="Save!" data-emoji="🧤">🧤</button>
+        <button type="button" class="emoji-btn" title="Trophy" data-emoji="🏆">🏆</button>
+        <button type="button" class="emoji-btn" title="Yellow card" data-emoji="🟨">🟨</button>
+        <button type="button" class="emoji-btn" title="Red card" data-emoji="🟥">🟥</button>
+        <button type="button" class="emoji-btn" title="VAR drama" data-emoji="📺">📺</button>
+        <button type="button" class="emoji-btn" title="Injury time" data-emoji="⏱️">⏱️</button>
+        <button type="button" class="emoji-btn" title="Stadium vibes" data-emoji="🏟️">🏟️</button>
+      </div>
+    </div>
+    <div class="emoji-group">
+      <span class="emoji-group-label">Celebration</span>
+      <div class="emoji-row">
+        <button type="button" class="emoji-btn" title="Let's go!" data-emoji="🎉">🎉</button>
+        <button type="button" class="emoji-btn" title="On fire" data-emoji="🔥">🔥</button>
+        <button type="button" class="emoji-btn" title="Clutch" data-emoji="💪">💪</button>
+        <button type="button" class="emoji-btn" title="World Cup" data-emoji="🌍">🌍</button>
+        <button type="button" class="emoji-btn" title="Champagne" data-emoji="🍾">🍾</button>
+        <button type="button" class="emoji-btn" title="GOAT" data-emoji="🐐">🐐</button>
+        <button type="button" class="emoji-btn" title="Crown" data-emoji="👑">👑</button>
+        <button type="button" class="emoji-btn" title="Luck" data-emoji="🍀">🍀</button>
+      </div>
+    </div>
+    <div class="emoji-group">
+      <span class="emoji-group-label">Bold pick</span>
+      <div class="emoji-row">
+        <button type="button" class="emoji-btn" title="Called it" data-emoji="🎯">🎯</button>
+        <button type="button" class="emoji-btn" title="Crystal ball" data-emoji="🔮">🔮</button>
+        <button type="button" class="emoji-btn" title="Gamble" data-emoji="🎰">🎰</button>
+        <button type="button" class="emoji-btn" title="Fingers crossed" data-emoji="🤞">🤞</button>
+        <button type="button" class="emoji-btn" title="Big brain" data-emoji="🧠">🧠</button>
+        <button type="button" class="emoji-btn" title="Watching closely" data-emoji="👀">👀</button>
+        <button type="button" class="emoji-btn" title="Chart goes up" data-emoji="📈">📈</button>
+        <button type="button" class="emoji-btn" title="Chart goes down" data-emoji="📉">📉</button>
+      </div>
+    </div>
+    <div class="emoji-group">
+      <span class="emoji-group-label">Trash talk</span>
+      <div class="emoji-row">
+        <button type="button" class="emoji-btn" title="Clown pick" data-emoji="🤡">🤡</button>
+        <button type="button" class="emoji-btn" title="RIP your points" data-emoji="💀">💀</button>
+        <button type="button" class="emoji-btn" title="Salty" data-emoji="🧂">🧂</button>
+        <button type="button" class="emoji-btn" title="Salute" data-emoji="🫡">🫡</button>
+        <button type="button" class="emoji-btn" title="You!" data-emoji="🫵">🫵</button>
+        <button type="button" class="emoji-btn" title="Smug" data-emoji="😏">😏</button>
+        <button type="button" class="emoji-btn" title="Eye roll" data-emoji="🙄">🙄</button>
+        <button type="button" class="emoji-btn" title="Cap / lying" data-emoji="🧢">🧢</button>
+        <button type="button" class="emoji-btn" title="Big yapper" data-emoji="🗣️">🗣️</button>
+        <button type="button" class="emoji-btn" title="Circus pick" data-emoji="🎪">🎪</button>
+        <button type="button" class="emoji-btn" title="Popcorn drama" data-emoji="🍿">🍿</button>
+        <button type="button" class="emoji-btn" title="Trash take" data-emoji="🗑️">🗑️</button>
+        <button type="button" class="emoji-btn" title="Rat pick" data-emoji="🐀">🐀</button>
+        <button type="button" class="emoji-btn" title="Troll" data-emoji="🧌">🧌</button>
+        <button type="button" class="emoji-btn" title="Evil plan" data-emoji="😈">😈</button>
+        <button type="button" class="emoji-btn" title="Boo!" data-emoji="👎">👎</button>
+        <button type="button" class="emoji-btn" title="RIP bracket" data-emoji="🪦">🪦</button>
+        <button type="button" class="emoji-btn" title="Disgusting pick" data-emoji="🤮">🤮</button>
+        <button type="button" class="emoji-btn" title="Shocked" data-emoji="😱">😱</button>
+        <button type="button" class="emoji-btn" title="Mind blown" data-emoji="🤯">🤯</button>
+        <button type="button" class="emoji-btn" title="Nervous" data-emoji="😬">😬</button>
+        <button type="button" class="emoji-btn" title="Peeking" data-emoji="🫣">🫣</button>
+        <button type="button" class="emoji-btn" title="Oops" data-emoji="🫢">🫢</button>
+        <button type="button" class="emoji-btn" title="Mic drop" data-emoji="🎤">🎤</button>
+      </div>
+    </div>
+    <div class="emoji-group">
+      <span class="emoji-group-label">Mood</span>
+      <div class="emoji-row">
+        <button type="button" class="emoji-btn" title="Crying" data-emoji="😭">😭</button>
+        <button type="button" class="emoji-btn" title="Dead laughing" data-emoji="🤣">🤣</button>
+        <button type="button" class="emoji-btn" title="Melting" data-emoji="🫠">🫠</button>
+        <button type="button" class="emoji-btn" title="Pain" data-emoji="🥲">🥲</button>
+        <button type="button" class="emoji-btn" title="Heartbreak" data-emoji="💔">💔</button>
+        <button type="button" class="emoji-btn" title="Facepalm" data-emoji="🤦">🤦</button>
+        <button type="button" class="emoji-btn" title="Giving up" data-emoji="😩">😩</button>
+        <button type="button" class="emoji-btn" title="Woozy" data-emoji="🥴">🥴</button>
+        <button type="button" class="emoji-btn" title="Knocked out" data-emoji="😵">😵</button>
+        <button type="button" class="emoji-btn" title="Exhausted sigh" data-emoji="😮‍💨">😮‍💨</button>
+        <button type="button" class="emoji-btn" title="Spiraling" data-emoji="😵‍💫">😵‍💫</button>
+        <button type="button" class="emoji-btn" title="See no evil" data-emoji="🙈">🙈</button>
+        <button type="button" class="emoji-btn" title="Hiding" data-emoji="🫥">🫥</button>
+        <button type="button" class="emoji-btn" title="Upset" data-emoji="😤">😤</button>
+        <button type="button" class="emoji-btn" title="Upside down" data-emoji="🙃">🙃</button>
+        <button type="button" class="emoji-btn" title="Chef's kiss" data-emoji="🤌">🤌</button>
+        <button type="button" class="emoji-btn" title="Cold take" data-emoji="🥶">🥶</button>
+        <button type="button" class="emoji-btn" title="Too hot" data-emoji="🥵">🥵</button>
+        <button type="button" class="emoji-btn" title="Please score" data-emoji="🙏">🙏</button>
+        <button type="button" class="emoji-btn" title="Calm… for now" data-emoji="😌">😌</button>
+        <button type="button" class="emoji-btn" title="Side eye" data-emoji="😒">😒</button>
+        <button type="button" class="emoji-btn" title="Screaming inside" data-emoji="😫">😫</button>
+        <button type="button" class="emoji-btn" title="Blank stare" data-emoji="😶">😶</button>
+        <button type="button" class="emoji-btn" title="Sleep deprived" data-emoji="😴">😴</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

@@ -1,0 +1,24 @@
+{% macro person_row(label, person) %}
+<li class="person-row">
+  <span class="person-label">{{ label }}</span>
+  <div class="person-card">
+    {% if person.photo %}
+    <img src="{{ person.photo }}" alt="" class="person-thumb" loading="lazy" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
+    <span class="person-thumb person-thumb-fallback" hidden aria-hidden="true">{{ person.initial }}</span>
+    {% else %}
+    <span class="person-thumb person-thumb-fallback" aria-hidden="true">{{ person.initial }}</span>
+    {% endif %}
+    <div class="person-details">
+      <span class="person-name">{{ person.name }}</span>
+      <span class="person-meta">
+        {% if person.age is not none %}Age {{ person.age }}{% endif %}
+        {% if person.role != 'coach' and person.nt_goals is not none %}
+        {% if person.age is not none %} · {% endif %}{{ person.nt_goals }} NT goal{{ 's' if person.nt_goals != 1 else '' }}
+        {% elif person.role == 'coach' %}
+        {% if person.age is not none %} · {% endif %}Head coach{% if person.nationality %} · {{ person.nationality }}{% endif %}
+        {% endif %}
+      </span>
+    </div>
+  </div>
+</li>
+{% endmacro %}

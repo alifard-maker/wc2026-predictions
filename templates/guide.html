@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}{{ pool.name }} — How to Play{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Matches</a>
+
+<section class="hero guide-hero">
+  <h1>How to play</h1>
+  <p class="guide-lead">Everything you need to know — scoring, deadlines, hidden picks, and the fun stuff. No football PhD required.</p>
+</section>
+
+<nav class="guide-toc card" aria-label="Guide sections">
+  <strong>On this page</strong>
+  <ol>
+    <li><a href="#basics">The basics</a></li>
+    <li><a href="#deadlines">Deadlines</a></li>
+    <li><a href="#scoring">Match scoring</a></li>
+    <li><a href="#bold">Bold pick (2×)</a></li>
+    <li><a href="#reveal">When picks are revealed</a></li>
+    <li><a href="#tournament">Tournament bonus picks</a></li>
+    <li><a href="#standings">Standings &amp; predicted brackets</a></li>
+    <li><a href="#my-stats">My Stats &amp; head-to-head</a></li>
+    <li><a href="#features">Features to enjoy</a></li>
+    <li><a href="#tips">Quick tips</a></li>
+  </ol>
+</nav>
+
+<section class="guide-section card" id="basics">
+  <h2>1. The basics</h2>
+  <ul class="rules">
+    <li>You join a <strong>private pool</strong> with friends — grab the <strong>invite link</strong> at the bottom of this <strong>Guide</strong>.</li>
+    <li>For each World Cup match, predict the <strong>full-time score</strong> (home goals – away goals).</li>
+    <li>Enter picks on <strong>Matches</strong>, tap <strong>Save Predictions</strong>, and check the <strong>Leaderboard</strong> as results come in.</li>
+    <li>All times on this site are <strong>Eastern Time (ET)</strong>.</li>
+  </ul>
+</section>
+
+<section class="guide-section card" id="deadlines">
+  <h2>2. Deadlines</h2>
+  <div class="guide-callout">
+    <strong>Match predictions</strong> lock <strong>24 hours before kickoff</strong>.
+    <p class="muted-inline">Example: kickoff Friday 3:00 PM ET → deadline Thursday 3:00 PM ET.</p>
+  </div>
+  <ul class="rules">
+    <li>Each match shows <strong>Open until …</strong> while you can still change your pick.</li>
+    <li>Under <strong>1 hour</strong> left, that badge <strong>flashes</strong> so you don’t miss it.</li>
+    <li>After the deadline the match is <strong>Closed</strong> — no more edits.</li>
+  </ul>
+  <div class="guide-callout guide-callout-gold">
+    <strong>Tournament picks</strong> (winner, 2nd, 3rd, top scorer) lock
+    <strong>{{ tournament_deadline.strftime('%a %d %b %Y, %H:%M') }} ET</strong>
+    — one minute before the opening match (Mexico vs South Africa).
+  </div>
+</section>
+
+<section class="guide-section card" id="scoring">
+  <h2>3. Match scoring</h2>
+  <p>Points are added after the final whistle (including extra time if the admin enters it that way).</p>
+  <table class="leaderboard-table guide-score-table">
+    <thead>
+      <tr><th>Your pick</th><th>Points</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Exact score</strong> (e.g. you said 2–1, it finished 2–1)</td><td><strong>5</strong></td></tr>
+      <tr><td><strong>Correct result</strong> (right winner or draw, wrong score)</td><td><strong>2</strong></td></tr>
+      <tr><td>Wrong outcome</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <p class="muted-inline">“Correct result” means you got home win, away win, or draw — even if the scoreline was off.</p>
+
+  <h3 class="guide-subhead">Phase prediction bonus (+15)</h3>
+  <p>When an entire phase of the World Cup is complete, the player with the <strong>highest total match points</strong> across that phase earns <strong>+15 bonus points</strong> (bold 2× counts). Tied leaders each get +15.</p>
+  <ul class="rules">
+    <li><strong>Group stage</strong> — all 72 opening matches</li>
+    <li><strong>Round of 32</strong> — 16 knockout matches</li>
+    <li><strong>Round of 16</strong> — 8 matches</li>
+    <li><strong>Quarter-finals</strong> — 4 matches</li>
+    <li><strong>Semi-finals</strong> — 2 matches</li>
+  </ul>
+  <p class="muted-inline">Awards appear on the <strong>Leaderboard</strong> once every match in that phase has a result. Missing picks count as 0 for that match.</p>
+</section>
+
+<section class="guide-section card" id="bold">
+  <h2>4. Bold pick (2× points)</h2>
+  <ul class="rules">
+    <li>Each <strong>calendar day</strong> (ET), choose <strong>one</strong> match as your <strong>🎰 Bold 2×</strong> pick — e.g. opening day has two group games, you bold just one of them; next day you get a fresh bold.</li>
+    <li>If your bold pick scores points, they <strong>double</strong>: exact 5 → <strong>10</strong>, correct result 2 → <strong>4</strong>.</li>
+    <li>On <strong>Matches</strong>: enter scores, tap the <strong>🎰 Bold 2×</strong> pill under the match, then <strong>Save Predictions</strong>.</li>
+    <li>On a <strong>match page</strong>: use <strong>Make this your bold pick</strong> (moves your bold if you change your mind).</li>
+    <li>Wrong bold picks still earn <strong>0</strong> — bold only multiplies points you actually win.</li>
+  </ul>
+</section>
+
+<section class="guide-section card" id="reveal">
+  <h2>5. When picks are revealed</h2>
+  <div class="guide-callout">
+    <strong>🔒 Hidden until deadline</strong> — other players’ scores stay secret until that match’s prediction window closes.
+  </div>
+  <ul class="rules">
+    <li><strong>Before deadline:</strong> you see your own picks on <strong>Matches</strong> and match pages; everyone else’s (including the pool admin) show as <strong>Hidden</strong>. The picks ticker only rolls <strong>AI agents</strong> until deadlines pass.</li>
+    <li><strong>After deadline:</strong> all pool picks unlock — compare scores, see consensus, and chat about the matchup before kickoff.</li>
+    <li><strong>Tournament picks</strong> from other humans stay hidden until the tournament deadline; <strong>AI agent</strong> tournament picks stay visible (try to beat the bots).</li>
+    <li><strong>Recaps</strong> light up once deadlines pass — hive minds, bold calls, lone wolves — then final-whistle awards after results.</li>
+  </ul>
+</section>
+
+<section class="guide-section card" id="tournament">
+  <h2>6. Tournament bonus picks</h2>
+  <p>One-time votes on the <strong>Tournament</strong> page — separate from weekly match points:</p>
+  <table class="leaderboard-table guide-score-table">
+    <thead>
+      <tr><th>Pick</th><th>Bonus if correct</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>World Cup winner</td><td><strong>+{{ tournament_winner_pts }}</strong></td></tr>
+      <tr><td>2nd place</td><td><strong>+{{ tournament_second_pts }}</strong></td></tr>
+      <tr><td>3rd place</td><td><strong>+{{ tournament_third_pts }}</strong></td></tr>
+      <tr><td>Top scorer</td><td><strong>+{{ tournament_scorer_pts }}</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="muted-inline">Track your scorer on <strong>Scorers</strong>; yellow/red cards on <strong>Cards</strong>.</p>
+</section>
+
+<section class="guide-section card" id="standings">
+  <h2>7. Standings &amp; predicted brackets</h2>
+  <p>Open <strong><a href="{{ url_for('standings_page', invite_code=pool.invite_code) }}">Standings</a></strong> for live group tables and the knockout tree. There are two modes — don’t mix them up:</p>
+
+  <h3 class="guide-subhead">Actual results</h3>
+  <p>The default view. It follows the <strong>real World Cup</strong> as scores are entered in the pool.</p>
+  <ul class="rules">
+    <li><strong>Group stage</strong> — tables for Groups A–L with points, goal difference, and who’s in the top two (or in the hunt for a best-third spot).</li>
+    <li><strong>Colour rows</strong> — green = qualified or leading the group; yellow = third-place race; grey = out or bottom.</li>
+    <li><strong>Knockout bracket</strong> — fills in as real results arrive. Tap a match to open its page. Scroll sideways on mobile for the full tree.</li>
+    <li><strong>Champion banner</strong> — appears at the top once the final is decided in real life.</li>
+  </ul>
+
+  <h3 class="guide-subhead">Predicted brackets</h3>
+  <p>Switch to <strong>Predicted brackets</strong> to ask: <em>“What would the World Cup look like if everyone’s score picks came true?”</em></p>
+  <ul class="rules">
+    <li>Uses <strong>your pool’s score predictions</strong> — not official results — to simulate group tables and knockouts.</li>
+    <li><strong>Group tables</strong> are recalculated from predicted scores. Until you’ve picked every match in a group, teams show as <em>leading</em> or <em>contending</em> instead of fully <em>qualified</em>.</li>
+    <li><strong>Who advances</strong> — top two from each group plus the best eight third-placed teams (same rules as the real tournament), then a full Round of 32 through to the final.</li>
+    <li><strong>Knockout winners</strong> come from your predicted score for each match. If you picked 1–1, the simulator gives the win to the <strong>home team</strong> (a tie-break shortcut — real knockouts use extra time and pens).</li>
+    <li>Matches you’ve predicted show a <strong>Pred</strong> tag and the score you entered. Unpicked knockouts stay <strong>TBD</strong> until earlier rounds are filled in.</li>
+    <li><strong>Predicted champion</strong> — shown on the trophy at the end of the bracket (or <em>Bracket incomplete</em> if not enough picks yet).</li>
+  </ul>
+
+  <h3 class="guide-subhead">Compare predictors</h3>
+  <ul class="rules">
+    <li>In predicted mode, use <strong>View bracket for</strong> to flip between pool members (including AI bots).</li>
+    <li>Overview cards show each player’s <strong>predicted champion</strong> and how many picks they’ve entered — handy for “you have France winning, I have Argentina” debates.</li>
+    <li>The more group and knockout matches someone has predicted, the more complete their simulated bracket.</li>
+  </ul>
+
+  <div class="guide-callout">
+    <strong>Important:</strong> Predicted brackets are for fun and bragging rights — they do <strong>not</strong> add leaderboard points. Match points and <strong>Tournament</strong> bonus picks are scored separately.
+  </div>
+
+  <a href="{{ url_for('standings_page', invite_code=pool.invite_code) }}" class="btn btn-secondary" style="margin-top: 1rem">Open Standings →</a>
+</section>
+
+<section class="guide-section card" id="my-stats">
+  <h2>8. My Stats &amp; head-to-head</h2>
+  <p>Open <strong><a href="{{ url_for('my_stats_page', invite_code=pool.invite_code) }}">My Stats</a></strong> for your season dashboard — or tap any name on the <strong>Leaderboard</strong> to see someone else’s profile.</p>
+
+  <h3 class="guide-subhead">Your season at a glance</h3>
+  <ul class="rules">
+    <li><strong>Pool rank</strong> and <strong>total points</strong> (match picks + tournament bonus).</li>
+    <li><strong>Exact scores</strong> and <strong>pick accuracy</strong> — how often you’ve earned points on finished matches.</li>
+    <li><strong>Achievements</strong> — badges you unlock as you play (e.g. 🎯 Oracle for 3+ exacts in a matchday, 🎰 Bold Hero for a nailed 2× bold exact, 🤖 AI Slayer for outscoring every bot on a matchday). Hover or tap a badge to read what it means.</li>
+  </ul>
+
+  <h3 class="guide-subhead">Season breakdown &amp; form</h3>
+  <ul class="rules">
+    <li><strong>Match vs tournament points</strong> — see where your total comes from.</li>
+    <li><strong>Bold picks</strong> — how many you used and how many paid off.</li>
+    <li><strong>Beat all AIs</strong> — matches where you scored more than every bot in the pool.</li>
+    <li><strong>Lucky team / Nemesis team</strong> — sides you’ve read well (or badly) when they’re involved.</li>
+    <li><strong>Best matchday</strong> — your highest-scoring round so far.</li>
+    <li><strong>Recent form</strong> — your last five finished picks with points earned (bold picks marked).</li>
+  </ul>
+
+  <h3 class="guide-subhead">Head-to-head (one-on-one)</h3>
+  <p>Scroll to <strong>Head-to-head</strong> on any player page to settle a rivalry match by match — not who won the real game, but <strong>who picked better</strong> in your pool.</p>
+  <ul class="rules">
+    <li>Choose a pool mate from the <strong>Compare with</strong> dropdown (friends, rivals, or an AI bot).</li>
+    <li>The scoreboard shows each player’s <strong>total pool points</strong> plus a <strong>match wins</strong> record — e.g. <em>12 – 8</em> means the first player outscored the other on 12 shared finished matches (ties count separately).</li>
+    <li>The table lists every match you both predicted and that has a final result: both scorelines, points earned, and the round winner highlighted.</li>
+    <li>Only <strong>finished</strong> matches count. If you haven’t shared any yet, pick someone else or check back after more results.</li>
+  </ul>
+
+  <div class="guide-callout">
+    <strong>Tip:</strong> Use head-to-head before a big matchday — “I’m 9–6 up on Dave” is better trash talk than total leaderboard rank.
+  </div>
+
+  <a href="{{ url_for('my_stats_page', invite_code=pool.invite_code) }}" class="btn btn-secondary" style="margin-top: 1rem">Open My Stats →</a>
+</section>
+
+<section class="guide-section card" id="features">
+  <h2>9. Features to enjoy</h2>
+  <div class="guide-feature-grid">
+    <div class="guide-feature">
+      <span class="guide-feature-icon">⚽</span>
+      <strong>Matches</strong>
+      <p>Enter all picks, filter by matchday, live score updates, bold toggles.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">📺</span>
+      <strong>Match watch party</strong>
+      <p>Open any match for consensus bar, everyone’s picks (after reveal), and match chat.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">📰</span>
+      <strong>Recaps</strong>
+      <p>Matchday storylines — aligned picks, boldest calls, way-off awards, AI slayers.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">📊</span>
+      <strong>My Stats</strong>
+      <p>Season form, achievements, and <a href="#my-stats">one-on-one head-to-head</a>.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">🏆</span>
+      <strong>Leaderboard &amp; Standings</strong>
+      <p>Pool points table plus real and <a href="#standings">predicted brackets</a>.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">💬</span>
+      <strong>Comments</strong>
+      <p>Pool-wide chat and per-match threads with emoji reactions.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">🤖</span>
+      <strong>AI predictors</strong>
+      <p>Bots in your pool — beat them on picks and tournament votes.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">📡</span>
+      <strong>Live tickers</strong>
+      <p>Top banners show recent picks (AI bots only until deadline — including the pool admin), comments, tournament deadline, and result spotlights.</p>
+    </div>
+    <div class="guide-feature">
+      <span class="guide-feature-icon">👕</span>
+      <strong>Team squads</strong>
+      <p>Each team profile lists all <strong>26 official FIFA squad players</strong> (confirmed 2 June 2026). The top-scorer picker uses the same names — pick from the dropdown for exact-match bonus points.</p>
+    </div>
+  </div>
+</section>
+
+<section class="guide-section card" id="tips">
+  <h2>10. Quick tips</h2>
+  <ul class="rules">
+    <li>Work through open matches from the <strong>Your next prediction due</strong> card at the top of <strong>Matches</strong>.</li>
+    <li>Don’t forget tournament picks before <strong>{{ tournament_deadline.strftime('%d %b') }}</strong>.</li>
+    <li>Invite friends using the <strong>invite link</strong> below.</li>
+    <li>After deadlines pass, browse <strong>Recaps</strong> and match pages to see who’s aligned or going lone wolf.</li>
+    <li>During live games, match pages refresh scores and chat — pile in with reactions.</li>
+  </ul>
+  <a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}" class="btn btn-primary" style="margin-top: 1rem">Go to Matches →</a>
+</section>
+
+<div class="card invite-card-bottom" id="invite">
+  <h3>Invite friends</h3>
+  <p class="muted-inline" style="margin: 0 0 0.75rem">Share this link so others can join your pool.</p>
+  <div class="invite-box">{{ invite_url }}</div>
+  <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 0.75rem" onclick="navigator.clipboard.writeText('{{ invite_url }}'); this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy link', 2000)">Copy invite link</button>
+</div>
+{% endblock %}

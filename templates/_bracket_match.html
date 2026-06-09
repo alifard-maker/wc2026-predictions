@@ -1,0 +1,34 @@
+{% if m.id %}
+<a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="bracket-match{% if m.is_finished %} finished{% endif %}{% if m.is_live %} live{% endif %}{% if m.is_predicted %} predicted{% endif %}">
+{% else %}
+<div class="bracket-match{% if m.is_finished %} finished{% endif %}{% if m.is_live %} live{% endif %}{% if m.is_predicted %} predicted{% endif %}">
+{% endif %}
+  <div class="bracket-team{% if m.winner == m.home_team %} bracket-winner{% endif %}">
+    {% if m.home_team %}
+    <span class="team-with-flag team-with-flag-sm">
+      {% if flag_url(m.home_team) %}<img src="{{ flag_url(m.home_team) }}" alt="" class="team-flag" loading="lazy">{% endif %}
+      <span>{{ m.home_team }}</span>
+    </span>
+    {% else %}
+    <span class="bracket-tbd">TBD</span>
+    {% endif %}
+  </div>
+  <div class="bracket-team{% if m.winner == m.away_team %} bracket-winner{% endif %}">
+    {% if m.away_team %}
+    <span class="team-with-flag team-with-flag-sm">
+      {% if flag_url(m.away_team) %}<img src="{{ flag_url(m.away_team) }}" alt="" class="team-flag" loading="lazy">{% endif %}
+      <span>{{ m.away_team }}</span>
+    </span>
+    {% else %}
+    <span class="bracket-tbd">TBD</span>
+    {% endif %}
+  </div>
+  {% if m.is_live or m.is_finished %}
+  <span class="bracket-score">{{ m.display_home }}–{{ m.display_away }}</span>
+  {% endif %}
+  {% if m.is_predicted and m.is_finished %}<span class="badge bracket-predicted">Pred</span>{% elif m.is_live %}<span class="badge badge-live bracket-live">LIVE</span>{% elif m.is_finished %}<span class="badge badge-done bracket-ft">FT</span>{% endif %}
+{% if m.id %}
+</a>
+{% else %}
+</div>
+{% endif %}

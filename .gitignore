@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.env
+predictions.db
+.venv/
+venv/
+bin/
+vendor_pypdf/
+data/cloudflare-tunnel.yml
+data/cloudflare-tunnel.env
+data/fifa-squad-lists.pdf

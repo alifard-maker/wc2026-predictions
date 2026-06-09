@@ -1,0 +1,24 @@
+{% macro render_goals(goals, home_team, away_team, compact=false) %}
+{% if goals %}
+<div class="goal-scorers {% if compact %}goal-scorers-compact{% endif %}">
+  <div class="goal-column goal-home">
+    <div class="goal-column-title">{{ home_team }}</div>
+    {% for g in goals if g.team_side == 'home' %}
+    <div class="goal-event">
+      <span class="goal-minute">{{ g.minute_label }}</span>
+      <span class="goal-player">{{ g.scorer_name }}{% if g.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="goal-column goal-away">
+    <div class="goal-column-title">{{ away_team }}</div>
+    {% for g in goals if g.team_side == 'away' %}
+    <div class="goal-event">
+      <span class="goal-minute">{{ g.minute_label }}</span>
+      <span class="goal-player">{{ g.scorer_name }}{% if g.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}

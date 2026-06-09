@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_ai_badge.html" import render_ai_badge with context %}
+{% block title %}{{ pool.name }} — Leaderboard{% endblock %}
+
+{% block content %}
+<section class="hero hero-leaderboard" style="padding-top: 0">
+  <img src="{{ url_for('static', filename='images/world-cup-trophy.png') }}" alt="World Cup prize" class="prize-trophy">
+  <div>
+    <h1 style="text-align: left; margin: 0">Leaderboard</h1>
+    <p style="margin: 0.5rem 0 0; text-align: left">{{ pool.name }} · {{ finished_matches }} / {{ total_matches }} results entered</p>
+    {% if leader_message %}
+    <p style="margin: 0.25rem 0 0; color: var(--accent-2); font-size: 0.95rem">🏆 {{ leader_message }}</p>
+    {% else %}
+    <p style="margin: 0.25rem 0 0; color: var(--muted); font-size: 0.95rem">No standings yet — waiting for first match results</p>
+    {% endif %}
+  </div>
+</section>
+
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Player</th>
+        <th>Total</th>
+        <th>Match</th>
+        <th>Phase</th>
+        <th>Tournament</th>
+        <th>Predictions</th>
+        <th>Exact (5)</th>
+        <th>Result (2)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in leaderboard %}
+      <tr class="{% if row.rank and row.rank <= 3 %}rank-{{ row.rank }}{% endif %}">
+        <td>{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</td>
+        <td>
+          <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>
+          {% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}
+        </td>
+        <td><strong>{{ row.total_points }}</strong></td>
+        <td>{{ row.match_points }}</td>
+        <td>{% if row.phase_bonus_points %}{{ row.phase_bonus_points }}{% else %}—{% endif %}</td>
+        <td>{% if row.tournament_points %}{{ row.tournament_points }}{% else %}—{% endif %}</td>
+        <td>{{ row.predictions_made }}</td>
+        <td>{{ row.exact_scores }}</td>
+        <td>{{ row.correct_results }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" style="color: var(--muted); text-align: center">No players yet — share the invite link!</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% set awarded_phases = phase_bonus.phases | selectattr('winners') | list %}
+{% if awarded_phases %}
+<div class="card" style="margin-top: 1.5rem">
+  <h3>Phase prediction awards</h3>
+  <p class="muted-inline" style="margin: 0 0 1rem">+{{ phase_bonus_pts }} pts to whoever scored most match points across each completed phase (ties share the bonus).</p>
+  <ul class="rules compact-list">
+    {% for phase in awarded_phases %}
+    <li>
+      <strong>{{ phase.label }}</strong> —
+      {% for w in phase.winners %}
+        {{ w.display_name }} ({{ w.phase_points }} pts){% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<p style="color: var(--muted); margin-top: 1.5rem; text-align: center">
+  Match points update when results are entered. Bold picks earn 2× (10 for exact, 4 for result).
+  Phase bonus +{{ phase_bonus_pts }} each for group stage, R32, R16, QF, and SF.
+  Tournament bonus: winner 50 · 2nd 25 · 3rd 15 · top scorer 25.
+</p>
+{% endblock %}

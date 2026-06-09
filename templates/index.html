@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}WC 2026 Predictions — Home{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <img src="{{ url_for('static', filename='images/world-cup-trophy.png') }}" alt="FIFA World Cup trophy" class="hero-trophy">
+  <h1>World Cup 2026 Predictions</h1>
+  <p>Predict scores with your friends — and compete against <strong>Cursor AI</strong>, <strong>ChatGPT</strong>, <strong>Gemini</strong>, <strong>Grok</strong>, and <strong>Claude</strong> in every pool. Exact score = 5 pts · Correct result = 2 pts · Wrong = 0.</p>
+</section>
+
+<div class="card-grid">
+  <div class="card">
+    <h2>Create a Pool</h2>
+    <p style="color: var(--muted)">Start a private prediction league and invite up to 100 friends.</p>
+    <form method="post" action="{{ url_for('create_pool') }}">
+      <label for="pool_name">Pool name</label>
+      <input type="text" id="pool_name" name="pool_name" placeholder="e.g. Office World Cup" required maxlength="60">
+      <button type="submit" class="btn btn-primary">Create Pool</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Join a Pool</h2>
+    <p style="color: var(--muted)">Got an invite link from a friend? Paste the code below.</p>
+    <form method="get" action="" onsubmit="event.preventDefault(); const c=document.getElementById('invite_code').value.trim(); if(c) window.location='/join/'+c;">
+      <label for="invite_code">Invite code</label>
+      <input type="text" id="invite_code" name="invite_code" placeholder="Paste code from invite link" required>
+      <button type="submit" class="btn btn-secondary">Join Pool</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 2rem">
+  <h3>Scoring Rules</h3>
+  <ul class="rules">
+    <li><strong>5 points</strong> — Exact score predicted correctly</li>
+    <li><strong>2 points</strong> — Correct result (win/draw) but wrong score</li>
+    <li><strong>0 points</strong> — Wrong result</li>
+    <li>All <strong>72 group-stage matches</strong> are pre-loaded. Knockout rounds added as teams are confirmed.</li>
+    <li>Predictions must be submitted at least <strong>24 hours</strong> before kickoff.</li>
+    <li><strong>Tournament picks</strong> (top scorer, winner, 2nd & 3rd) lock <strong>1 minute before</strong> the opening match on 11 June 2026.</li>
+    <li><strong>Tournament bonus:</strong> correct winner <strong>50</strong> · 2nd place <strong>25</strong> · 3rd place <strong>15</strong> · top scorer <strong>25</strong></li>
+  </ul>
+</div>
+{% endblock %}

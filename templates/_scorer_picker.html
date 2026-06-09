@@ -1,0 +1,130 @@
+{% macro scorer_picker(field_name, picker_id, selected, squads_data, allow_other=false) %}
+<label for="{{ picker_id }}-team">Top goal scorer</label>
+<p class="scorer-picker-hint">Choose a national team, then pick a player — exact squad names count for bonus points.</p>
+
+<div class="scorer-picker-steps" id="{{ picker_id }}-wrap">
+  <div class="scorer-picker-step">
+    <label for="{{ picker_id }}-team">National team</label>
+    <input type="search" class="scorer-picker-filter" id="{{ picker_id }}-team-filter" placeholder="Filter countries…" autocomplete="off">
+    <select id="{{ picker_id }}-team" class="scorer-team-select" size="8">
+      <option value="">Select country…</option>
+      {% for team in squads_data.teams %}
+      <option value="{{ team }}">{{ team }}</option>
+      {% endfor %}
+      {% if allow_other %}
+      <option value="__other__">Other — type name below</option>
+      {% endif %}
+    </select>
+  </div>
+  <div class="scorer-picker-step">
+    <label for="{{ picker_id }}">Player</label>
+    <select id="{{ picker_id }}" name="{{ field_name }}" required class="scorer-player-select" size="8" disabled>
+      <option value="">Pick a country first…</option>
+    </select>
+  </div>
+</div>
+
+{% if allow_other %}
+<label for="{{ picker_id }}-custom" class="scorer-custom-label hidden" id="{{ picker_id }}-custom-label">Custom name</label>
+<input type="text" id="{{ picker_id }}-custom" name="{{ field_name }}_custom" maxlength="60"
+       class="scorer-custom-input hidden" placeholder="Official scorer name">
+{% endif %}
+
+<script type="application/json" id="{{ picker_id }}-data">{{ squads_data | tojson }}</script>
+<script>
+(function() {
+  const pickerId = {{ picker_id | tojson }};
+  const selectedPlayer = {{ selected | tojson }};
+  const allowOther = {{ allow_other | tojson }};
+
+  const dataEl = document.getElementById(pickerId + '-data');
+  const teamSelect = document.getElementById(pickerId + '-team');
+  const playerSelect = document.getElementById(pickerId);
+  const teamFilter = document.getElementById(pickerId + '-team-filter');
+  const customInput = document.getElementById(pickerId + '-custom');
+  const customLabel = document.getElementById(pickerId + '-custom-label');
+  if (!dataEl || !teamSelect || !playerSelect) return;
+
+  const data = JSON.parse(dataEl.textContent);
+  const byTeam = data.players_by_team || {};
+  const extras = data.extras || [];
+
+  function setCustomVisible(show) {
+    if (!customInput) return;
+    customInput.classList.toggle('hidden', !show);
+    if (customLabel) customLabel.classList.toggle('hidden', !show);
+    customInput.required = show;
+    playerSelect.required = !show;
+    if (show) {
+      playerSelect.disabled = false;
+      playerSelect.innerHTML = '<option value="__other__" selected>Other — enter below</option>';
+      playerSelect.value = '__other__';
+    }
+  }
+
+  function fillPlayers(team) {
+    if (team === '__other__') {
+      setCustomVisible(true);
+      return;
+    }
+    setCustomVisible(false);
+    playerSelect.innerHTML = '<option value="">Select player…</option>';
+    const players = byTeam[team] || [];
+    players.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      playerSelect.appendChild(opt);
+    });
+    if (extras.length) {
+      const og = document.createElement('optgroup');
+      og.label = 'Saved picks';
+      extras.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        og.appendChild(opt);
+      });
+      playerSelect.appendChild(og);
+    }
+    playerSelect.disabled = !team;
+  }
+
+  teamSelect.addEventListener('change', () => fillPlayers(teamSelect.value));
+
+  if (teamFilter) {
+    teamFilter.addEventListener('input', () => {
+      const q = teamFilter.value.trim().toLowerCase();
+      Array.from(teamSelect.options).forEach(opt => {
+        if (!opt.value) return;
+        opt.hidden = q ? !opt.textContent.toLowerCase().includes(q) : false;
+      });
+    });
+  }
+
+  if (selectedPlayer) {
+    if (extras.includes(selectedPlayer)) {
+      teamSelect.value = data.teams[0] || '';
+      fillPlayers(teamSelect.value);
+      playerSelect.value = selectedPlayer;
+    } else {
+      let found = false;
+      for (const team of data.teams) {
+        if ((byTeam[team] || []).includes(selectedPlayer)) {
+          teamSelect.value = team;
+          fillPlayers(team);
+          playerSelect.value = selectedPlayer;
+          found = true;
+          break;
+        }
+      }
+      if (!found && allowOther && customInput) {
+        teamSelect.value = '__other__';
+        setCustomVisible(true);
+        customInput.value = selectedPlayer;
+      }
+    }
+  }
+})();
+</script>
+{% endmacro %}

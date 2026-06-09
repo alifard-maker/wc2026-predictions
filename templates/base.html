@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1a12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>{% block title %}WC 2026 Predictions{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='pool-urls.js') }}"></script>
+</head>
+<body{% if session.get('invite_code') %} data-pool-code="{{ session.invite_code }}"{% endif %} data-team-slugs='{{ team_slugs_json | e }}'>
+  <div id="maintenance-overlay" class="maintenance-overlay hidden" role="alert" aria-live="assertive">
+    <div class="maintenance-overlay-card">
+      <div class="maintenance-icon">⚽</div>
+      <h2>Quick update in progress</h2>
+      <p>We&rsquo;re deploying improvements. Please try again in about <strong>5 minutes</strong>.</p>
+      <p class="maintenance-hint">This message will disappear when the server is back.</p>
+    </div>
+  </div>
+  <div class="top-banners" id="top-banners">
+  <div id="wc-countdown" class="wc-countdown" data-kickoff="{{ opening_kickoff_iso }}">
+    <span class="countdown-label">⏱ Opening match</span>
+    <span id="countdown-timer" class="countdown-timer">Loading…</span>
+    <span class="countdown-match">Mexico vs South Africa · 11 Jun 2026, 15:00 ET</span>
+  </div>
+
+  {% if session.get('invite_code') and session.get('user_id') %}
+  <a href="{% if match_spotlight %}{{ url_for('match_detail', invite_code=session.invite_code, match_id=match_spotlight.match_id) }}{% else %}#{% endif %}"
+     class="spotlight-banner{% if not match_spotlight %} hidden{% endif %}" id="spotlight-banner" title="View match picks">
+    <span class="ticker-label">🎯 Result</span>
+    <div class="spotlight-body" id="spotlight-body">
+      {% if match_spotlight %}
+      <span class="spotlight-score">{{ match_spotlight.home_team }} {{ match_spotlight.display_home }}–{{ match_spotlight.display_away }} {{ match_spotlight.away_team }}</span>
+      <span class="spotlight-sep">—</span>
+      <span class="spotlight-winners">
+        {% if match_spotlight.correct_predictors %}
+        {% for p in match_spotlight.correct_predictors %}
+        <span class="spotlight-chip{% if p.points == 5 %} spotlight-exact{% endif %}">{{ p.display_name }}{% if p.user_id == session.user_id %} (you){% endif %} +{{ p.points }}</span>
+        {% endfor %}
+        {% else %}
+        <span class="spotlight-empty">No correct picks in your pool</span>
+        {% endif %}
+      </span>
+      {% endif %}
+    </div>
+  </a>
+  <a href="{{ url_for('tournament_page', invite_code=session.invite_code) }}" class="tournament-vote-bar hidden" id="tournament-vote-bar" title="Submit tournament picks">
+    <span class="countdown-label">🏆 Tournament picks</span>
+    <span id="tournament-vote-missing" class="countdown-match"></span>
+    <span id="tournament-vote-timer" class="countdown-timer">—</span>
+    <span id="tournament-vote-deadline" class="countdown-match"></span>
+  </a>
+  <a href="{{ url_for('comments_page', invite_code=session.invite_code) }}" class="comment-ticker" id="comment-ticker" title="View all comments">
+    <span class="ticker-label">💬 Live</span>
+    <div class="ticker-wrap">
+      <div class="ticker-track" id="ticker-track">
+        <div class="ticker-content" id="ticker-content"></div>
+        <div class="ticker-content" id="ticker-content-dup" aria-hidden="true"></div>
+      </div>
+    </div>
+  </a>
+  <a href="{{ url_for('pool_dashboard', invite_code=session.invite_code) }}" class="comment-ticker prediction-ticker" id="prediction-ticker" title="View matches">
+    <span class="ticker-label">⚽ Picks</span>
+    <div class="ticker-wrap">
+      <div class="ticker-track" id="prediction-ticker-track">
+        <div class="ticker-content" id="prediction-ticker-content"></div>
+        <div class="ticker-content" id="prediction-ticker-content-dup" aria-hidden="true"></div>
+      </div>
+    </div>
+  </a>
+  {% endif %}
+  </div>
+
+  <div class="container page-content">
+    <header class="site-header">
+      <a href="{{ url_for('index') }}" class="logo" title="WC 2026 Predictions home" aria-label="WC 2026 Predictions home">
+        <img src="{{ url_for('static', filename='images/world-cup-trophy.png') }}" alt="" class="logo-trophy" width="48" height="48">
+      </a>
+      {% if session.get('invite_code') or session.get('display_name') %}
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="main-nav">
+        <span class="nav-toggle-bar"></span>
+        <span class="nav-toggle-bar"></span>
+        <span class="nav-toggle-bar"></span>
+      </button>
+      {% endif %}
+      <nav id="main-nav" class="site-nav">
+        {% if session.get('invite_code') %}
+          <a href="{{ url_for('pool_dashboard', invite_code=session.invite_code) }}">Matches</a>
+          <a href="{{ url_for('tournament_page', invite_code=session.invite_code) }}">Tournament</a>
+          <a href="{{ url_for('standings_page', invite_code=session.invite_code) }}">Standings</a>
+          <a href="{{ url_for('recaps_page', invite_code=session.invite_code) }}">Recaps</a>
+          <a href="{{ url_for('leaderboard_page', invite_code=session.invite_code) }}">Leaderboard</a>
+          <a href="{{ url_for('scorers_page', invite_code=session.invite_code) }}">Scorers</a>
+          <a href="{{ url_for('cards_page', invite_code=session.invite_code) }}">Cards</a>
+          <a href="{{ url_for('my_stats_page', invite_code=session.invite_code) }}">My Stats</a>
+          <a href="{{ url_for('comments_page', invite_code=session.invite_code) }}" id="nav-comments">
+            Comments <span id="comment-badge" class="nav-badge hidden">0</span>
+          </a>
+          <a href="{{ url_for('admin_page', invite_code=session.invite_code) }}">Admin</a>
+          <a href="{{ url_for('guide_page', invite_code=session.invite_code) }}#invite">Invite</a>
+          <a href="{{ url_for('guide_page', invite_code=session.invite_code) }}">Guide</a>
+        {% endif %}
+        {% if session.get('display_name') %}
+          <span class="nav-user">{{ session.display_name }}</span>
+          <a href="{{ url_for('logout') }}">Logout</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+  {% block scripts %}{% endblock %}
+  {% if session.get('invite_code') and session.get('user_id') %}
+  <script>
+    (function() {
+      const feedUrl = "{{ url_for('comments_feed', invite_code=session.invite_code) }}";
+      const badge = document.getElementById('comment-badge');
+      const ticker = document.getElementById('comment-ticker');
+      const tickerContent = document.getElementById('ticker-content');
+      const tickerDup = document.getElementById('ticker-content-dup');
+      const tickerTrack = document.getElementById('ticker-track');
+      let lastUnread = 0;
+
+      function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+      }
+
+      function buildTickerItems(comments) {
+        if (!comments.length) {
+          return '<span class="ticker-item ticker-empty">No comments yet — tap here to start the chat!</span>';
+        }
+        return comments.map(c =>
+          `<span class="ticker-item"><strong>${escapeHtml(c.display_name)}:</strong> ${escapeHtml(c.body)}</span>`
+        ).join('<span class="ticker-sep">•</span>');
+      }
+
+      function updateTicker(comments) {
+        if (!tickerContent) return;
+        const html = buildTickerItems(comments);
+        tickerContent.innerHTML = html;
+        if (tickerDup) tickerDup.innerHTML = html;
+        if (tickerTrack) {
+          tickerTrack.classList.toggle('ticker-paused', comments.length === 0);
+        }
+      }
+
+      async function checkComments() {
+        const res = await fetch(feedUrl);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (badge) {
+          badge.textContent = data.unread;
+          badge.classList.toggle('hidden', data.unread === 0);
+        }
+        updateTicker(data.comments.slice().reverse());
+        if (data.unread > lastUnread && data.unread > 0 && document.hidden && Notification.permission === 'granted') {
+          new Notification('WC 2026 Predictions', {
+            body: data.unread === 1 ? 'New comment in your pool!' : data.unread + ' new comments in your pool!',
+          });
+        }
+        lastUnread = data.unread;
+      }
+
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+
+      checkComments();
+      setInterval(checkComments, 30000);
+    })();
+
+    (function() {
+      const feedUrl = "{{ url_for('predictions_feed', invite_code=session.invite_code) }}";
+      const content = document.getElementById('prediction-ticker-content');
+      const dup = document.getElementById('prediction-ticker-content-dup');
+      const track = document.getElementById('prediction-ticker-track');
+
+      function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+      }
+
+      function buildItems(recent, predictors) {
+        if (recent.length) {
+          return recent.map(p =>
+            `<span class="ticker-item"><strong>${escapeHtml(p.display_name)}</strong> picked ` +
+            `${escapeHtml(p.home_team)} ${p.home_score}–${p.away_score} ${escapeHtml(p.away_team)}</span>`
+          ).join('<span class="ticker-sep">•</span>');
+        }
+        if (predictors.length) {
+          return predictors.map(p =>
+            `<span class="ticker-item"><strong>${escapeHtml(p.display_name)}</strong> has ${p.prediction_count} prediction${p.prediction_count === 1 ? '' : 's'}</span>`
+          ).join('<span class="ticker-sep">•</span>');
+        }
+        return '<span class="ticker-item ticker-empty">No predictions yet — tap here to enter yours!</span>';
+      }
+
+      function updateTicker(recent, predictors) {
+        if (!content) return;
+        const html = buildItems(recent, predictors);
+        content.innerHTML = html;
+        if (dup) dup.innerHTML = html;
+        if (track) track.classList.toggle('ticker-paused', !recent.length && !predictors.length);
+      }
+
+      async function checkPredictions() {
+        const res = await fetch(feedUrl);
+        if (!res.ok) return;
+        const data = await res.json();
+        updateTicker(data.recent, data.predictors);
+      }
+
+      checkPredictions();
+      setInterval(checkPredictions, 30000);
+    })();
+
+    (function() {
+      const banner = document.getElementById('spotlight-banner');
+      const body = document.getElementById('spotlight-body');
+      const liveUrl = "{{ url_for('matches_live_feed', invite_code=session.invite_code) }}";
+
+      function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+      }
+
+      function renderSpotlight(spotlight) {
+        if (!banner || !body) return;
+        if (!spotlight) {
+          banner.classList.add('hidden');
+          banner.href = '#';
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          return;
+        }
+        banner.classList.remove('hidden');
+        banner.href = poolMatchUrl(spotlight.match_id);
+        const chips = (spotlight.predictors || []).map(p =>
+          `<span class="spotlight-chip${p.points === 5 ? ' spotlight-exact' : ''}">` +
+          `${escapeHtml(p.display_name)}${p.is_you ? ' (you)' : ''} +${p.points}</span>`
+        ).join('');
+        body.innerHTML =
+          `<span class="spotlight-score">${escapeHtml(spotlight.home_team)} ${spotlight.display_home}–${spotlight.display_away} ${escapeHtml(spotlight.away_team)}</span>` +
+          `<span class="spotlight-sep">—</span>` +
+          `<span class="spotlight-winners">${chips || '<span class="spotlight-empty">No correct picks in your pool</span>'}</span>`;
+        if (typeof updateBannerOffset === 'function') updateBannerOffset();
+      }
+
+      async function refreshSpotlight() {
+        const res = await fetch(liveUrl);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderSpotlight(data.spotlight);
+      }
+
+      refreshSpotlight();
+      setInterval(refreshSpotlight, 30000);
+    })();
+  </script>
+  {% endif %}
+
+  {% if session.get('invite_code') and session.get('user_id') %}
+  <script>
+    (function() {
+      const bar = document.getElementById('tournament-vote-bar');
+      const missingEl = document.getElementById('tournament-vote-missing');
+      const timerEl = document.getElementById('tournament-vote-timer');
+      const deadlineEl = document.getElementById('tournament-vote-deadline');
+      const url = "{{ url_for('tournament_vote_feed', invite_code=session.invite_code) }}";
+      let deadline = null;
+
+      function tickVote() {
+        if (!deadline || !bar) return;
+        const diff = deadline - new Date();
+        if (diff <= 0) {
+          timerEl.textContent = 'LOCKED';
+          timerEl.style.color = 'var(--danger)';
+          return;
+        }
+        const d = Math.floor(diff / 86400000);
+        const h = Math.floor((diff % 86400000) / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        timerEl.textContent = `${d}d ${h}h ${m}m ${s}s`;
+        timerEl.style.color = '';
+      }
+
+      async function refreshTournamentVote() {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.show_reminder) {
+          bar.classList.add('hidden');
+          deadline = null;
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          return;
+        }
+        bar.classList.remove('hidden');
+        missingEl.textContent = 'Still needed: ' + (data.missing || []).join(' · ');
+        deadlineEl.textContent = `Locks ${data.deadline_display}`;
+        deadline = new Date(data.deadline);
+        tickVote();
+        if (typeof updateBannerOffset === 'function') updateBannerOffset();
+      }
+
+      refreshTournamentVote();
+      setInterval(tickVote, 1000);
+      setInterval(refreshTournamentVote, 60000);
+    })();
+  </script>
+  {% endif %}
+
+  <script>
+    (function() {
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      function updateDeadlineUrgency() {
+        document.querySelectorAll('.badge-deadline-track[data-deadline]').forEach(el => {
+          const diff = new Date(el.dataset.deadline) - new Date();
+          el.classList.toggle('badge-open-urgent', diff > 0 && diff <= ONE_HOUR_MS);
+        });
+      }
+      updateDeadlineUrgency();
+      setInterval(updateDeadlineUrgency, 15000);
+    })();
+  </script>
+  <script>
+    (function() {
+      const overlay = document.getElementById('maintenance-overlay');
+      let failures = 0;
+
+      async function checkHealth() {
+        try {
+          const res = await fetch('/health', { cache: 'no-store' });
+          if (res.ok) {
+            failures = 0;
+            overlay?.classList.add('hidden');
+            return;
+          }
+          if (res.status === 503) {
+            failures = 3;
+            overlay?.classList.remove('hidden');
+          }
+        } catch (_) {
+          failures += 1;
+          if (failures >= 2) overlay?.classList.remove('hidden');
+        }
+      }
+
+      checkHealth();
+      setInterval(checkHealth, 15000);
+    })();
+  </script>
+  <script>
+    (function() {
+      const bar = document.getElementById('wc-countdown');
+      const timer = document.getElementById('countdown-timer');
+      if (!bar || !timer) return;
+      const kickoff = new Date(bar.dataset.kickoff);
+
+      function tick() {
+        const diff = kickoff - new Date();
+        if (diff <= 0) {
+          bar.classList.add('hidden');
+          document.body.classList.add('wc-started');
+          return;
+        }
+        const d = Math.floor(diff / 86400000);
+        const h = Math.floor((diff % 86400000) / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        timer.textContent = `${d}d ${h}h ${m}m ${s}s`;
+      }
+      tick();
+      setInterval(tick, 1000);
+      updateBannerOffset();
+    })();
+
+    function updateBannerOffset() {
+      const stack = document.getElementById('top-banners');
+      if (!stack) return;
+      let h = 0;
+      stack.querySelectorAll(':scope > *').forEach(el => {
+        if (!el.classList.contains('hidden') && el.offsetParent !== null) {
+          h += el.offsetHeight;
+        }
+      });
+      document.documentElement.style.setProperty('--top-banners-height', h + 'px');
+    }
+
+    const bannerStack = document.getElementById('top-banners');
+    if (bannerStack) {
+      const ro = new ResizeObserver(updateBannerOffset);
+      ro.observe(bannerStack);
+      bannerStack.querySelectorAll(':scope > *').forEach(el => ro.observe(el));
+      document.getElementById('tournament-vote-bar')?.addEventListener('transitionend', updateBannerOffset);
+      setInterval(updateBannerOffset, 2000);
+      updateBannerOffset();
+    }
+
+    (function() {
+      const toggle = document.getElementById('nav-toggle');
+      const nav = document.getElementById('main-nav');
+      if (!toggle || !nav) return;
+      toggle.addEventListener('click', () => {
+        const open = nav.classList.toggle('nav-open');
+        toggle.classList.toggle('nav-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      });
+      nav.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          nav.classList.remove('nav-open');
+          toggle.classList.remove('nav-open');
+          toggle.setAttribute('aria-expanded', 'false');
+          toggle.setAttribute('aria-label', 'Open menu');
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

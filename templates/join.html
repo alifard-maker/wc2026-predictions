@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ pool.name }} — Join{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0">
+  <h1>{{ pool.name }}</h1>
+  <p>{{ user_count }} / {{ max_users }} players joined</p>
+</section>
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Invite your friends</h3>
+  <p style="color: var(--muted)">Share this link — anyone with it can join your pool:</p>
+  <div class="invite-box" id="invite-url">{{ invite_url_for(pool.invite_code) }}</div>
+  {% if not public_base_url() or 'localhost' in public_base_url() or '127.0.0.1' in public_base_url() %}
+  <p class="flash error" style="margin-top: 1rem">This link only works on <strong>your computer</strong>. Friends need a public URL — run <code>./share.sh</code> in Terminal and set <code>PUBLIC_URL</code> to the URL it prints.</p>
+  {% endif %}
+  <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('invite-url').textContent); this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy link', 2000)">Copy link</button>
+</div>
+
+{% if logged_in %}
+<div class="card">
+  <p>You're logged in as <strong>{{ display_name }}</strong>.</p>
+  <a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}" class="btn btn-primary">Go to Matches</a>
+</div>
+{% else %}
+<div class="card" style="max-width: 420px; margin: 0 auto">
+  <h2>Join or return</h2>
+  <p style="color: var(--muted)">Pick a <strong>unique name</strong> in this pool. Names are shared — if you enter a name that's already taken, you'll sign in as that player and see their predictions.</p>
+  <p style="color: var(--muted); font-size: 0.9rem">Returning on a new device? Use your <strong>exact same name</strong> to restore your picks. New player? Add something unique (e.g. <em>Alex M.</em>).</p>
+  <form method="post">
+    <label for="display_name">Your name</label>
+    <input type="text" id="display_name" name="display_name" placeholder="e.g. Alex" required maxlength="40" autofocus>
+    <button type="submit" class="btn btn-primary">Continue</button>
+  </form>
+  {% if existing_players %}
+  <p style="color: var(--muted); font-size: 0.9rem; margin-top: 1rem">
+    Players in this pool: {{ existing_players | map(attribute='display_name') | join(', ') }}
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if session.get('admin_secret') == pool.admin_secret %}
+<div class="card" style="margin-top: 2rem; border-color: var(--accent-2)">
+  <h3>🔑 Admin credentials</h3>
+  <p style="color: var(--muted)">Save this — you'll need it to enter match results:</p>
+  <div class="invite-box">{{ pool.admin_secret }}</div>
+  <a href="{{ url_for('admin_page', invite_code=pool.invite_code) }}" class="btn btn-gold">Open Admin Panel</a>
+</div>
+{% endif %}
+{% endblock %}

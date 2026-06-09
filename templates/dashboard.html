@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% from "_goal_scorers.html" import render_goals %}
+{% from "_team_flag.html" import team_with_flag with context %}
+{% from "_ai_badge.html" import render_ai_badge with context %}
+{% block title %}{{ pool.name }} — Matches{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0; text-align: left">
+  <h1 style="text-align: left">{{ pool.name }}</h1>
+  <p style="margin: 0; text-align: left">Logged in as <strong>{{ session.display_name }}</strong></p>
+</section>
+
+{% if tournament_vote.show_reminder %}
+<div class="card tournament-vote-card" id="dashboard-tournament-vote" data-deadline="{{ tournament_vote.deadline }}">
+  <h3>🏆 Tournament picks due</h3>
+  <p style="margin: 0.25rem 0 0.75rem">
+    Submit your <strong>top scorer</strong>, <strong>winner</strong>, <strong>2nd place</strong>, and <strong>3rd place</strong> before the tournament starts.
+  </p>
+  {% if tournament_vote.missing %}
+  <p style="color: var(--accent-2); margin: 0 0 0.75rem">
+    Still missing: {{ tournament_vote.missing | join(' · ') }}
+  </p>
+  {% endif %}
+  <div class="prediction-countdown-timer" id="dashboard-tournament-timer">Loading…</div>
+  <p style="color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0 0">
+    Locks at <strong>{{ tournament_vote.deadline_display }}</strong> (1 minute before kickoff)
+  </p>
+  <a href="{{ url_for('tournament_page', invite_code=pool.invite_code) }}" class="btn btn-gold" style="margin-top: 1rem">Enter tournament picks →</a>
+</div>
+{% endif %}
+
+{% if next_prediction %}
+<div class="card prediction-urgency-card" id="dashboard-prediction-countdown" data-deadline="{{ next_prediction.deadline }}">
+  <h3>⏳ Your next prediction due</h3>
+  <p style="margin: 0.25rem 0 0.75rem">
+    <strong><span class="team home">{{ team_with_flag(next_prediction.home_team, pool.invite_code) }}</span> vs <span class="team away">{{ team_with_flag(next_prediction.away_team, pool.invite_code) }}</span></strong>
+  </p>
+  <div class="prediction-countdown-timer" id="dashboard-prediction-timer">Loading…</div>
+  <p style="color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0 0">
+    Submit by <strong>{{ next_prediction.deadline_display }}</strong> (24 hours before kickoff)
+  </p>
+  <a href="#match-{{ next_prediction.match_id }}" class="btn btn-primary" style="margin-top: 1rem">Go to match</a>
+</div>
+{% elif open_count > 0 and predicted_open == open_count %}
+<div class="card" style="margin-bottom: 2rem; border-color: var(--accent)">
+  <p style="margin: 0; color: var(--accent)">✓ You're all caught up on open predictions!</p>
+</div>
+{% endif %}
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="value">{{ matches|length }}</div>
+    <div class="label">Total matches</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ open_count }}</div>
+    <div class="label">Open for prediction</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ predicted_open }} / {{ open_count }}</div>
+    <div class="label">Open matches predicted</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ leaderboard|length }}</div>
+    <div class="label">Players</div>
+  </div>
+</div>
+
+<div class="card wc-news-card" id="wc-news" style="margin-bottom: 2rem">
+  <div class="wc-news-header">
+    <h3>📰 World Cup news</h3>
+    <span class="wc-news-updated" id="wc-news-updated">{% if wc_news %}Auto-updates every 10 min{% endif %}</span>
+  </div>
+  <ul class="wc-news-list" id="wc-news-list">
+    {% for item in wc_news %}
+    <li>
+      <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+      <span class="wc-news-meta">{{ item.source }}{% if item.published_display %} · {{ item.published_display }}{% endif %}</span>
+    </li>
+    {% else %}
+    <li class="wc-news-empty">Headlines will appear here when news feeds are available.</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Top 5</h3>
+  {% if leader_message %}
+  <p style="color: var(--accent-2); font-size: 0.9rem; margin: 0 0 1rem">🏆 {{ leader_message }}</p>
+  {% elif leaderboard %}
+  <p style="color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem">No standings yet — waiting for first match results</p>
+  {% endif %}
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>#</th><th>Player</th><th>Points</th><th>Exact</th></tr>
+    </thead>
+    <tbody>
+      {% for row in leaderboard[:5] %}
+      <tr class="{% if row.rank and row.rank <= 3 %}rank-{{ row.rank }}{% endif %}">
+        <td>{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</td>
+        <td><a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>{% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}</td>
+        <td><strong>{{ row.total_points }}</strong></td>
+        <td>{{ row.exact_scores }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="color: var(--muted)">No players yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <a href="{{ url_for('leaderboard_page', invite_code=pool.invite_code) }}" style="display: inline-block; margin-top: 1rem">Full leaderboard →</a>
+  <a href="{{ url_for('my_stats_page', invite_code=pool.invite_code) }}" style="display: inline-block; margin-top: 1rem; margin-left: 1rem">My season stats →</a>
+</div>
+
+{% if recaps %}
+<div class="card" style="margin-bottom: 2rem">
+  <h3>📰 Latest matchday recaps</h3>
+  {% for r in recaps %}
+  <div class="recap-teaser">
+    <strong>MD{{ r.matchday }}</strong>
+    {% if r.pick_party.hive_mind %}· 🤝 {{ r.pick_party.hive_mind.pct }}% on {{ r.pick_party.hive_mind.score }}{% endif %}
+    {% if r.pick_party.boldest %}· 🎰 {{ r.pick_party.boldest.player }}{% endif %}
+    {% if r.top_player %}· 👑 {{ r.top_player.name }}{% endif %}
+  </div>
+  {% endfor %}
+  <a href="{{ url_for('recaps_page', invite_code=pool.invite_code) }}" style="display: inline-block; margin-top: 0.75rem">All recaps →</a>
+</div>
+{% endif %}
+
+<h2 class="section-title" id="matches">The Book — All Matches</h2>
+<p class="muted-inline" style="margin: -0.5rem 0 1rem">🎰 Mark one <strong>bold pick</strong> per calendar day (ET) for 2× points (5→10, 2→4)</p>
+
+<div class="filter-tabs" id="matchday-tabs">
+  <button type="button" class="active" data-filter="all">All</button>
+  <button type="button" data-filter="1">Matchday 1</button>
+  <button type="button" data-filter="2">Matchday 2</button>
+  <button type="button" data-filter="3">Matchday 3</button>
+  <button type="button" data-filter="group">By Group</button>
+</div>
+
+<form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
+  <div class="fixture-list">
+    {% for m in matches %}
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
+      <a class="fixture-hit-area" href="{{ match_detail_url(pool.invite_code, m.id) }}" aria-label="Open {{ m.home_team }} vs {{ m.away_team }}"></a>
+      <div class="fixture-meta">
+        {% if m.group_name %}
+        <span class="badge badge-group">Group {{ m.group_name }}</span>
+        {% else %}
+        <span class="badge badge-group">{{ m.stage|replace('_', ' ')|title }}</span>
+        {% endif %}
+        <span>MD{{ m.matchday or '—' }}</span>
+        <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+        <span>{{ m.venue }}</span>
+        {% if m.is_live %}
+        <span class="badge badge-live" data-live-badge="{{ m.id }}">LIVE {{ m.minute_label }} · {{ m.display_home }}–{{ m.display_away }}</span>
+        {% elif m.is_finished %}
+        <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
+        {% elif m.open %}
+        <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+        {% else %}
+        <span class="badge badge-closed">Closed</span>
+        {% endif %}
+        <a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="fixture-match-link" style="margin-left: auto">View match →</a>
+      </div>
+
+      <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
+
+      {% if m.is_live or m.is_finished %}
+      <div class="live-score-display" data-live-score="{{ m.id }}">
+        {{ m.display_home }} – {{ m.display_away }}
+        <div style="font-size:0.75rem;color:var(--muted)">{{ m.minute_label }}</div>
+        <div data-live-goals="{{ m.id }}">{{ render_goals(m.goals, m.home_team, m.away_team, compact=true) }}</div>
+        {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
+        <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
+          <span class="fixture-winners-label">Called it:</span>
+          {% for p in match_spotlight.correct_predictors %}
+          <span class="spotlight-chip{% if p.points == 5 %} spotlight-exact{% endif %}">{{ p.display_name }}{% if p.user_id == session.user_id %} (you){% endif %} +{{ p.points }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% elif m.open %}
+      <div class="score-input-wrap">
+        <div class="score-input">
+          <input type="number" name="home_{{ m.id }}" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="home">
+          <span class="score-dash">–</span>
+          <input type="number" name="away_{{ m.id }}" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="away">
+          <input type="hidden" name="match_{{ m.id }}" id="match_{{ m.id }}" value="{% if m.prediction %}{{ m.prediction.home_score }}-{{ m.prediction.away_score }}{% endif %}">
+        </div>
+        {% set day_key = 'day_' ~ m.match_date %}
+        <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET)">
+          <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}"
+            {% if bold_by_day.get(day_key) == m.id %}checked{% endif %}
+            {% if not m.prediction %}disabled{% endif %}>
+          <span class="bold-pick-toggle-face">🎰 Bold 2×</span>
+        </label>
+      </div>
+      {% elif m.prediction %}
+      <div class="prediction-done">
+        {{ m.prediction.home_score }} – {{ m.prediction.away_score }}
+        {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+        {% if m.prediction.points is not none %}
+        <div class="points-earned">+{{ m.prediction.points }} pts</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="prediction-done" style="color: var(--muted)">—</div>
+      {% endif %}
+
+      <div class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</div>
+      <div></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="save-predictions-bar">
+    <button type="submit" class="btn btn-primary">Save Predictions</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('.score-input input[type="number"]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const id = inp.dataset.match;
+      const home = document.querySelector(`input[data-match="${id}"][data-side="home"]`).value;
+      const away = document.querySelector(`input[data-match="${id}"][data-side="away"]`).value;
+      const hidden = document.getElementById('match_' + id);
+      if (home !== '' && away !== '') hidden.value = home + '-' + away;
+      const boldRadio = document.querySelector(`input[type="radio"][name^="bold_match_"][value="${id}"]`);
+      if (boldRadio) boldRadio.disabled = !(home !== '' && away !== '');
+    });
+  });
+
+  const tabs = document.getElementById('matchday-tabs');
+  tabs.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const f = btn.dataset.filter;
+      document.querySelectorAll('.fixture').forEach(el => {
+        if (f === 'all') { el.style.display = ''; return; }
+        if (f === 'group') { el.style.display = el.dataset.stage === 'group' ? '' : 'none'; return; }
+        el.style.display = el.dataset.matchday === f ? '' : 'none';
+      });
+    });
+  });
+
+  const tourVote = document.getElementById('dashboard-tournament-vote');
+  if (tourVote) {
+    const dl = new Date(tourVote.dataset.deadline);
+    const timer = document.getElementById('dashboard-tournament-timer');
+    function tickTour() {
+      const diff = dl - new Date();
+      if (diff <= 0) { timer.textContent = 'Locked'; return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      timer.textContent = `${d}d ${h}h ${m}m ${s}s remaining`;
+    }
+    tickTour();
+    setInterval(tickTour, 1000);
+  }
+
+  const dashCountdown = document.getElementById('dashboard-prediction-countdown');
+  if (dashCountdown) {
+    const dl = new Date(dashCountdown.dataset.deadline);
+    const timer = document.getElementById('dashboard-prediction-timer');
+    function tickDash() {
+      const diff = dl - new Date();
+      if (diff <= 0) { timer.textContent = 'Deadline passed'; return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      timer.textContent = `${d}d ${h}h ${m}m ${s}s remaining`;
+    }
+    tickDash();
+    setInterval(tickDash, 1000);
+  }
+
+  const liveUrl = "{{ url_for('matches_live_feed', invite_code=pool.invite_code) }}";
+  function renderWinnerChips(predictors) {
+    return predictors.map(p =>
+      `<span class="spotlight-chip${p.points === 5 ? ' spotlight-exact' : ''}">${p.display_name}${p.is_you ? ' (you)' : ''} +${p.points}</span>`
+    ).join('');
+  }
+
+  function applySpotlight(spotlight) {
+    document.querySelectorAll('.fixture').forEach(el => {
+      el.classList.remove('fixture-spotlight');
+    });
+    document.querySelectorAll('[data-fixture-winners]').forEach(el => el.remove());
+    if (!spotlight) return;
+    const fixture = document.getElementById('match-' + spotlight.match_id);
+    if (fixture) fixture.classList.add('fixture-spotlight');
+    const scoreEl = document.querySelector(`[data-live-score="${spotlight.match_id}"]`);
+    if (scoreEl && spotlight.predictors && spotlight.predictors.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'fixture-winners';
+      wrap.dataset.fixtureWinners = spotlight.match_id;
+      wrap.innerHTML = `<span class="fixture-winners-label">Called it:</span>${renderWinnerChips(spotlight.predictors)}`;
+      scoreEl.appendChild(wrap);
+    }
+  }
+
+  async function refreshLiveScores() {
+    const res = await fetch(liveUrl);
+    if (!res.ok) return;
+    const data = await res.json();
+    applySpotlight(data.spotlight);
+    data.matches.forEach(m => {
+      const badge = document.querySelector(`[data-live-badge="${m.id}"]`);
+      const score = document.querySelector(`[data-live-score="${m.id}"]`);
+      if (m.is_live && badge) {
+        badge.className = 'badge badge-live';
+        badge.textContent = `LIVE ${m.minute_label} · ${m.display_home}–${m.display_away}`;
+      } else if (m.is_finished && badge) {
+        badge.className = 'badge badge-done';
+        badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
+      }
+      if ((m.is_live || m.is_finished) && score) {
+        let goalsHtml = '';
+        if (m.goals && m.goals.length) {
+          const home = m.goals.filter(g => g.team_side === 'home').map(g =>
+            `<div class="goal-event"><span class="goal-minute">${g.minute_label}</span><span class="goal-player">${g.scorer_name}</span></div>`
+          ).join('');
+          const away = m.goals.filter(g => g.team_side === 'away').map(g =>
+            `<div class="goal-event"><span class="goal-minute">${g.minute_label}</span><span class="goal-player">${g.scorer_name}</span></div>`
+          ).join('');
+          goalsHtml = `<div class="goal-scorers goal-scorers-compact"><div class="goal-column goal-home">${home}</div><div class="goal-column goal-away">${away}</div></div>`;
+        }
+        score.innerHTML = `${m.display_home} – ${m.display_away}<div style="font-size:0.75rem;color:var(--muted)">${m.minute_label}</div>${goalsHtml}`;
+      }
+    });
+  }
+  setInterval(refreshLiveScores, 30000);
+  refreshLiveScores();
+
+  (function() {
+    const listEl = document.getElementById('wc-news-list');
+    const updatedEl = document.getElementById('wc-news-updated');
+    const feedUrl = "{{ url_for('wc_news_feed', invite_code=pool.invite_code) }}";
+    if (!listEl || !feedUrl) return;
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function renderNews(data) {
+      if (!data.items || !data.items.length) {
+        listEl.innerHTML = '<li class="wc-news-empty">No headlines right now — check back soon.</li>';
+        return;
+      }
+      listEl.innerHTML = data.items.map(item =>
+        `<li><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` +
+        `<span class="wc-news-meta">${esc(item.source || '')}` +
+        (item.published_display ? ` · ${esc(item.published_display)}` : '') +
+        `</span></li>`
+      ).join('');
+      if (updatedEl) {
+        updatedEl.textContent = data.fetched_at
+          ? `Updated ${new Date(data.fetched_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · every 10 min`
+          : 'Auto-updates every 10 min';
+      }
+    }
+
+    async function refreshNews() {
+      try {
+        const res = await fetch(feedUrl, { cache: 'no-store' });
+        if (!res.ok) return;
+        renderNews(await res.json());
+      } catch (_) {}
+    }
+
+    setInterval(refreshNews, 600000);
+  })();
+</script>
+{% endblock %}

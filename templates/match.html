@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% from "_goal_scorers.html" import render_goals %}
+{% from "_team_flag.html" import team_with_flag with context %}
+{% from "_ai_badge.html" import render_ai_badge with context %}
+{% from "_comment_emoji_picker.html" import comment_emoji_picker %}
+{% block title %}{{ match.home_team }} vs {{ match.away_team }}{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Back to matches</a>
+
+<div class="card watch-party-card" style="margin-top: 1.5rem" id="watch-party">
+  <div class="fixture-meta" style="margin-bottom: 1rem">
+    {% if match.group_name %}
+    <span class="badge badge-group">Group {{ match.group_name }}</span>
+    {% endif %}
+    {% if match.is_live %}
+    <span class="badge badge-live" id="match-status-badge">LIVE {{ match.minute_label }}</span>
+    {% elif match.is_finished %}
+    <span class="badge badge-done" id="match-status-badge">Full time</span>
+    {% elif match.open %}
+    <span class="badge badge-open badge-deadline-track{% if match.deadline_urgent %} badge-open-urgent{% endif %}" id="match-status-badge" data-deadline="{{ match.deadline.isoformat() }}">Open until {{ match.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+    {% else %}
+    <span class="badge badge-closed" id="match-status-badge">Closed</span>
+    {% endif %}
+    <span>{{ match.kickoff.strftime('%A %d %B %Y, %H:%M') }} ET</span>
+    <span>{{ match.venue }}</span>
+  </div>
+
+  <h1 style="text-align: center; margin: 1rem 0; display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap">
+    <span class="team home">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
+    <span id="match-score" style="color: var(--accent-2)">
+      {% if match.is_live or match.is_finished %}{{ match.display_home }} – {{ match.display_away }}{% else %}vs{% endif %}
+    </span>
+    <span class="team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
+  </h1>
+
+  <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label }}</p>
+
+  <div id="match-goals-wrap">{{ render_goals(goals, match.home_team, match.away_team) }}</div>
+
+  {% if match.prediction %}
+  <p style="text-align: center; color: var(--muted)">
+    Your prediction: <strong>{{ match.prediction.home_score }} – {{ match.prediction.away_score }}</strong>
+    {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
+    {% if match.prediction.points is not none %} · <span class="points-earned">+{{ match.prediction.points }} pts</span>{% endif %}
+  </p>
+  {% endif %}
+
+  {% if can_bold %}
+  <form method="post" action="{{ url_for('set_bold_pick_route', invite_code=pool.invite_code) }}" class="bold-pick-form">
+    <input type="hidden" name="match_id" value="{{ match.id }}">
+    <button type="submit" class="btn {% if is_bold_pick %}btn-gold{% else %}btn-secondary{% endif %}">
+      {% if is_bold_pick %}🎰 Bold pick active (2×){% else %}🎰 Make this your bold pick{% endif %}
+    </button>
+    <span class="muted-inline">One bold per calendar day (ET) — double points if you're right</span>
+  </form>
+  {% endif %}
+
+  {% if consensus.total %}
+  <div class="consensus-bar" id="consensus-bar">
+    <span class="consensus-label">Pool consensus ({{ consensus.total }} picks)</span>
+    <div class="consensus-track">
+      <div class="consensus-home" style="width: {{ consensus.home_win_pct }}%" title="Home win">{{ consensus.home_win_pct }}%</div>
+      <div class="consensus-draw" style="width: {{ consensus.draw_pct }}%" title="Draw">{{ consensus.draw_pct }}%</div>
+      <div class="consensus-away" style="width: {{ consensus.away_win_pct }}%" title="Away win">{{ consensus.away_win_pct }}%</div>
+    </div>
+    <span class="muted-inline">Most popular score: <strong id="popular-score">{{ consensus.popular_score }}</strong> ({{ consensus.popular_count }})</span>
+  </div>
+  {% endif %}
+
+  {% if match.is_finished %}
+  {% set winners = all_predictions | selectattr('points') | selectattr('points', 'ge', 2) | rejectattr('hidden') | list %}
+  {% if winners %}
+  <div class="match-winners-callout" id="match-winners">
+    <strong>🎯 Right outcome{% if winners | length > 1 %}s{% endif %}:</strong>
+    {% for p in winners | sort(attribute='points', reverse=true) %}
+    <span class="spotlight-chip{% if p.points >= 10 %} spotlight-exact{% elif p.points == 5 %} spotlight-exact{% endif %}">{{ p.display_name }}{% if p.user_id == session.user_id %} (you){% endif %} +{{ p.points }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<h2 class="section-title">Everyone's picks {% if not picks_revealed %}<span class="muted-inline">🔒 hidden until deadline</span>{% endif %}</h2>
+<div class="card">
+  <table class="leaderboard-table" id="picks-table">
+    <thead>
+      <tr><th>Player</th><th>Prediction</th><th>Points</th></tr>
+    </thead>
+    <tbody>
+      {% for p in all_predictions %}
+      <tr class="{% if p.points and p.points >= 5 %}pick-exact{% elif p.points and p.points >= 2 %}pick-correct{% endif %}">
+        <td>
+          <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=p.user_id) }}" class="pick-player-link">{{ p.display_name }}</a>
+          {% if p.user_id == session.user_id %} (you){% endif %}
+          {{ render_ai_badge(p.display_name) }}
+          {% if p.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+        </td>
+        <td>
+          {% if p.hidden %}
+          <span class="pick-hidden">🔒 Hidden</span>
+          {% else %}
+          <strong>{{ p.home_score }} – {{ p.away_score }}</strong>
+          {% endif %}
+        </td>
+        <td>{% if p.points is not none %}{{ p.points }}{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" style="color: var(--muted)">No predictions yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if match_context.has_history %}
+<h2 class="section-title">Last meetings</h2>
+<div class="card">
+  <ul class="history-list">
+    {% for h in match_context.history %}
+    <li><strong>{{ h.year }}</strong> — {{ match.home_team }} {{ h.home_score }}–{{ h.away_score }} {{ match.away_team }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% else %}
+<h2 class="section-title">Team info</h2>
+<div class="card">
+  <div class="team-facts-grid">
+    <div class="team-fact-box">
+      <strong>{{ match.home_team }}</strong>
+      <p class="muted-inline" style="margin: 0.5rem 0 0; font-size: 0.9rem">FIFA ~#{{ match_context.home_fact.ranking }} · {{ match_context.home_fact.honour }}</p>
+    </div>
+    <div class="team-fact-box">
+      <strong>{{ match.away_team }}</strong>
+      <p class="muted-inline" style="margin: 0.5rem 0 0; font-size: 0.9rem">FIFA ~#{{ match_context.away_fact.ranking }} · {{ match_context.away_fact.honour }}</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<h2 class="section-title">Match chat</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('comments_page', invite_code=pool.invite_code) }}">
+    <input type="hidden" name="action" value="create">
+    <input type="hidden" name="match_id" value="{{ match.id }}">
+    <div class="comment-compose">
+      {{ comment_emoji_picker() }}
+      <textarea name="body" rows="2" maxlength="500" placeholder="Live reactions for {{ match.home_team }} vs {{ match.away_team }}…" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Post to match thread</button>
+  </form>
+  <div class="comment-list" id="match-comments" style="margin-top: 1rem">
+    {% for c in match_comments %}
+    <div class="comment">
+      <div class="comment-header">
+        <strong>{{ c.display_name }}</strong>
+        <span class="comment-time">{{ c.created_at }}</span>
+      </div>
+      <p class="comment-body">{{ c.body }}</p>
+    </div>
+    {% else %}
+    <p class="muted-inline" id="no-match-comments">No match chat yet — kick it off!</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='comment-emoji.js') }}"></script>
+<script>
+(function() {
+  const feedUrl = "{{ url_for('match_watch_feed', invite_code=pool.invite_code, match_id=match.id) }}";
+  const isLive = {{ 'true' if match.is_live or not match.is_finished else 'false' }};
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  async function refresh() {
+    const res = await fetch(feedUrl);
+    if (!res.ok) return;
+    const data = await res.json();
+    const m = data.match;
+    const scoreEl = document.getElementById('match-score');
+    if (scoreEl && (m.is_live || m.is_finished)) {
+      scoreEl.textContent = `${m.display_home} – ${m.display_away}`;
+    }
+    const minEl = document.getElementById('match-minute');
+    if (minEl && m.is_live) {
+      minEl.style.display = '';
+      minEl.textContent = m.minute_label;
+    }
+    const badge = document.getElementById('match-status-badge');
+    if (badge && m.is_live) {
+      badge.className = 'badge badge-live';
+      badge.textContent = `LIVE ${m.minute_label}`;
+    }
+
+    const tbody = document.querySelector('#picks-table tbody');
+    if (tbody && data.predictions) {
+      tbody.innerHTML = data.predictions.map(p => {
+        const pred = p.hidden
+          ? '<span class="pick-hidden">🔒 Hidden</span>'
+          : `<strong>${p.home_score} – ${p.away_score}</strong>`;
+        const bold = p.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
+        const pts = p.points != null ? p.points : '—';
+        const name = p.user_id
+          ? `<a href="${poolPlayerUrl(p.user_id)}" class="pick-player-link">${esc(p.display_name)}</a>`
+          : esc(p.display_name);
+        return `<tr><td>${name}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
+      }).join('') || '<tr><td colspan="3" style="color:var(--muted)">No predictions yet</td></tr>';
+    }
+
+    const commentsEl = document.getElementById('match-comments');
+    if (commentsEl && data.comments) {
+      if (!data.comments.length) return;
+      document.getElementById('no-match-comments')?.remove();
+      commentsEl.innerHTML = data.comments.map(c =>
+        `<div class="comment"><div class="comment-header"><strong>${esc(c.display_name)}</strong><span class="comment-time">${c.created_at}</span></div><p class="comment-body">${esc(c.body)}</p></div>`
+      ).join('');
+    }
+  }
+
+  if (isLive) {
+    refresh();
+    setInterval(refresh, 20000);
+  }
+})();
+</script>
+{% endblock %}

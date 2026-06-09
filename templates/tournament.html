@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% from "_ai_badge.html" import render_ai_badge with context %}
+{% from "_scorer_picker.html" import scorer_picker %}
+{% block title %}{{ pool.name }} — Tournament Picks{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0; text-align: left">
+  <h1 style="text-align: left">Tournament Picks</h1>
+  <p style="margin: 0; text-align: left">One-time votes before the World Cup kicks off</p>
+</section>
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="value">{{ submitted_count }}</div>
+    <div class="label">Players submitted</div>
+  </div>
+  <div class="stat">
+    <div class="value">{% if vote_open %}Open{% else %}Locked{% endif %}</div>
+    <div class="label">Status</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 2rem">
+  {% if vote_open %}
+  <span class="badge badge-open">Open until {{ deadline.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  <p style="color: var(--muted); margin: 0.75rem 0 1.25rem">
+    Submit before the opening match. You can change your picks until <strong>1 minute before kickoff</strong> (Mexico vs South Africa, 11 June 2026).
+    Other players&rsquo; picks stay hidden until then. {% for agent in ai_agents %}<strong>{{ agent.display_name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %} picks are visible — can you beat the AI?
+  </p>
+  <form method="post">
+    {{ scorer_picker('top_scorer', 'top_scorer', user_vote.top_scorer if user_vote else '', scorer_squads) }}
+
+    <label for="winner">World Cup winner</label>
+    <select id="winner" name="winner" required>
+      <option value="">Select team</option>
+      {% for team in teams %}
+      <option value="{{ team }}" {% if user_vote and user_vote.winner == team %}selected{% endif %}>{{ team }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="second_place">2nd place</label>
+    <select id="second_place" name="second_place" required>
+      <option value="">Select team</option>
+      {% for team in teams %}
+      <option value="{{ team }}" {% if user_vote and user_vote.second_place == team %}selected{% endif %}>{{ team }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="third_place">3rd place</label>
+    <select id="third_place" name="third_place" required>
+      <option value="">Select team</option>
+      {% for team in teams %}
+      <option value="{{ team }}" {% if user_vote and user_vote.third_place == team %}selected{% endif %}>{{ team }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-primary">
+      {% if user_vote %}Update tournament picks{% else %}Save tournament picks{% endif %}
+    </button>
+  </form>
+  {% else %}
+  <span class="badge badge-closed">Locked since {{ deadline.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  {% if user_vote %}
+  <div class="tournament-locked-picks" style="margin-top: 1.25rem">
+    <p><strong>Your locked picks:</strong></p>
+    <ul class="rules">
+      <li><strong>Top scorer:</strong> {{ user_vote.top_scorer }}</li>
+      <li><strong>Winner:</strong> {{ user_vote.winner }}</li>
+      <li><strong>2nd place:</strong> {{ user_vote.second_place }}</li>
+      <li><strong>3rd place:</strong> {{ user_vote.third_place }}</li>
+    </ul>
+  </div>
+  {% else %}
+  <p style="color: var(--danger); margin-top: 1rem">You did not submit tournament picks before the deadline.</p>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% if user_points and user_points.total %}
+<div class="card" style="margin-bottom: 2rem; border-color: var(--accent-2)">
+  <h3>Your tournament bonus: {{ user_points.total }} pts</h3>
+  <ul class="rules">
+    {% if user_points.winner %}<li>Winner correct — <strong>+{{ user_points.winner }}</strong></li>{% endif %}
+    {% if user_points.second_place %}<li>2nd place correct — <strong>+{{ user_points.second_place }}</strong></li>{% endif %}
+    {% if user_points.third_place %}<li>3rd place correct — <strong>+{{ user_points.third_place }}</strong></li>{% endif %}
+    {% if user_points.top_scorer %}<li>Top scorer correct — <strong>+{{ user_points.top_scorer }}</strong></li>{% endif %}
+  </ul>
+</div>
+{% endif %}
+
+{% if results %}
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Official results</h3>
+  <ul class="rules">
+    <li><strong>Winner:</strong> {{ results.winner }}</li>
+    <li><strong>2nd:</strong> {{ results.second_place }}</li>
+    <li><strong>3rd:</strong> {{ results.third_place }}</li>
+    <li><strong>Top scorer:</strong> {{ results.top_scorer }}</li>
+  </ul>
+</div>
+{% endif %}
+
+{% if scorer_board %}
+<h2 class="section-title">Top scorers so far</h2>
+<div class="card" style="margin-bottom: 2rem">
+  {% if user_scorer_pick %}
+  <p style="color: var(--accent-2); margin: 0 0 1rem">
+    Your pick <strong>{{ user_vote.top_scorer }}</strong> —
+    {% if user_scorer_pick.goals %}#{{ user_scorer_pick.rank }} with {{ user_scorer_pick.goals }} goal{{ 's' if user_scorer_pick.goals != 1 else '' }}{% else %}no goals yet{% endif %}
+  </p>
+  {% endif %}
+  <table class="leaderboard-table">
+    <thead><tr><th>#</th><th>Player</th><th>Team</th><th>Goals</th></tr></thead>
+    <tbody>
+      {% for row in scorer_board %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ row.player_name }}</td>
+        <td>{{ row.team }}</td>
+        <td><strong>{{ row.goals }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <a href="{{ url_for('scorers_page', invite_code=pool.invite_code) }}" style="display:inline-block;margin-top:1rem">Full scorers table →</a>
+</div>
+{% endif %}
+
+<h2 class="section-title">Everyone's tournament picks {% if not tournament_picks_revealed %}<span class="muted-inline">🔒 hidden until deadline</span>{% endif %}</h2>
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>Top scorer</th>
+        <th>Winner</th>
+        <th>2nd</th>
+        <th>3rd</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in pool_votes %}
+      <tr>
+        <td>
+          {{ v.display_name }}{% if v.user_id == session.user_id %} (you){% endif %}
+          {{ render_ai_badge(v.display_name) }}
+        </td>
+        {% if v.hidden %}
+        <td colspan="4"><span class="pick-hidden">🔒 Hidden</span></td>
+        {% elif v.top_scorer %}
+        <td>{{ v.top_scorer }}</td>
+        <td>{{ v.winner }}</td>
+        <td>{{ v.second_place }}</td>
+        <td>{{ v.third_place }}</td>
+        {% else %}
+        <td colspan="4" style="color: var(--muted)">Not submitted</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

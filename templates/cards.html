@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ pool.name }} — Cards & Suspensions{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding-top: 0; text-align: left">
+  <h1 style="text-align: left">Cards & Suspensions</h1>
+  <p style="margin: 0; text-align: left">Yellow and red cards — who may miss the next match</p>
+</section>
+
+<div class="card" style="margin-bottom: 2rem">
+  <p style="color: var(--muted); margin: 0">
+    <strong>2 yellows</strong> across matches or a <strong>red card</strong> typically means a one-match suspension.
+  </p>
+</div>
+
+<h2 class="section-title">Player discipline summary</h2>
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr>
+        <th>Player</th>
+        <th>Team</th>
+        <th>🟨</th>
+        <th>🟥</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in card_summary %}
+      <tr>
+        <td><strong>{{ p.player_name }}</strong></td>
+        <td>{{ p.team }}</td>
+        <td>{{ p.yellow_count }}</td>
+        <td>{{ p.red_count }}</td>
+        <td>
+          {% if p.status %}
+          <span class="badge {% if 'Suspended' in p.status %}badge-closed{% else %}badge-open{% endif %}">{{ p.status }}</span>
+          {% else %}
+          <span style="color: var(--muted)">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="color: var(--muted)">No cards recorded yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">All card events</h2>
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>Player</th><th>Team</th><th>Card</th><th>Min</th><th>Match</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for e in card_events %}
+      <tr>
+        <td><strong>{{ e.player_name }}</strong></td>
+        <td>{{ e.team }}</td>
+        <td>{% if e.card_type == 'yellow' %}🟨 Yellow{% else %}🟥 Red{% endif %}</td>
+        <td>{% if e.minute %}{{ e.minute }}'{% else %}—{% endif %}</td>
+        <td>{{ e.match_label }}</td>
+        <td style="color: var(--muted)">{{ e.match_date }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="color: var(--muted)">Cards appear here as they are issued</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% from "_team_flag.html" import team_with_flag, wc_stars with context %}
+{% from "_ai_badge.html" import render_ai_badge with context %}
+{% block title %}{{ pool.name }} — Standings{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Back to matches</a>
+
+<section class="hero" style="padding-top: 1.5rem; text-align: left">
+  <h1 style="text-align: left; margin: 0">Tournament standings</h1>
+  <p style="margin: 0.5rem 0 0; color: var(--muted)" id="standings-progress">
+    Group stage: {{ view.group_matches_finished }} / {{ view.group_matches_total }} matches played
+    {% if view.qualified_count %} · {{ view.qualified_count }} qualified{% elif view.leading_count %} · {{ view.leading_count }} in top two{% endif %}
+  </p>
+</section>
+
+<div class="standings-mode-tabs" id="standings-mode-tabs">
+  <button type="button" class="active" data-mode="actual">Actual results</button>
+  <button type="button" data-mode="predicted">Predicted brackets</button>
+</div>
+
+<div class="predictor-panel hidden" id="predictor-panel">
+  <div class="predictor-panel-row">
+    <label for="predictor-select">View bracket for</label>
+    <select id="predictor-select" class="predictor-select">
+      {% for m in simulation_members %}
+      <option value="{{ m.id }}" {% if m.id == current_user_id %}selected{% endif %}>
+        {{ m.display_name }}{% if m.id == current_user_id %} (you){% endif %} — {{ m.prediction_count }} picks
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if simulation_overview %}
+  <div class="sim-overview-grid" id="sim-overview-grid">
+    {% for row in simulation_overview %}
+    <button type="button" class="sim-overview-card{% if row.user_id == current_user_id %} is-you{% endif %}" data-predictor-id="{{ row.user_id }}">
+      <span class="sim-overview-name">{{ row.display_name }}{% if row.user_id == current_user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}</span>
+      <span class="sim-overview-champ">{% if row.predicted_champion %}🏆 {{ row.predicted_champion }}{% else %}Bracket incomplete{% endif %}</span>
+      <span class="sim-overview-meta">{{ row.prediction_count }} picks{% if row.group_stage_complete %} · groups complete{% endif %}</span>
+    </button>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted-inline" id="sim-empty-msg">No predictions yet — enter scores on the Matches page to see simulated brackets.</p>
+  {% endif %}
+</div>
+
+<div class="champion-banner{% if not view.bracket.champion %} hidden{% endif %}" id="champion-banner">
+  {% if view.bracket.champion %}
+  <span class="champion-trophy">🏆</span>
+  <span id="champion-banner-text">World Cup champions: <strong>{{ view.bracket.champion }}</strong></span>
+  {{ wc_stars(view.bracket.champion) }}
+  {% endif %}
+</div>
+
+<h2 class="section-title" id="groups-section-title">Group stage</h2>
+<p class="standings-legend" id="standings-legend">
+  <span class="legend-dot legend-qualified"></span> Qualified / leading
+  <span class="legend-dot legend-contending"></span> 3rd-place race
+  <span class="legend-dot legend-eliminated"></span> Out / bottom
+</p>
+
+<div class="groups-grid" id="groups-grid">
+  {% for g in view.group_order %}
+  {% if g in view.groups %}
+  <div class="card group-standings-card" data-group="{{ g }}">
+    <h3 class="group-standings-title">Group {{ g }}</h3>
+    <table class="group-table">
+      <thead>
+        <tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>
+      </thead>
+      <tbody>
+        {% for row in view.groups[g] %}
+        <tr class="group-row-{{ row.status }}" data-team="{{ row.team }}">
+          <td>{{ row.position }}</td>
+          <td class="group-team-cell">
+            <span class="team-with-flag-sm">{{ team_with_flag(row.team, pool.invite_code) }}</span>
+            {% if row.status == 'qualified' and row.position == 3 and row.third_rank %}
+            <span class="group-status-tag">3rd ({{ row.third_rank }})</span>
+            {% elif row.status == 'contending' and row.third_rank %}
+            <span class="group-status-tag">3rd ({{ row.third_rank }})</span>
+            {% endif %}
+          </td>
+          <td>{{ row.played }}</td>
+          <td>{{ row.w }}</td>
+          <td>{{ row.d }}</td>
+          <td>{{ row.l }}</td>
+          <td>{% if row.gd > 0 %}+{% endif %}{{ row.gd }}</td>
+          <td><strong>{{ row.pts }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<h2 class="section-title" id="bracket-section-title">Knockout bracket</h2>
+<p style="color: var(--muted); margin: -0.5rem 0 1rem; font-size: 0.9rem" id="bracket-section-note">
+  Updates automatically as results are entered. Knockout matches appear when added by the pool admin.
+</p>
+
+<div class="bracket-shell" id="bracket-shell">
+  <div class="bracket-scroll">
+    {% for round in view.bracket.rounds %}
+    <div class="bracket-round" data-stage="{{ round.key }}" data-slots="{{ round.matches|length }}">
+      <h3 class="bracket-round-title">{{ round.label }}</h3>
+      <div class="bracket-round-matches">
+        {% for m in round.matches %}
+        {% include "_bracket_match.html" %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    <div class="bracket-round bracket-side-finals">
+      <h3 class="bracket-round-title">Third place</h3>
+      <div class="bracket-round-matches">
+        {% set m = view.bracket.third_place %}
+        {% include "_bracket_match.html" %}
+      </div>
+      <div class="bracket-trophy-slot{% if not view.bracket.champion %} bracket-trophy-pending{% endif %}" id="bracket-trophy-slot">
+        <div class="bracket-trophy">🏆</div>
+        <div class="bracket-trophy-label" id="bracket-trophy-label">
+          {% if view.bracket.champion %}{{ view.bracket.champion }}{% else %}Champion TBD{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const feedUrl = "{{ url_for('standings_feed', invite_code=pool.invite_code) }}";
+  const flagBase = "https://flagcdn.com/24x18/";
+  const currentUserId = {{ current_user_id }};
+
+  const FLAG_CODES = {{ flag_codes_json | safe }};
+
+  let currentMode = 'actual';
+  let currentPredictorId = {{ current_user_id }};
+
+  function flagImg(team) {
+    const code = FLAG_CODES[team];
+    if (!code) return '';
+    if (code.startsWith('local:')) return `<img src="/static/images/flags/${code.slice(6)}" alt="" class="team-flag" loading="lazy">`;
+    return `<img src="${flagBase}${code}.png" alt="" class="team-flag" loading="lazy">`;
+  }
+
+  function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
+  function teamNameLink(team) {
+    if (!team) return '';
+    const url = poolTeamUrl(team);
+    if (url) {
+      return `<a href="${url}" class="team-link">${escapeHtml(team)}</a>`;
+    }
+    return `<span>${escapeHtml(team)}</span>`;
+  }
+
+  function groupTeamCell(team) {
+    return `<span class="team-with-flag-sm"><span class="team-with-flag"><span class="team-core">${flagImg(team)}${teamNameLink(team)}</span></span></span>`;
+  }
+
+  function teamCell(team, isWinner) {
+    if (!team) return '<span class="bracket-tbd">TBD</span>';
+    return `<span class="bracket-team${isWinner ? ' bracket-winner' : ''}">${flagImg(team)}<span>${escapeHtml(team)}</span></span>`;
+  }
+
+  function renderMatch(m) {
+    const hasScore = m.display_home !== null && m.display_away !== null;
+    const score = hasScore ? `<span class="bracket-score">${m.display_home}–${m.display_away}</span>` : '';
+    let tag = '';
+    if (m.is_predicted && m.is_finished) tag = '<span class="badge bracket-predicted">Pred</span>';
+    else if (m.is_live) tag = '<span class="badge badge-live bracket-live">LIVE</span>';
+    else if (m.is_finished) tag = '<span class="badge badge-done bracket-ft">FT</span>';
+    const tagName = m.id ? 'a' : 'div';
+    const link = m.id ? `href="${poolMatchUrl(m.id)}"` : '';
+    return `<${tagName} class="bracket-match${m.is_finished ? ' finished' : ''}${m.is_live ? ' live' : ''}${m.is_predicted ? ' predicted' : ''}" ${link}>
+      ${teamCell(m.home_team, m.winner === m.home_team)}
+      ${teamCell(m.away_team, m.winner === m.away_team)}
+      ${score}${tag}
+    </${tagName}>`;
+  }
+
+  function renderRound(round) {
+    return `<div class="bracket-round" data-stage="${round.key}" data-slots="${round.matches.length}">
+      <h3 class="bracket-round-title">${round.label}</h3>
+      <div class="bracket-round-matches">${round.matches.map(renderMatch).join('')}</div>
+    </div>`;
+  }
+
+  function renderGroups(groups, order) {
+    return order.filter(g => groups[g]).map(g => {
+      const rows = groups[g].map(row => {
+        const tag = row.status === 'qualified' && row.position === 3 && row.third_rank
+          ? `<span class="group-status-tag">3rd (${row.third_rank})</span>`
+          : (row.status === 'contending' && row.third_rank ? `<span class="group-status-tag">3rd (${row.third_rank})</span>` : '');
+        const gd = (row.gd > 0 ? '+' : '') + row.gd;
+        return `<tr class="group-row-${row.status}" data-team="${escapeHtml(row.team)}">
+          <td>${row.position}</td>
+          <td class="group-team-cell">${groupTeamCell(row.team)}${tag}</td>
+          <td>${row.played}</td><td>${row.w}</td><td>${row.d}</td><td>${row.l}</td>
+          <td>${gd}</td><td><strong>${row.pts}</strong></td>
+        </tr>`;
+      }).join('');
+      return `<div class="card group-standings-card" data-group="${g}">
+        <h3 class="group-standings-title">Group ${g}</h3>
+        <table class="group-table"><thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    }).join('');
+  }
+
+  function renderOverview(overview) {
+    if (!overview || !overview.length) return '';
+    return overview.map(row => {
+      const champ = row.predicted_champion ? `🏆 ${escapeHtml(row.predicted_champion)}` : 'Bracket incomplete';
+      const you = row.user_id === currentUserId ? ' (you)' : '';
+      const complete = row.group_stage_complete ? ' · groups complete' : '';
+      return `<button type="button" class="sim-overview-card${row.user_id === currentUserId ? ' is-you' : ''}" data-predictor-id="${row.user_id}">
+        <span class="sim-overview-name">${escapeHtml(row.display_name)}${you}</span>
+        <span class="sim-overview-champ">${champ}</span>
+        <span class="sim-overview-meta">${row.prediction_count} picks${complete}</span>
+      </button>`;
+    }).join('');
+  }
+
+  function bindOverviewCards() {
+    document.querySelectorAll('.sim-overview-card').forEach(card => {
+      card.onclick = () => {
+        const id = parseInt(card.dataset.predictorId, 10);
+        currentPredictorId = id;
+        const sel = document.getElementById('predictor-select');
+        if (sel) sel.value = String(id);
+        document.querySelectorAll('.sim-overview-card').forEach(c => c.classList.toggle('active', parseInt(c.dataset.predictorId, 10) === id));
+        refreshStandings();
+      };
+    });
+  }
+
+  function applyView(data) {
+    const progress = document.getElementById('standings-progress');
+    if (progress) {
+      if (data.mode === 'predicted') {
+        const name = data.predictor ? data.predictor.display_name : 'Predictor';
+        let text = `${name}: ${data.group_matches_predicted || 0} / ${data.group_matches_total} group picks`;
+        if (data.group_stage_complete) text += ' · full group stage simulated';
+        else if (data.leading_count) text += ` · ${data.leading_count} in top two (so far)`;
+        progress.textContent = text;
+      } else {
+        let text = `Group stage: ${data.group_matches_finished} / ${data.group_matches_total} matches played`;
+        if (data.qualified_count) text += ` · ${data.qualified_count} qualified`;
+        else if (data.leading_count) text += ` · ${data.leading_count} in top two`;
+        progress.textContent = text;
+      }
+    }
+
+    const champ = document.getElementById('champion-banner');
+    const champText = document.getElementById('champion-banner-text');
+    if (champ) {
+      const winner = data.bracket && data.bracket.champion;
+      champ.classList.toggle('hidden', !winner);
+      if (winner && champText) {
+        const prefix = data.mode === 'predicted' ? 'Predicted champions' : 'World Cup champions';
+        champText.innerHTML = `${prefix}: <strong>${escapeHtml(winner)}</strong>`;
+      }
+    }
+
+    const bracketNote = document.getElementById('bracket-section-note');
+    if (bracketNote) {
+      bracketNote.textContent = data.mode === 'predicted'
+        ? 'Simulated path if this player\'s predictions all come true. Knockout scores use their picks where entered.'
+        : 'Updates automatically as results are entered. Knockout matches appear when added by the pool admin.';
+    }
+
+    const grid = document.getElementById('groups-grid');
+    if (grid) grid.innerHTML = renderGroups(data.groups, data.group_order);
+
+    const shell = document.getElementById('bracket-shell');
+    if (shell && data.bracket) {
+      const rounds = data.bracket.rounds.map(renderRound).join('');
+      const third = renderMatch(data.bracket.third_place);
+      const trophy = data.bracket.champion
+        ? `<div class="bracket-trophy-slot"><div class="bracket-trophy">🏆</div><div class="bracket-trophy-label">${escapeHtml(data.bracket.champion)}</div></div>`
+        : `<div class="bracket-trophy-slot bracket-trophy-pending"><div class="bracket-trophy">🏆</div><div class="bracket-trophy-label">Champion TBD</div></div>`;
+      shell.innerHTML = `<div class="bracket-scroll">${rounds}
+        <div class="bracket-round bracket-side-finals">
+          <h3 class="bracket-round-title">Third place</h3>
+          <div class="bracket-round-matches">${third}</div>${trophy}
+        </div></div>`;
+    }
+
+    const overviewGrid = document.getElementById('sim-overview-grid');
+    if (overviewGrid && data.simulation_overview) {
+      overviewGrid.innerHTML = renderOverview(data.simulation_overview);
+      bindOverviewCards();
+      document.querySelectorAll('.sim-overview-card').forEach(c => {
+        c.classList.toggle('active', parseInt(c.dataset.predictorId, 10) === currentPredictorId);
+      });
+    }
+  }
+
+  async function refreshStandings() {
+    let url = feedUrl + '?mode=' + currentMode;
+    if (currentMode === 'predicted') url += '&predictor_id=' + currentPredictorId;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    applyView(data);
+  }
+
+  document.getElementById('standings-mode-tabs').querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#standings-mode-tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentMode = btn.dataset.mode;
+      document.getElementById('predictor-panel').classList.toggle('hidden', currentMode !== 'predicted');
+      refreshStandings();
+    });
+  });
+
+  const predictorSelect = document.getElementById('predictor-select');
+  if (predictorSelect) {
+    predictorSelect.addEventListener('change', () => {
+      currentPredictorId = parseInt(predictorSelect.value, 10);
+      document.querySelectorAll('.sim-overview-card').forEach(c => {
+        c.classList.toggle('active', parseInt(c.dataset.predictorId, 10) === currentPredictorId);
+      });
+      refreshStandings();
+    });
+  }
+
+  bindOverviewCards();
+  document.querySelectorAll('.sim-overview-card').forEach(c => {
+    if (parseInt(c.dataset.predictorId, 10) === currentPredictorId) c.classList.add('active');
+  });
+
+  refreshStandings();
+  setInterval(refreshStandings, 30000);
+</script>
+{% endblock %}

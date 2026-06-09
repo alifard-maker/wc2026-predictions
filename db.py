@@ -1,0 +1,1260 @@
+import os
+import secrets
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+
+from fixtures import GROUP_FIXTURES
+from phase_bonus import compute_pool_phase_bonuses
+from scoring import bold_day_key, calculate_points, calculate_tournament_points
+
+_default_db = Path(__file__).parent / "predictions.db"
+DB_PATH = Path(os.environ.get("DATABASE_PATH", _default_db))
+MAX_USERS_PER_POOL = 100
+
+
+def get_connection() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+@contextmanager
+def db():
+    conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_db() -> None:
+    with db() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS pools (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                invite_code TEXT NOT NULL UNIQUE,
+                admin_secret TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pool_id INTEGER NOT NULL REFERENCES pools(id) ON DELETE CASCADE,
+                display_name TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(pool_id, display_name)
+            );
+
+            CREATE TABLE IF NOT EXISTS matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stage TEXT NOT NULL DEFAULT 'group',
+                matchday INTEGER,
+                group_name TEXT,
+                home_team TEXT NOT NULL,
+                away_team TEXT NOT NULL,
+                match_date TEXT NOT NULL,
+                match_time TEXT NOT NULL,
+                venue TEXT,
+                actual_home INTEGER,
+                actual_away INTEGER,
+                status TEXT DEFAULT 'scheduled',
+                live_minute INTEGER,
+                live_home INTEGER,
+                live_away INTEGER,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+                home_score INTEGER NOT NULL,
+                away_score INTEGER NOT NULL,
+                points INTEGER,
+                submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(user_id, match_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pool_id INTEGER NOT NULL REFERENCES pools(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS tournament_votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                top_scorer TEXT NOT NULL,
+                winner TEXT NOT NULL,
+                second_place TEXT NOT NULL,
+                third_place TEXT NOT NULL,
+                submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS tournament_results (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                top_scorer TEXT,
+                winner TEXT,
+                second_place TEXT,
+                third_place TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS match_goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+                team_side TEXT NOT NULL CHECK (team_side IN ('home', 'away')),
+                scorer_name TEXT NOT NULL,
+                minute INTEGER NOT NULL,
+                injury_minute INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS player_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+                player_name TEXT NOT NULL,
+                team TEXT NOT NULL,
+                card_type TEXT NOT NULL CHECK (card_type IN ('yellow', 'red')),
+                minute INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS match_penalties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+                taker_team TEXT NOT NULL,
+                taker_name TEXT,
+                goalkeeper_name TEXT,
+                outcome TEXT NOT NULL CHECK (outcome IN ('scored', 'saved', 'missed')),
+                minute INTEGER NOT NULL,
+                injury_minute INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            """
+        )
+
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(comments)").fetchall()}
+        if cols and "updated_at" not in cols:
+            conn.execute("ALTER TABLE comments ADD COLUMN updated_at TEXT")
+        if cols and "match_id" not in cols:
+            conn.execute("ALTER TABLE comments ADD COLUMN match_id INTEGER REFERENCES matches(id) ON DELETE CASCADE")
+
+        pred_cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+        if pred_cols and "is_bold" not in pred_cols:
+            conn.execute("ALTER TABLE predictions ADD COLUMN is_bold INTEGER NOT NULL DEFAULT 0")
+
+        match_cols = {row[1] for row in conn.execute("PRAGMA table_info(matches)").fetchall()}
+        if match_cols:
+            for col, typedef in [
+                ("status", "TEXT DEFAULT 'scheduled'"),
+                ("live_minute", "INTEGER"),
+                ("live_home", "INTEGER"),
+                ("live_away", "INTEGER"),
+            ]:
+                if col not in match_cols:
+                    conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {typedef}")
+
+        goal_cols = {row[1] for row in conn.execute("PRAGMA table_info(match_goals)").fetchall()}
+        if goal_cols and "is_penalty" not in goal_cols:
+            conn.execute("ALTER TABLE match_goals ADD COLUMN is_penalty INTEGER NOT NULL DEFAULT 0")
+
+        count = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
+        if count == 0:
+            for i, f in enumerate(GROUP_FIXTURES):
+                conn.execute(
+                    """
+                    INSERT INTO matches (stage, matchday, group_name, home_team, away_team,
+                                         match_date, match_time, venue, sort_order)
+                    VALUES ('group', ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f["matchday"],
+                        f["group"],
+                        f["home"],
+                        f["away"],
+                        f["date"],
+                        f["time"],
+                        f["venue"],
+                        i + 1,
+                    ),
+                )
+
+
+def generate_invite_code() -> str:
+    return secrets.token_urlsafe(6)
+
+
+def generate_admin_secret() -> str:
+    return secrets.token_urlsafe(16)
+
+
+def create_pool(name: str) -> dict:
+    invite_code = generate_invite_code()
+    admin_secret = generate_admin_secret()
+    with db() as conn:
+        cur = conn.execute(
+            "INSERT INTO pools (name, invite_code, admin_secret) VALUES (?, ?, ?)",
+            (name.strip(), invite_code, admin_secret),
+        )
+        pool_id = cur.lastrowid
+    return {"id": pool_id, "name": name.strip(), "invite_code": invite_code, "admin_secret": admin_secret}
+
+
+def get_pool_by_code(invite_code: str) -> sqlite3.Row | None:
+    with db() as conn:
+        return conn.execute("SELECT * FROM pools WHERE invite_code = ?", (invite_code,)).fetchone()
+
+
+def get_pool_by_id(pool_id: int) -> sqlite3.Row | None:
+    with db() as conn:
+        return conn.execute("SELECT * FROM pools WHERE id = ?", (pool_id,)).fetchone()
+
+
+def count_pool_users(pool_id: int) -> int:
+    with db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM users WHERE pool_id = ?", (pool_id,)).fetchone()[0]
+
+
+def add_user(pool_id: int, display_name: str) -> dict | str:
+    name = display_name.strip()
+    if not name:
+        return "Display name is required."
+    if len(name) > 40:
+        return "Display name must be 40 characters or fewer."
+
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id, display_name FROM users WHERE pool_id = ? AND lower(display_name) = lower(?)",
+            (pool_id, name),
+        ).fetchone()
+        if existing:
+            return {
+                "id": existing["id"],
+                "pool_id": pool_id,
+                "display_name": existing["display_name"],
+                "resumed": True,
+            }
+
+        user_count = conn.execute("SELECT COUNT(*) FROM users WHERE pool_id = ?", (pool_id,)).fetchone()[0]
+        if user_count >= MAX_USERS_PER_POOL:
+            return f"This pool is full ({MAX_USERS_PER_POOL} users max)."
+
+        cur = conn.execute(
+            "INSERT INTO users (pool_id, display_name) VALUES (?, ?)",
+            (pool_id, name),
+        )
+        return {"id": cur.lastrowid, "pool_id": pool_id, "display_name": name, "resumed": False}
+
+
+def get_pool_users(pool_id: int) -> list[sqlite3.Row]:
+    with db() as conn:
+        return conn.execute(
+            "SELECT display_name FROM users WHERE pool_id = ? ORDER BY display_name",
+            (pool_id,),
+        ).fetchall()
+
+
+def get_user(user_id: int) -> sqlite3.Row | None:
+    with db() as conn:
+        return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def get_all_matches(stage: str | None = None) -> list[sqlite3.Row]:
+    with db() as conn:
+        if stage:
+            return conn.execute(
+                "SELECT * FROM matches WHERE stage = ? ORDER BY sort_order, match_date, match_time",
+                (stage,),
+            ).fetchall()
+        return conn.execute(
+            "SELECT * FROM matches ORDER BY sort_order, match_date, match_time"
+        ).fetchall()
+
+
+def get_prediction(user_id: int, match_id: int) -> sqlite3.Row | None:
+    with db() as conn:
+        return conn.execute(
+            "SELECT * FROM predictions WHERE user_id = ? AND match_id = ?",
+            (user_id, match_id),
+        ).fetchone()
+
+
+def upsert_prediction(
+    user_id: int,
+    match_id: int,
+    home_score: int,
+    away_score: int,
+    is_bold: bool | None = None,
+) -> None:
+    with db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        if not match:
+            raise ValueError("Match not found")
+
+        existing = conn.execute(
+            "SELECT is_bold FROM predictions WHERE user_id = ? AND match_id = ?",
+            (user_id, match_id),
+        ).fetchone()
+        if is_bold is None:
+            bold = bool(existing["is_bold"]) if existing else False
+        else:
+            bold = bool(is_bold)
+        points = calculate_points(
+            home_score, away_score, match["actual_home"], match["actual_away"], bool(bold)
+        )
+        conn.execute(
+            """
+            INSERT INTO predictions (user_id, match_id, home_score, away_score, points, is_bold)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, match_id) DO UPDATE SET
+                home_score = excluded.home_score,
+                away_score = excluded.away_score,
+                points = excluded.points,
+                is_bold = excluded.is_bold,
+                submitted_at = datetime('now')
+            """,
+            (user_id, match_id, home_score, away_score, points, 1 if bold else 0),
+        )
+
+
+def set_bold_pick(user_id: int, match_id: int) -> str | None:
+    with db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        if not match:
+            return "Match not found."
+        pred = conn.execute(
+            "SELECT * FROM predictions WHERE user_id = ? AND match_id = ?",
+            (user_id, match_id),
+        ).fetchone()
+        if not pred:
+            return "Save a prediction for this match first."
+
+        key = bold_day_key(dict(match))
+        siblings = conn.execute(
+            """
+            SELECT p.id, p.match_id, p.home_score, p.away_score, p.is_bold, m.actual_home, m.actual_away,
+                   m.match_date, m.matchday, m.stage
+            FROM predictions p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.user_id = ?
+            """,
+            (user_id,),
+        ).fetchall()
+
+        for row in siblings:
+            if bold_day_key(dict(row)) != key:
+                continue
+            new_bold = 1 if row["match_id"] == match_id else 0
+            pts = calculate_points(
+                row["home_score"],
+                row["away_score"],
+                row["actual_home"],
+                row["actual_away"],
+                bool(new_bold),
+            )
+            conn.execute(
+                "UPDATE predictions SET is_bold = ?, points = ? WHERE id = ?",
+                (new_bold, pts, row["id"]),
+            )
+    return None
+
+
+def get_user_bold_by_day(user_id: int) -> dict[str, int]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.match_id, p.is_bold, m.match_date, m.matchday, m.stage
+            FROM predictions p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.user_id = ? AND p.is_bold = 1
+            """,
+            (user_id,),
+        ).fetchall()
+    return {bold_day_key(dict(r)): r["match_id"] for r in rows}
+
+
+def update_match_result(match_id: int, actual_home: int, actual_away: int) -> None:
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE matches SET actual_home = ?, actual_away = ?, status = 'finished',
+                   live_home = ?, live_away = ?, live_minute = 90
+            WHERE id = ?
+            """,
+            (actual_home, actual_away, actual_home, actual_away, match_id),
+        )
+        predictions = conn.execute(
+            "SELECT id, home_score, away_score FROM predictions WHERE match_id = ?",
+            (match_id,),
+        ).fetchall()
+        for pred in predictions:
+            row = conn.execute(
+                "SELECT is_bold FROM predictions WHERE id = ?",
+                (pred["id"],),
+            ).fetchone()
+            points = calculate_points(
+                pred["home_score"],
+                pred["away_score"],
+                actual_home,
+                actual_away,
+                bool(row["is_bold"]) if row else False,
+            )
+            conn.execute("UPDATE predictions SET points = ? WHERE id = ?", (points, pred["id"]))
+
+
+def format_goal_minute(minute: int, injury_minute: int | None = None) -> str:
+    if injury_minute:
+        return f"{minute}+{injury_minute}'"
+    return f"{minute}'"
+
+
+def get_match_goals(match_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT g.*, m.home_team, m.away_team,
+                   CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team_name
+            FROM match_goals g
+            JOIN matches m ON m.id = g.match_id
+            WHERE g.match_id = ?
+            ORDER BY g.minute ASC, COALESCE(g.injury_minute, 0) ASC, g.id ASC
+            """,
+            (match_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["team_name"] = r["home_team"] if r["team_side"] == "home" else r["away_team"]
+            d["minute_label"] = format_goal_minute(r["minute"], r["injury_minute"])
+            result.append(d)
+        return result
+
+
+def _bump_live_score(conn, match, team_side: str, delta: int = 1) -> None:
+    if match["actual_home"] is not None:
+        return
+    from datetime import datetime
+
+    from live_scores import is_match_in_progress
+    from scoring import TIMEZONE, parse_match_datetime
+
+    kickoff = parse_match_datetime(match["match_date"], match["match_time"])
+    in_progress = is_match_in_progress(kickoff, datetime.now(TIMEZONE))
+    col = "live_home" if team_side == "home" else "live_away"
+    current = match[col] if match[col] is not None else 0
+    other_col = "live_away" if team_side == "home" else "live_home"
+    other = match[other_col] if match[other_col] is not None else 0
+    new_status = "live" if in_progress else match["status"] or "scheduled"
+    conn.execute(
+        f"""
+        UPDATE matches SET {col} = ?, {other_col} = ?, status = ?
+        WHERE id = ?
+        """,
+        (current + delta, other, new_status, match["id"]),
+    )
+
+
+def add_match_goal(
+    match_id: int,
+    team_side: str,
+    scorer_name: str,
+    minute: int,
+    injury_minute: int | None = None,
+    is_penalty: bool = False,
+) -> dict | str:
+    name = scorer_name.strip()
+    if not name:
+        return "Scorer name is required."
+    if len(name) > 60:
+        return "Scorer name must be 60 characters or fewer."
+    if team_side not in ("home", "away"):
+        return "Invalid team."
+    if minute < 0 or minute > 120:
+        return "Minute must be between 0 and 120."
+
+    with db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        if not match:
+            return "Match not found."
+
+        cur = conn.execute(
+            """
+            INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (match_id, team_side, name, minute, injury_minute, 1 if is_penalty else 0),
+        )
+
+        _bump_live_score(conn, match, team_side)
+
+        return {"id": cur.lastrowid, "scorer_name": name}
+
+
+def delete_match_goal(goal_id: int) -> str | None:
+    with db() as conn:
+        goal = conn.execute(
+            """
+            SELECT g.*, m.actual_home, m.live_home, m.live_away
+            FROM match_goals g
+            JOIN matches m ON m.id = g.match_id
+            WHERE g.id = ?
+            """,
+            (goal_id,),
+        ).fetchone()
+        if not goal:
+            return "Goal not found."
+
+        conn.execute("DELETE FROM match_goals WHERE id = ?", (goal_id,))
+
+        if goal["actual_home"] is None:
+            col = "live_home" if goal["team_side"] == "home" else "live_away"
+            current = goal[col] if goal[col] is not None else 0
+            conn.execute(
+                f"UPDATE matches SET {col} = ? WHERE id = ?",
+                (max(0, current - 1), goal["match_id"]),
+            )
+        return None
+
+
+def get_tournament_scorer_leaderboard() -> list[dict]:
+    """Aggregate all match goals into a top-scorers table."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT g.scorer_name AS player_name,
+                   CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
+                   COUNT(*) AS goals
+            FROM match_goals g
+            JOIN matches m ON m.id = g.match_id
+            GROUP BY lower(g.scorer_name), team
+            ORDER BY goals DESC, player_name ASC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_tournament_scorer_events() -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT g.id, g.scorer_name AS player_name,
+                   CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
+                   g.minute, g.injury_minute, m.home_team, m.away_team, m.match_date
+            FROM match_goals g
+            JOIN matches m ON m.id = g.match_id
+            ORDER BY m.match_date ASC, g.minute ASC, g.id ASC
+            """
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["minute_label"] = format_goal_minute(r["minute"], r["injury_minute"])
+            d["match_label"] = f"{r['home_team']} vs {r['away_team']}"
+            result.append(d)
+        return result
+
+
+def add_player_card(
+    match_id: int,
+    player_name: str,
+    team: str,
+    card_type: str,
+    minute: int | None = None,
+) -> dict | str:
+    name = player_name.strip()
+    team_name = team.strip()
+    if not name or not team_name:
+        return "Player name and team are required."
+    if card_type not in ("yellow", "red"):
+        return "Card type must be yellow or red."
+
+    with db() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO player_cards (match_id, player_name, team, card_type, minute)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (match_id, name, team_name, card_type, minute),
+        )
+        return {"id": cur.lastrowid}
+
+
+def delete_player_card(card_id: int) -> str | None:
+    with db() as conn:
+        if not conn.execute("SELECT id FROM player_cards WHERE id = ?", (card_id,)).fetchone():
+            return "Card not found."
+        conn.execute("DELETE FROM player_cards WHERE id = ?", (card_id,))
+        return None
+
+
+def get_match_penalties(match_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.*, m.home_team, m.away_team
+            FROM match_penalties p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.match_id = ?
+            ORDER BY p.minute ASC, COALESCE(p.injury_minute, 0) ASC, p.id ASC
+            """,
+            (match_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["minute_label"] = format_goal_minute(r["minute"], r["injury_minute"])
+            result.append(d)
+        return result
+
+
+def add_match_penalty(
+    match_id: int,
+    taker_team: str,
+    outcome: str,
+    minute: int,
+    taker_name: str | None = None,
+    goalkeeper_name: str | None = None,
+    injury_minute: int | None = None,
+) -> dict | str:
+    team = taker_team.strip()
+    if not team:
+        return "Team is required."
+    if outcome not in ("scored", "saved", "missed"):
+        return "Outcome must be scored, saved, or missed."
+    if minute < 0 or minute > 120:
+        return "Minute must be between 0 and 120."
+
+    with db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        if not match:
+            return "Match not found."
+        if team not in (match["home_team"], match["away_team"]):
+            return "Team must be home or away in this match."
+
+        cur = conn.execute(
+            """
+            INSERT INTO match_penalties
+            (match_id, taker_team, taker_name, goalkeeper_name, outcome, minute, injury_minute)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                match_id,
+                team,
+                (taker_name or "").strip() or None,
+                (goalkeeper_name or "").strip() or None,
+                outcome,
+                minute,
+                injury_minute,
+            ),
+        )
+
+        if outcome == "scored":
+            team_side = "home" if team == match["home_team"] else "away"
+            scorer = (taker_name or "").strip() or "Penalty"
+            conn.execute(
+                """
+                INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty)
+                VALUES (?, ?, ?, ?, ?, 1)
+                """,
+                (match_id, team_side, scorer, minute, injury_minute),
+            )
+            _bump_live_score(conn, match, team_side)
+
+        return {"id": cur.lastrowid}
+
+
+def delete_match_penalty(penalty_id: int) -> str | None:
+    with db() as conn:
+        row = conn.execute(
+            """
+            SELECT p.*, m.home_team, m.away_team, m.actual_home, m.live_home, m.live_away
+            FROM match_penalties p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.id = ?
+            """,
+            (penalty_id,),
+        ).fetchone()
+        if not row:
+            return "Penalty event not found."
+
+        if row["outcome"] == "scored":
+            goal = conn.execute(
+                """
+                SELECT id FROM match_goals
+                WHERE match_id = ? AND is_penalty = 1 AND minute = ?
+                  AND team_side = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (
+                    row["match_id"],
+                    row["minute"],
+                    "home" if row["taker_team"] == row["home_team"] else "away",
+                ),
+            ).fetchone()
+            if goal:
+                conn.execute("DELETE FROM match_goals WHERE id = ?", (goal["id"],))
+                if row["actual_home"] is None:
+                    team_side = "home" if row["taker_team"] == row["home_team"] else "away"
+                    col = "live_home" if team_side == "home" else "live_away"
+                    current = row[col] if row[col] is not None else 0
+                    conn.execute(
+                        f"UPDATE matches SET {col} = ? WHERE id = ?",
+                        (max(0, current - 1), row["match_id"]),
+                    )
+
+        conn.execute("DELETE FROM match_penalties WHERE id = ?", (penalty_id,))
+        return None
+
+
+def get_player_cards_table() -> list[dict]:
+    from player_stats import card_suspension_status
+
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.player_name, c.team, c.card_type, c.minute,
+                   m.home_team, m.away_team, m.match_date
+            FROM player_cards c
+            JOIN matches m ON m.id = c.match_id
+            ORDER BY m.match_date ASC, c.minute ASC, c.id ASC
+            """
+        ).fetchall()
+
+        by_player: dict[str, dict] = {}
+        events = []
+        for r in rows:
+            d = dict(r)
+            d["match_label"] = f"{r['home_team']} vs {r['away_team']}"
+            events.append(d)
+            key = f"{r['player_name'].lower()}|{r['team']}"
+            if key not in by_player:
+                by_player[key] = {
+                    "player_name": r["player_name"],
+                    "team": r["team"],
+                    "yellow_count": 0,
+                    "red_count": 0,
+                    "events": [],
+                }
+            by_player[key]["events"].append(d)
+            if r["card_type"] == "yellow":
+                by_player[key]["yellow_count"] += 1
+            else:
+                by_player[key]["red_count"] += 1
+
+        summary = []
+        for p in by_player.values():
+            p["status"] = card_suspension_status(p["yellow_count"], p["red_count"])
+            p["total_cards"] = p["yellow_count"] + p["red_count"]
+            summary.append(p)
+
+        summary.sort(key=lambda x: (-x["total_cards"], x["player_name"].lower()))
+        return {"events": events, "summary": summary}
+
+
+def update_match_live(
+    match_id: int,
+    live_home: int,
+    live_away: int,
+    live_minute: int,
+    status: str = "live",
+) -> None:
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE matches SET live_home = ?, live_away = ?, live_minute = ?,
+                   status = CASE WHEN ? = 'scheduled' THEN 'scheduled' ELSE ? END
+            WHERE id = ? AND actual_home IS NULL
+            """,
+            (live_home, live_away, live_minute, status, status, match_id),
+        )
+
+
+def ensure_ai_user(pool_id: int, display_name: str) -> int:
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM users WHERE pool_id = ? AND display_name = ?",
+            (pool_id, display_name),
+        ).fetchone()
+        if existing:
+            return existing["id"]
+        cur = conn.execute(
+            "INSERT INTO users (pool_id, display_name) VALUES (?, ?)",
+            (pool_id, display_name),
+        )
+        return cur.lastrowid
+
+
+def ensure_all_ai_users(pool_id: int) -> list[int]:
+    from ai_predictor import AI_AGENTS
+
+    return [ensure_ai_user(pool_id, agent["display_name"]) for agent in AI_AGENTS]
+
+
+def sync_ai_predictions(pool_id: int) -> int:
+    from ai_predictor import AI_AGENTS, predict_score
+    from scoring import is_prediction_open
+
+    saved = 0
+    matches = get_all_matches()
+    for agent in AI_AGENTS:
+        ai_id = ensure_ai_user(pool_id, agent["display_name"])
+        for m in matches:
+            if not is_prediction_open(m["match_date"], m["match_time"]):
+                continue
+            pred = get_prediction(ai_id, m["id"])
+            home, away = predict_score(m["home_team"], m["away_team"], m["id"], agent["key"])
+            if pred and pred["home_score"] == home and pred["away_score"] == away:
+                continue
+            if pred:
+                upsert_prediction(ai_id, m["id"], home, away)
+                saved += 1
+            else:
+                upsert_prediction(ai_id, m["id"], home, away)
+                saved += 1
+    return saved
+
+
+def sync_ai_tournament_vote(pool_id: int) -> bool:
+    from ai_predictor import AI_AGENTS, predict_tournament_picks
+    from scoring import is_tournament_vote_open
+
+    if not is_tournament_vote_open():
+        return False
+
+    changed = False
+    for agent in AI_AGENTS:
+        ai_id = ensure_ai_user(pool_id, agent["display_name"])
+        if get_tournament_vote(ai_id):
+            continue
+        picks = predict_tournament_picks(pool_id, agent["key"])
+        result = upsert_tournament_vote(
+            ai_id,
+            picks["top_scorer"],
+            picks["winner"],
+            picks["second_place"],
+            picks["third_place"],
+        )
+        if not isinstance(result, str):
+            changed = True
+    return changed
+
+
+def ensure_ai_in_all_pools() -> None:
+    with db() as conn:
+        pools = conn.execute("SELECT id FROM pools").fetchall()
+    for pool in pools:
+        ensure_all_ai_users(pool["id"])
+        sync_ai_predictions(pool["id"])
+        sync_ai_tournament_vote(pool["id"])
+
+
+def add_knockout_match(
+    home_team: str,
+    away_team: str,
+    match_date: str,
+    match_time: str,
+    venue: str,
+    stage: str,
+) -> int:
+    with db() as conn:
+        max_order = conn.execute("SELECT COALESCE(MAX(sort_order), 72) FROM matches").fetchone()[0]
+        cur = conn.execute(
+            """
+            INSERT INTO matches (stage, home_team, away_team, match_date, match_time, venue, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (stage, home_team.strip(), away_team.strip(), match_date, match_time, venue.strip(), max_order + 1),
+        )
+        return cur.lastrowid
+
+
+def get_tournament_results() -> dict | None:
+    with db() as conn:
+        row = conn.execute("SELECT * FROM tournament_results WHERE id = 1").fetchone()
+        if not row or not row["winner"]:
+            return None
+        return dict(row)
+
+
+def save_tournament_results(top_scorer: str, winner: str, second_place: str, third_place: str) -> None:
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO tournament_results (id, top_scorer, winner, second_place, third_place, updated_at)
+            VALUES (1, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                top_scorer = excluded.top_scorer,
+                winner = excluded.winner,
+                second_place = excluded.second_place,
+                third_place = excluded.third_place,
+                updated_at = datetime('now')
+            """,
+            (top_scorer.strip(), winner.strip(), second_place.strip(), third_place.strip()),
+        )
+
+
+def get_leaderboard(pool_id: int) -> list[dict]:
+    results = get_tournament_results()
+    phase_bonus = compute_pool_phase_bonuses(pool_id)
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.id, u.display_name,
+                   COALESCE(SUM(p.points), 0) AS match_points,
+                   COUNT(p.id) AS predictions_made,
+                   SUM(CASE WHEN p.points >= 5 THEN 1 ELSE 0 END) AS exact_scores,
+                   SUM(CASE WHEN p.points IN (2, 4) THEN 1 ELSE 0 END) AS correct_results
+            FROM users u
+            LEFT JOIN predictions p ON p.user_id = u.id
+            WHERE u.pool_id = ?
+            GROUP BY u.id
+            """,
+            (pool_id,),
+        ).fetchall()
+
+        leaderboard = []
+        for row in rows:
+            entry = dict(row)
+            vote = conn.execute(
+                "SELECT * FROM tournament_votes WHERE user_id = ?",
+                (entry["id"],),
+            ).fetchone()
+            vote_dict = dict(vote) if vote else None
+            t_breakdown = calculate_tournament_points(vote_dict, results)
+            entry["tournament_points"] = t_breakdown["total"]
+            entry["tournament_breakdown"] = t_breakdown
+            entry["phase_bonus_points"] = phase_bonus["total_by_user"].get(entry["id"], 0)
+            entry["phase_bonus_detail"] = phase_bonus["detail_by_user"].get(entry["id"], [])
+            entry["total_points"] = (
+                entry["match_points"] + t_breakdown["total"] + entry["phase_bonus_points"]
+            )
+            leaderboard.append(entry)
+
+        leaderboard.sort(
+            key=lambda x: (-x["total_points"], -x["match_points"], -x["exact_scores"], x["id"]),
+        )
+
+        rank = 1
+        for i, entry in enumerate(leaderboard):
+            if i > 0 and entry["total_points"] < leaderboard[i - 1]["total_points"]:
+                rank = i + 1
+            entry["rank"] = rank if entry["total_points"] > 0 else None
+
+        return leaderboard
+
+
+def get_pool_phase_bonus_status(pool_id: int) -> dict:
+    return compute_pool_phase_bonuses(pool_id)
+
+
+def get_leader_message(leaderboard: list[dict]) -> str | None:
+    if not leaderboard or leaderboard[0]["total_points"] == 0:
+        return None
+
+    top_score = leaderboard[0]["total_points"]
+    leaders = [e["display_name"] for e in leaderboard if e["total_points"] == top_score]
+
+    if len(leaders) == 1:
+        return f"{leaders[0]} leads with {top_score} pts"
+    return f"{' · '.join(leaders)} tied for the lead with {top_score} pts"
+
+
+def get_user_predictions(user_id: int) -> dict[int, sqlite3.Row]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM predictions WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        return {r["match_id"]: r for r in rows}
+
+
+def get_pool_predictions_summary(pool_id: int, match_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.id AS user_id, u.display_name, p.home_score, p.away_score,
+                   p.points, p.submitted_at, p.is_bold
+            FROM predictions p
+            JOIN users u ON u.id = p.user_id
+            WHERE u.pool_id = ? AND p.match_id = ?
+            ORDER BY u.display_name
+            """,
+            (pool_id, match_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_pool_members(pool_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, display_name FROM users WHERE pool_id = ? ORDER BY display_name",
+            (pool_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_comment(pool_id: int, user_id: int, body: str, match_id: int | None = None) -> dict | str:
+    text = body.strip()
+    if not text:
+        return "Comment cannot be empty."
+    if len(text) > 500:
+        return "Comment must be 500 characters or fewer."
+
+    with db() as conn:
+        cur = conn.execute(
+            "INSERT INTO comments (pool_id, user_id, body, match_id) VALUES (?, ?, ?, ?)",
+            (pool_id, user_id, text, match_id),
+        )
+        return {"id": cur.lastrowid, "body": text}
+
+
+def get_pool_comments(pool_id: int, match_id: int | None = None) -> list[dict]:
+    with db() as conn:
+        if match_id:
+            rows = conn.execute(
+                """
+                SELECT c.id, c.body, c.created_at, c.updated_at, c.match_id,
+                       u.display_name, c.user_id,
+                       m.home_team, m.away_team
+                FROM comments c
+                JOIN users u ON u.id = c.user_id
+                LEFT JOIN matches m ON m.id = c.match_id
+                WHERE c.pool_id = ? AND c.match_id = ?
+                ORDER BY c.created_at DESC
+                """,
+                (pool_id, match_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT c.id, c.body, c.created_at, c.updated_at, c.match_id,
+                       u.display_name, c.user_id,
+                       m.home_team, m.away_team
+                FROM comments c
+                JOIN users u ON u.id = c.user_id
+                LEFT JOIN matches m ON m.id = c.match_id
+                WHERE c.pool_id = ?
+                ORDER BY c.created_at DESC
+                """,
+                (pool_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_comment(comment_id: int) -> sqlite3.Row | None:
+    with db() as conn:
+        return conn.execute("SELECT * FROM comments WHERE id = ?", (comment_id,)).fetchone()
+
+
+def update_comment(comment_id: int, user_id: int, body: str) -> dict | str:
+    text = body.strip()
+    if not text:
+        return "Comment cannot be empty."
+    if len(text) > 500:
+        return "Comment must be 500 characters or fewer."
+
+    with db() as conn:
+        comment = conn.execute("SELECT * FROM comments WHERE id = ?", (comment_id,)).fetchone()
+        if not comment:
+            return "Comment not found."
+        if comment["user_id"] != user_id:
+            return "You can only edit your own comments."
+
+        conn.execute(
+            "UPDATE comments SET body = ?, updated_at = datetime('now') WHERE id = ?",
+            (text, comment_id),
+        )
+        return {"id": comment_id, "body": text}
+
+
+def delete_comment(comment_id: int, user_id: int) -> str | None:
+    with db() as conn:
+        comment = conn.execute("SELECT * FROM comments WHERE id = ?", (comment_id,)).fetchone()
+        if not comment:
+            return "Comment not found."
+        if comment["user_id"] != user_id:
+            return "You can only delete your own comments."
+
+        conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
+        return None
+
+
+def get_tournament_vote(user_id: int) -> sqlite3.Row | None:
+    with db() as conn:
+        return conn.execute(
+            "SELECT * FROM tournament_votes WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+
+
+def upsert_tournament_vote(
+    user_id: int,
+    top_scorer: str,
+    winner: str,
+    second_place: str,
+    third_place: str,
+    valid_teams: set[str] | None = None,
+) -> dict | str:
+    from teams import get_all_teams
+
+    scorer = top_scorer.strip()
+    win = winner.strip()
+    second = second_place.strip()
+    third = third_place.strip()
+    allowed = valid_teams or set(get_all_teams())
+
+    if not all([scorer, win, second, third]):
+        return "All four picks are required."
+    if len(scorer) > 60:
+        return "Player name must be 60 characters or fewer."
+    if not {win, second, third}.issubset(allowed):
+        return "Please select valid teams from the list."
+    if len({win, second, third}) < 3:
+        return "Winner, 2nd, and 3rd must be three different teams."
+
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO tournament_votes (user_id, top_scorer, winner, second_place, third_place)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                top_scorer = excluded.top_scorer,
+                winner = excluded.winner,
+                second_place = excluded.second_place,
+                third_place = excluded.third_place,
+                submitted_at = datetime('now')
+            """,
+            (user_id, scorer, win, second, third),
+        )
+    return {"top_scorer": scorer, "winner": win, "second_place": second, "third_place": third}
+
+
+def get_pool_tournament_votes(pool_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.id AS user_id, u.display_name, t.top_scorer, t.winner, t.second_place, t.third_place, t.submitted_at
+            FROM users u
+            LEFT JOIN tournament_votes t ON t.user_id = u.id
+            WHERE u.pool_id = ?
+            ORDER BY t.submitted_at DESC, u.display_name ASC
+            """,
+            (pool_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_recent_pool_predictions(pool_id: int, limit: int = 40) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.id AS user_id, u.display_name, p.home_score, p.away_score, p.submitted_at,
+                   m.id AS match_id, m.home_team, m.away_team, m.match_date, m.match_time
+            FROM predictions p
+            JOIN users u ON u.id = p.user_id
+            JOIN matches m ON m.id = p.match_id
+            WHERE u.pool_id = ?
+            ORDER BY p.submitted_at DESC
+            LIMIT ?
+            """,
+            (pool_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_ticker_pool_predictions(pool_id: int, limit: int = 40, max_per_user: int = 8) -> list[dict]:
+    """Interleave recent picks across predictors so one bulk submitter doesn't dominate the banner."""
+    pool = get_recent_pool_predictions(pool_id, limit=limit * 6)
+    by_user: dict[int, list[dict]] = {}
+    user_order: list[int] = []
+
+    for row in pool:
+        uid = row["user_id"]
+        bucket = by_user.setdefault(uid, [])
+        if len(bucket) >= max_per_user:
+            continue
+        if uid not in user_order:
+            user_order.append(uid)
+        bucket.append(row)
+
+    if not user_order:
+        return []
+
+    result: list[dict] = []
+    while len(result) < limit:
+        added = False
+        for uid in user_order:
+            if by_user[uid]:
+                result.append(by_user[uid].pop(0))
+                added = True
+                if len(result) >= limit:
+                    break
+        if not added:
+            break
+    return result
+
+
+def get_pool_simulation_members(pool_id: int) -> list[dict]:
+    """Pool members who have at least one match prediction (for bracket simulation)."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.id, u.display_name, COUNT(p.id) AS prediction_count
+            FROM users u
+            JOIN predictions p ON p.user_id = u.id
+            WHERE u.pool_id = ?
+            GROUP BY u.id
+            ORDER BY u.display_name COLLATE NOCASE
+            """,
+            (pool_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_pool_predictors(pool_id: int) -> list[dict]:
+    """Users who have entered at least one prediction, with counts."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.display_name, COUNT(p.id) AS prediction_count,
+                   MAX(p.submitted_at) AS last_submitted
+            FROM users u
+            JOIN predictions p ON p.user_id = u.id
+            WHERE u.pool_id = ?
+            GROUP BY u.id
+            ORDER BY last_submitted DESC
+            """,
+            (pool_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_unread_comments(pool_id: int, since: str | None, exclude_user_id: int | None = None) -> int:
+    with db() as conn:
+        if not since:
+            return 0
+        if exclude_user_id:
+            return conn.execute(
+                """
+                SELECT COUNT(*) FROM comments
+                WHERE pool_id = ? AND created_at > ? AND user_id != ?
+                """,
+                (pool_id, since, exclude_user_id),
+            ).fetchone()[0]
+        return conn.execute(
+            "SELECT COUNT(*) FROM comments WHERE pool_id = ? AND created_at > ?",
+            (pool_id, since),
+        ).fetchone()[0]

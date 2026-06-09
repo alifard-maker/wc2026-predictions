@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% from "_ai_badge.html" import render_ai_badge with context %}
+{% block title %}{{ player.display_name }} — {{ pool.name }}{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('leaderboard_page', invite_code=pool.invite_code) }}">← Leaderboard</a>
+
+<section class="hero" style="padding-top: 1rem; text-align: left">
+  <h1 style="text-align: left">{{ player.display_name }}{% if is_you %} (you){% endif %}{{ render_ai_badge(player.display_name) }}</h1>
+  <p style="margin: 0; text-align: left">Season stats · {{ pool.name }}</p>
+</section>
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="value">{% if stats.rank %}#{{ stats.rank }}{% else %}—{% endif %}</div>
+    <div class="label">Pool rank</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ stats.total_points }}</div>
+    <div class="label">Total points</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ stats.exact_scores }}</div>
+    <div class="label">Exact scores</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ stats.accuracy_pct }}%</div>
+    <div class="label">Pick accuracy</div>
+  </div>
+</div>
+
+{% if stats.achievements %}
+<h2 class="section-title">Achievements</h2>
+<div class="badge-grid">
+  {% for b in stats.achievements %}
+  <div class="achievement-badge" title="{{ b.desc }}">
+    <span class="achievement-emoji">{{ b.emoji }}</span>
+    <strong>{{ b.title }}</strong>
+    <span class="achievement-desc">{{ b.desc }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card-grid" style="margin-top: 1.5rem">
+  <div class="card">
+    <h3>Season breakdown</h3>
+    <ul class="rules compact-list">
+      <li>Match points: <strong>{{ stats.match_points }}</strong></li>
+      {% if stats.phase_bonus_points %}
+      <li>Phase bonuses: <strong>{{ stats.phase_bonus_points }}</strong>
+        {% if stats.phase_bonus_detail %}
+        <span class="muted-inline">({{ stats.phase_bonus_detail | map(attribute='label') | join(', ') }})</span>
+        {% endif %}
+      </li>
+      {% endif %}
+      <li>Tournament bonus: <strong>{{ stats.tournament_points }}</strong></li>
+      <li>Exact score rate: <strong>{{ stats.exact_pct }}%</strong></li>
+      <li>Bold picks: <strong>{{ stats.bold.hits }}/{{ stats.bold.used }}</strong> hit</li>
+      {% if stats.ai_record.total %}
+      <li>Beat all AIs: <strong>{{ stats.ai_record.wins }}/{{ stats.ai_record.total }}</strong> matches</li>
+      {% endif %}
+      {% if stats.lucky_team %}<li>Lucky team: <strong>{{ stats.lucky_team }}</strong></li>{% endif %}
+      {% if stats.nemesis_team %}<li>Nemesis team: <strong>{{ stats.nemesis_team }}</strong></li>{% endif %}
+      {% if stats.best_matchday %}<li>Best matchday: <strong>{{ stats.best_matchday.key }}</strong> ({{ stats.best_matchday.points }} pts)</li>{% endif %}
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Recent form</h3>
+    {% if stats.recent_form %}
+    <ul class="rules compact-list">
+      {% for r in stats.recent_form %}
+      <li>
+        {{ r.match }} — {{ r.prediction }}{% if r.bold %} <span class="bold-tag">BOLD</span>{% endif %}
+        <strong>+{{ r.points }}</strong>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color: var(--muted); margin: 0">No finished matches yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<h2 class="section-title">Head-to-head</h2>
+<div class="card">
+  <form method="get" class="h2h-picker">
+    <label for="vs">Compare{% if is_you %} yourself{% else %} {{ player.display_name }}{% endif %} with</label>
+    <select id="vs" name="vs" onchange="this.form.submit()">
+      <option value="">Select a rival…</option>
+      {% for m in members if m.id != player.id %}
+      <option value="{{ m.id }}" {% if vs_id == m.id %}selected{% endif %}>{{ m.display_name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {% if h2h %}
+  <div class="h2h-scoreboard">
+    <div class="h2h-player {% if h2h.a.id == player.id %}h2h-focus{% endif %}">
+      <strong>{{ h2h.a.name }}</strong>
+      <span>{{ h2h.a.total }} pts total</span>
+    </div>
+    <div class="h2h-vs">
+      <span class="h2h-record">{{ h2h.a_match_wins }} – {{ h2h.b_match_wins }}</span>
+      <span class="muted-inline">match wins{% if h2h.ties %} · {{ h2h.ties }} ties{% endif %}</span>
+    </div>
+    <div class="h2h-player {% if h2h.b.id == player.id %}h2h-focus{% endif %}">
+      <strong>{{ h2h.b.name }}</strong>
+      <span>{{ h2h.b.total }} pts total</span>
+    </div>
+  </div>
+  {% if h2h.matchups %}
+  <table class="leaderboard-table" style="margin-top: 1rem">
+    <thead><tr><th>Match</th><th>{{ h2h.a.name }}</th><th>{{ h2h.b.name }}</th></tr></thead>
+    <tbody>
+      {% for row in h2h.matchups %}
+      <tr>
+        <td>{{ row.match }}</td>
+        <td class="{% if row.winner == 'a' %}pick-exact{% endif %}">{{ row.a_prediction }} ({{ row.a_points }})</td>
+        <td class="{% if row.winner == 'b' %}pick-exact{% endif %}">{{ row.b_prediction }} ({{ row.b_points }})</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% elif vs_id %}
+  <p style="color: var(--muted); margin: 1rem 0 0">No shared finished matches yet.</p>
+  {% else %}
+  <p style="color: var(--muted); margin: 1rem 0 0">Pick a pool mate to see who called more matches right.</p>
+  {% endif %}
+</div>
+{% endblock %}

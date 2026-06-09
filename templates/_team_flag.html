@@ -1,0 +1,24 @@
+{% macro wc_stars(team) %}
+{% set count = wc_titles(team) %}
+{% if count %}
+<span class="wc-title-stars" aria-label="{{ count }} World Cup title{{ 's' if count != 1 else '' }}">
+  {% for _ in range(count) %}<span class="wc-star">★</span>{% endfor %}
+</span>
+{% endif %}
+{% endmacro %}
+
+{% macro team_with_flag(team, invite_code, link=true) %}
+<span class="team-with-flag">
+  <span class="team-core">
+    {% if flag_url(team) %}
+    <img src="{{ flag_url(team) }}" alt="" class="team-flag" loading="lazy">
+    {% endif %}
+    {% if link and invite_code %}
+    <a href="{{ url_for('team_page', invite_code=invite_code, team_slug_name=team_slug(team)) }}" class="team-link">{{ team }}</a>
+    {% else %}
+    <span>{{ team }}</span>
+    {% endif %}
+  </span>
+  {{ wc_stars(team) }}
+</span>
+{% endmacro %}

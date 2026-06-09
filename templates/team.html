@@ -1,0 +1,468 @@
+{% extends "base.html" %}
+{% from "_team_flag.html" import wc_stars with context %}
+{% from "_person_row.html" import person_row %}
+{% block title %}{{ profile.name }} — Team Profile{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Back to matches</a>
+
+<section class="hero" style="padding-top: 1.5rem; text-align: left">
+  <h1 style="text-align: left; margin: 0">
+    <span class="team-with-flag">
+      <span class="team-core">
+        {% if flag_url(profile.name) %}
+        <img src="{{ flag_url(profile.name) }}" alt="" class="team-flag" loading="lazy">
+        {% endif %}
+        <span>{{ profile.name }}</span>
+      </span>
+      {{ wc_stars(profile.name) }}
+    </span>
+  </h1>
+  <p style="margin: 0.5rem 0 0; color: var(--muted)">FIFA World Cup team profile</p>
+</section>
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="value">#{{ profile.fifa_ranking }}</div>
+    <div class="label">FIFA ranking</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ profile.appearances }}</div>
+    <div class="label">WC appearances</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ profile.titles }}</div>
+    <div class="label">World Cup titles</div>
+  </div>
+  <div class="stat">
+    <div class="value">{{ profile.wc_w }}-{{ profile.wc_d }}-{{ profile.wc_l }}</div>
+    <div class="label">WC record (W-D-L)</div>
+  </div>
+</div>
+
+<h2 class="section-title">2026 tournament stats</h2>
+<div class="card team-live-stats-card" id="team-live-stats">
+  <div class="stats-row" id="team-discipline-stats">
+    <div class="stat">
+      <div class="value" data-stat="yellow">{{ live_stats.yellow_cards }}</div>
+      <div class="label">🟨 Yellow cards</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="red">{{ live_stats.red_cards }}</div>
+      <div class="label">🟥 Red cards</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="pen_for">{{ live_stats.penalties.scored_for }}</div>
+      <div class="label">⚽ Pens scored</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="pen_against">{{ live_stats.penalties.conceded }}</div>
+      <div class="label">Pens conceded</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="pen_saved">{{ live_stats.penalties.saved }}</div>
+      <div class="label">🧤 Pens saved</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="pen_faced">{{ live_stats.penalties.faced }}</div>
+      <div class="label">Pens faced</div>
+    </div>
+  </div>
+  {% if live_stats.matches_played %}
+  <p class="muted-inline" style="margin-top: 0.75rem" id="team-record-line">
+    Tournament record: {{ live_stats.tournament_record.w }}-{{ live_stats.tournament_record.d }}-{{ live_stats.tournament_record.l }}
+    · {{ live_stats.tournament_record.gf }} scored · {{ live_stats.tournament_record.ga }} conceded
+  </p>
+  {% endif %}
+  <div id="team-penalty-log">
+    {% if live_stats.penalty_events %}
+    <p class="muted-inline" style="margin: 0.75rem 0 0.35rem">Penalty log</p>
+    <ul class="rules compact-list" id="team-penalty-list">
+      {% for p in live_stats.penalty_events %}
+      <li>
+        {% if p.outcome == 'scored' %}⚽{% elif p.outcome == 'saved' %}🧤{% else %}✗{% endif %}
+        {{ p.minute }} — {{ p.taker }}{% if p.goalkeeper and p.outcome == 'saved' %} (saved by {{ p.goalkeeper }}){% endif %}
+        · {{ p.match }}
+        {% if p.is_for %}(for {{ profile.name }}){% else %}(against {{ profile.name }}){% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  <div id="team-cards-log">
+    {% if live_stats.cards %}
+    <p class="muted-inline" style="margin: 0.75rem 0 0.35rem">Card log</p>
+    <ul class="rules compact-list" id="team-cards-list">
+      {% for c in live_stats.cards %}
+      <li>{% if c.type == 'yellow' %}🟨{% else %}🟥{% endif %} {{ c.player }} ({{ c.minute }}') — {{ c.match }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+
+{% if group_preview %}
+<h2 class="section-title">Group {{ group_preview.group }} preview</h2>
+<div class="card group-preview-card">
+  <div class="group-preview-header">
+    <span class="difficulty-badge difficulty-{{ group_preview.difficulty | lower }}">{{ group_preview.difficulty }} group</span>
+    <span class="group-preview-meta">Your rank <strong>#{{ group_preview.team_ranking }}</strong> · Avg opponent rank <strong>#{{ group_preview.avg_opponent_ranking }}</strong></span>
+  </div>
+  <p class="group-preview-note">{{ group_preview.difficulty_note }}</p>
+  <div class="group-standings-preview">
+    {% for m in group_preview.members %}
+    <div class="group-team-row{% if m.is_team %} is-you{% endif %}">
+      <span class="group-team-rank">#{{ m.ranking }}</span>
+      <span class="group-team-name">
+        {% if flag_url(m.name) %}<img src="{{ flag_url(m.name) }}" alt="" class="team-flag-sm" loading="lazy">{% endif %}
+        {{ m.name }}{% if m.is_team %} <em>(this team)</em>{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="group-advance-tip">{{ group_preview.advancement_tip }}</p>
+</div>
+{% endif %}
+
+<div class="card-grid">
+  <div class="card">
+    <h3>World Cup history</h3>
+    <ul class="rules">
+      <li><strong>First appearance:</strong> {{ profile.first }}</li>
+      <li><strong>Best finish:</strong> {{ profile.best }}</li>
+      <li><strong>Matches played:</strong> {{ profile.wc_played }} ({{ profile.wc_win_pct }}% wins)</li>
+      <li><strong>Won:</strong> {{ profile.wc_w }} · <strong>Drawn:</strong> {{ profile.wc_d }} · <strong>Lost:</strong> {{ profile.wc_l }}</li>
+    </ul>
+    <p style="color: var(--muted); margin: 1rem 0 0.5rem; font-size: 0.9rem">Tournament appearances:</p>
+    <p style="margin: 0">{{ profile.history | join(' · ') }}</p>
+  </div>
+
+  <div class="card">
+    <h3>2026 squad leadership</h3>
+    <ul class="person-list">
+      {{ person_row('Coach', profile.coach_info) }}
+      {{ person_row('Captain', profile.captain_info) }}
+      {{ person_row('Key player', profile.key_player_info) }}
+    </ul>
+    {% if coach_wc_record %}
+    <div class="coach-wc-record">
+      <strong>Coach WC record:</strong>
+      {{ coach_wc_record.w }}-{{ coach_wc_record.d }}-{{ coach_wc_record.l }}
+      <span class="muted-inline">({{ coach_wc_record.tournaments }})</span>
+    </div>
+    {% endif %}
+    {% if profile.honour %}
+    <p style="margin-top: 1rem; color: var(--accent-2); font-size: 0.95rem">{{ profile.honour }}</p>
+    {% endif %}
+  </div>
+</div>
+
+<h2 class="section-title">Historical &amp; records</h2>
+<div class="card-grid">
+  <div class="card">
+    <h3>All-time WC top scorer</h3>
+    <div class="record-highlight">
+      <span class="record-name">{{ history.top_scorer.name }}</span>
+      {% if history.top_scorer.goals %}
+      <span class="record-stat">{{ history.top_scorer.goals }} goals</span>
+      {% endif %}
+    </div>
+    {% if history.top_scorer.note %}
+    <p class="muted-inline">{{ history.top_scorer.note }}</p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Memorable WC results</h3>
+    <ul class="rules">
+      <li><strong>Biggest win:</strong> {{ history.memorable.best_win }}</li>
+      <li><strong>Heaviest defeat:</strong> {{ history.memorable.worst_loss }}</li>
+    </ul>
+    {% if history.memorable.note %}
+    <p class="muted-inline">{{ history.memorable.note }}</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if history.rivalries %}
+<h2 class="section-title">Rivalry badges</h2>
+<div class="rivalry-badges">
+  {% for r in history.rivalries %}
+  <div class="rivalry-badge{% if r.meets_in_2026 %} rivalry-meets{% endif %}">
+    <span class="rivalry-icon">{{ r.icon }}</span>
+    <div class="rivalry-body">
+      <strong>{{ r.label }}</strong>
+      <span>vs {{ r.opponent }}{% if r.meets_in_2026 %} · <em>group stage 2026</em>{% endif %}</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2 class="section-title">Your pool’s predictions</h2>
+<div class="card pool-stats-card">
+  {% if pool_predictions.prediction_count %}
+  <div class="stats-row pool-pred-stats">
+    <div class="stat">
+      <div class="value">{{ pool_predictions.avg_goals_for }}</div>
+      <div class="label">Avg predicted goals for</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ pool_predictions.avg_goals_against }}</div>
+      <div class="label">Avg predicted goals against</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ pool_predictions.pct_win }}%</div>
+      <div class="label">Picking win</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ pool_predictions.pct_draw }}%</div>
+      <div class="label">Picking draw</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ pool_predictions.pct_loss }}%</div>
+      <div class="label">Picking loss</div>
+    </div>
+  </div>
+  {% if pool_predictions.top_scorelines %}
+  <p class="pool-scorelines-label">Most picked scorelines (from {{ profile.name }}’s perspective):</p>
+  <div class="scoreline-chips">
+    {% for s in pool_predictions.top_scorelines %}
+    <span class="scoreline-chip">{{ s.scoreline }} <em>({{ s.count }})</em></span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="muted-inline">No human predictions yet for {{ profile.name }}’s matches in this pool.</p>
+  {% endif %}
+</div>
+
+{% if pool_predictions.ai_picks %}
+<h2 class="section-title">AI agents’ picks</h2>
+<div class="card">
+  {% for m in pool_predictions.ai_picks %}
+  <div class="ai-pick-row">
+    <div class="ai-pick-match">
+      <a href="{{ match_detail_url(pool.invite_code, m.match_id) }}">
+        {% if m.is_home %}{{ profile.name }} vs {{ m.opponent }}{% else %}{{ m.opponent }} vs {{ profile.name }}{% endif %}
+      </a>
+      <span class="muted-inline">{{ m.match_date }}</span>
+    </div>
+    <div class="ai-pick-scores">
+      {% for a in m.agents %}
+      <span class="ai-pick-item" title="{{ a.display_name }}">
+        <span class="ai-badge">{{ a.badge }}</span>
+        {{ a.goals_for }}–{{ a.goals_against }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if prediction_accuracy.finished_matches %}
+<h2 class="section-title">Prediction accuracy</h2>
+<div class="card">
+  <p class="muted-inline">How well pool members have predicted {{ profile.name }}’s finished results ({{ prediction_accuracy.finished_matches }} match{{ 'es' if prediction_accuracy.finished_matches != 1 else '' }}).</p>
+  <div class="stats-row">
+    <div class="stat">
+      <div class="value">{{ prediction_accuracy.exact_score_pct }}%</div>
+      <div class="label">Exact score</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ prediction_accuracy.correct_result_pct }}%</div>
+      <div class="label">Correct result</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ prediction_accuracy.avg_points }}</div>
+      <div class="label">Avg points / pick</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if live_stats.top_scorers or live_stats.goals %}
+<h2 class="section-title">Goals</h2>
+<div class="card-grid">
+  {% if live_stats.top_scorers %}
+  <div class="card">
+    <h3>Goal scorers</h3>
+    <ul class="rules" id="team-scorers-list">
+      {% for s in live_stats.top_scorers %}
+      <li><strong>{{ s.name }}</strong> — {{ s.goals }} goal{{ 's' if s.goals != 1 else '' }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% if live_stats.goals %}
+<div class="card" style="margin-top: 1rem">
+  <h3>All goals</h3>
+  <table class="leaderboard-table" id="team-goals-table">
+    <thead><tr><th>Scorer</th><th>Min</th><th>Match</th></tr></thead>
+    <tbody>
+      {% for g in live_stats.goals %}
+      <tr><td>{{ g.scorer }}{% if g.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %}</td><td>{{ g.minute }}</td><td>{{ g.match }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
+
+{% if profile.squad %}
+<h2 class="section-title">2026 World Cup squad</h2>
+<div class="card" style="margin-bottom: 2rem">
+  <div class="squad-header">
+    <div class="squad-meta">
+      <span class="squad-formation">{{ profile.squad.formation }}</span>
+      <span class="squad-style">{{ profile.squad.style }}</span>
+    </div>
+    <div class="squad-stats-inline">
+      <span><strong>{{ profile.squad.squad_size }}</strong> players</span>
+      <span>Avg age <strong>{{ profile.squad.avg_age }}</strong></span>
+    </div>
+  </div>
+  {% if profile.squad.source %}
+  <p class="muted-inline" style="margin: 0 0 0.75rem">{{ profile.squad.source }}</p>
+  {% endif %}
+  <div class="squad-table-wrap">
+    <table class="squad-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Pos</th>
+          <th>Age</th>
+          <th>Ht</th>
+          <th>NT caps</th>
+          <th>NT goals</th>
+          <th>Past WC</th>
+          <th>Club (2025/26)</th>
+          <th>Former clubs</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pl in profile.squad.players %}
+        <tr>
+          <td class="squad-num">{{ pl.number }}</td>
+          <td><strong>{{ pl.name }}</strong></td>
+          <td>{{ pl.position }}</td>
+          <td>{{ pl.age }}</td>
+          <td>{{ pl.height_cm }}cm</td>
+          <td>{{ pl.nt_caps }}</td>
+          <td>{{ pl.nt_goals }}</td>
+          <td>{% if pl.past_wc %}{{ pl.past_wc | join(', ') }}{% else %}—{% endif %}</td>
+          <td>{{ pl.club }}</td>
+          <td class="squad-former">{{ pl.past_clubs | join(' · ') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<h2 class="section-title">Matches in this tournament</h2>
+<div class="card">
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>Date</th><th>Match</th><th>Group</th><th>Venue</th></tr>
+    </thead>
+    <tbody>
+      {% for m in team_matches %}
+      <tr>
+        <td>{{ m.match_date }} {{ m.match_time }} ET</td>
+        <td>
+          <a href="{{ match_detail_url(pool.invite_code, m.id) }}">
+            {{ m.home_team }} vs {{ m.away_team }}
+          </a>
+        </td>
+        <td>{% if m.group_name %}Group {{ m.group_name }}{% else %}—{% endif %}</td>
+        <td style="color: var(--muted)">{{ m.venue }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const root = document.getElementById('team-live-stats');
+  if (!root) return;
+  const url = "{{ url_for('team_stats_feed', invite_code=pool.invite_code, team_slug_name=profile.slug) }}";
+  const teamName = {{ profile.name | tojson }};
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderStats(data) {
+    root.querySelector('[data-stat="yellow"]').textContent = data.yellow_cards;
+    root.querySelector('[data-stat="red"]').textContent = data.red_cards;
+    const p = data.penalties || {};
+    root.querySelector('[data-stat="pen_for"]').textContent = p.scored_for ?? 0;
+    root.querySelector('[data-stat="pen_against"]').textContent = p.conceded ?? 0;
+    root.querySelector('[data-stat="pen_saved"]').textContent = p.saved ?? 0;
+    root.querySelector('[data-stat="pen_faced"]').textContent = p.faced ?? 0;
+
+    const recordEl = document.getElementById('team-record-line');
+    if (data.matches_played) {
+      const r = data.tournament_record;
+      const text = `Tournament record: ${r.w}-${r.d}-${r.l} · ${r.gf} scored · ${r.ga} conceded`;
+      if (recordEl) recordEl.textContent = text;
+      else {
+        const p = document.createElement('p');
+        p.className = 'muted-inline';
+        p.style.marginTop = '0.75rem';
+        p.id = 'team-record-line';
+        p.textContent = text;
+        document.getElementById('team-discipline-stats').after(p);
+      }
+    }
+
+    const penLog = document.getElementById('team-penalty-log');
+    if (penLog) {
+      if (data.penalty_events && data.penalty_events.length) {
+        const items = data.penalty_events.map(ev => {
+          const icon = ev.outcome === 'scored' ? '⚽' : ev.outcome === 'saved' ? '🧤' : '✗';
+          const gk = ev.goalkeeper && ev.outcome === 'saved' ? ` (saved by ${esc(ev.goalkeeper)})` : '';
+          const side = ev.is_for ? `(for ${esc(teamName)})` : `(against ${esc(teamName)})`;
+          return `<li>${icon} ${esc(ev.minute)} — ${esc(ev.taker)}${gk} · ${esc(ev.match)} ${side}</li>`;
+        }).join('');
+        penLog.innerHTML = `<p class="muted-inline" style="margin: 0.75rem 0 0.35rem">Penalty log</p><ul class="rules compact-list" id="team-penalty-list">${items}</ul>`;
+      } else {
+        penLog.innerHTML = '';
+      }
+    }
+
+    const cardsLog = document.getElementById('team-cards-log');
+    if (cardsLog) {
+      if (data.cards && data.cards.length) {
+        const items = data.cards.map(c => {
+          const icon = c.type === 'yellow' ? '🟨' : '🟥';
+          return `<li>${icon} ${esc(c.player)} (${esc(c.minute)}') — ${esc(c.match)}</li>`;
+        }).join('');
+        cardsLog.innerHTML = `<p class="muted-inline" style="margin: 0.75rem 0 0.35rem">Card log</p><ul class="rules compact-list" id="team-cards-list">${items}</ul>`;
+      } else {
+        cardsLog.innerHTML = '';
+      }
+    }
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      renderStats(await res.json());
+    } catch (_) {}
+  }
+
+  setInterval(refresh, 30000);
+})();
+</script>
+{% endblock %}
