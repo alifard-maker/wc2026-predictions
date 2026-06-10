@@ -1006,6 +1006,107 @@ def get_pool_members(pool_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_pool_members_with_stats(pool_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT u.id, u.display_name,
+                   (SELECT COUNT(*) FROM predictions WHERE user_id = u.id) AS prediction_count,
+                   (SELECT COUNT(*) FROM comments WHERE user_id = u.id) AS comment_count
+            FROM users u
+            WHERE u.pool_id = ?
+            ORDER BY u.display_name
+            """,
+            (pool_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_user(user_id: int, pool_id: int) -> str | None:
+    from ai_predictor import is_ai_agent
+
+    with db() as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE id = ? AND pool_id = ?",
+            (user_id, pool_id),
+        ).fetchone()
+        if not user:
+            return "User not found in this pool."
+        if is_ai_agent(user["display_name"]):
+            return "Cannot delete AI pool members."
+
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return None
+
+
+def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str:
+    from ai_predictor import is_ai_agent
+
+    name = new_display_name.strip()
+    if not name:
+        return "Display name is required."
+    if len(name) > 40:
+        return "Display name must be 40 characters or fewer."
+
+    with db() as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE id = ? AND pool_id = ?",
+            (user_id, pool_id),
+        ).fetchone()
+        if not user:
+            return "User not found in this pool."
+        if is_ai_agent(user["display_name"]):
+            return "Cannot rename AI pool members."
+
+        conflict = conn.execute(
+            """
+            SELECT id FROM users
+            WHERE pool_id = ? AND lower(display_name) = lower(?) AND id != ?
+            """,
+            (pool_id, name, user_id),
+        ).fetchone()
+        if conflict:
+            return f'Another member already uses the name "{name}".'
+
+        conn.execute(
+            "UPDATE users SET display_name = ? WHERE id = ?",
+            (name, user_id),
+        )
+    return {
+        "id": user_id,
+        "display_name": name,
+        "old_display_name": user["display_name"],
+    }
+
+
+def admin_delete_comment(comment_id: int, pool_id: int) -> str | None:
+    with db() as conn:
+        comment = conn.execute("SELECT * FROM comments WHERE id = ?", (comment_id,)).fetchone()
+        if not comment:
+            return "Comment not found."
+        if comment["pool_id"] != pool_id:
+            return "Comment not in this pool."
+
+        conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
+    return None
+
+
+def admin_delete_user_comments(user_id: int, pool_id: int) -> str | None:
+    with db() as conn:
+        user = conn.execute(
+            "SELECT id FROM users WHERE id = ? AND pool_id = ?",
+            (user_id, pool_id),
+        ).fetchone()
+        if not user:
+            return "User not found in this pool."
+
+        conn.execute(
+            "DELETE FROM comments WHERE user_id = ? AND pool_id = ?",
+            (user_id, pool_id),
+        )
+    return None
+
+
 def add_comment(pool_id: int, user_id: int, body: str, match_id: int | None = None) -> dict | str:
     text = body.strip()
     if not text:

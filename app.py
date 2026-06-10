@@ -1225,6 +1225,136 @@ def admin_page(invite_code):
             else:
                 db.save_tournament_results(top_scorer, winner, second, third)
                 flash("Tournament results saved — leaderboard bonus points updated.", "success")
+        elif action == "delete_user" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                error = db.delete_user(user_id, pool["id"])
+                if error:
+                    flash(error, "error")
+                else:
+                    if session.get("user_id") == user_id:
+                        session.pop("user_id", None)
+                        session.pop("display_name", None)
+                    flash("User deleted — their predictions, comments, and tournament picks were removed.", "success")
+        elif action == "rename_user" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                result = db.rename_user(user_id, pool["id"], request.form.get("new_display_name", ""))
+                if isinstance(result, str):
+                    flash(result, "error")
+                else:
+                    if session.get("user_id") == user_id:
+                        session["display_name"] = result["display_name"]
+                    flash(
+                        f'Renamed "{result["old_display_name"]}" → "{result["display_name"]}". '
+                        "They can return with the same invite link and their new name.",
+                        "success",
+                    )
+        elif action == "delete_comment" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                comment_id = int(request.form.get("comment_id", 0))
+            except ValueError:
+                flash("Invalid comment.", "error")
+            else:
+                error = db.admin_delete_comment(comment_id, pool["id"])
+                if error:
+                    flash(error, "error")
+                else:
+                    flash("Comment deleted.", "success")
+        elif action == "delete_user_comments" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                error = db.admin_delete_user_comments(user_id, pool["id"])
+                if error:
+                    flash(error, "error")
+                else:
+                    flash("All comments for that member were deleted.", "success")
+        elif action == "admin_predictions" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                user = db.get_user(user_id)
+                if not user or user["pool_id"] != pool["id"]:
+                    flash("User not found in this pool.", "error")
+                elif is_ai_agent(user["display_name"]):
+                    flash("Use the AI sync tools for AI members — not manual override.", "error")
+                else:
+                    saved = 0
+                    for key in request.form:
+                        if not key.startswith("pred_") or not key.endswith("_home"):
+                            continue
+                        try:
+                            match_id = int(key.split("_")[1])
+                        except (ValueError, IndexError):
+                            continue
+                        home_str = request.form.get(f"pred_{match_id}_home", "").strip()
+                        away_str = request.form.get(f"pred_{match_id}_away", "").strip()
+                        if not home_str or not away_str:
+                            continue
+                        try:
+                            home_score = int(home_str)
+                            away_score = int(away_str)
+                        except ValueError:
+                            continue
+                        if home_score < 0 or away_score < 0 or home_score > 20 or away_score > 20:
+                            continue
+                        db.upsert_prediction(user_id, match_id, home_score, away_score)
+                        saved += 1
+                    bold_match = request.form.get("bold_match_id", "").strip()
+                    if bold_match:
+                        try:
+                            err = db.set_bold_pick(user_id, int(bold_match))
+                            if err:
+                                flash(err, "error")
+                            else:
+                                flash("Bold pick updated for member.", "success")
+                        except ValueError:
+                            pass
+                    if saved:
+                        flash(f"Saved {saved} match prediction(s) for {user['display_name']} (deadline bypassed).", "success")
+                    elif not bold_match:
+                        flash("No predictions to save.", "error")
+        elif action == "admin_tournament_vote" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                user = db.get_user(user_id)
+                if not user or user["pool_id"] != pool["id"]:
+                    flash("User not found in this pool.", "error")
+                elif is_ai_agent(user["display_name"]):
+                    flash("Use the AI sync tools for AI members — not manual override.", "error")
+                else:
+                    top_scorer = resolve_scorer_pick_value(
+                        request.form.get("top_scorer", ""),
+                        request.form.get("top_scorer_custom"),
+                    )
+                    result = db.upsert_tournament_vote(
+                        user_id,
+                        top_scorer,
+                        request.form.get("winner", ""),
+                        request.form.get("second_place", ""),
+                        request.form.get("third_place", ""),
+                    )
+                    if isinstance(result, str):
+                        flash(result, "error")
+                    else:
+                        flash(
+                            f"Tournament picks saved for {user['display_name']} (deadline bypassed).",
+                            "success",
+                        )
 
     is_admin = session.get("admin_secret") == pool["admin_secret"]
     matches = enrich_matches(db.get_all_matches())
@@ -1233,6 +1363,25 @@ def admin_page(invite_code):
     tournament_results = db.get_tournament_results()
     extra_scorer_names = [tournament_results["top_scorer"]] if tournament_results and tournament_results.get("top_scorer") else []
     scorer_squads = get_scorer_squads_data(extra_scorer_names)
+
+    members = db.get_pool_members_with_stats(pool["id"]) if is_admin else []
+    pool_comments = db.get_pool_comments(pool["id"])[:50] if is_admin else []
+    edit_user_id = request.args.get("user_id", type=int) if is_admin else None
+    if is_admin and not edit_user_id and request.method == "POST":
+        if request.form.get("action") in ("admin_predictions", "admin_tournament_vote", "rename_user"):
+            edit_user_id = request.form.get("user_id", type=int)
+    edit_user = None
+    edit_user_matches = []
+    edit_user_vote = None
+    if edit_user_id:
+        edit_user = db.get_user(edit_user_id)
+        if not edit_user or edit_user["pool_id"] != pool["id"]:
+            edit_user_id = None
+            edit_user = None
+        else:
+            user_preds = db.get_user_predictions(edit_user_id)
+            edit_user_matches = enrich_matches(db.get_all_matches(), user_preds)
+            edit_user_vote = db.get_tournament_vote(edit_user_id)
 
     return render_template(
         "admin.html",
@@ -1245,6 +1394,12 @@ def admin_page(invite_code):
         scorer_board=db.get_tournament_scorer_leaderboard(),
         card_events=cards_data["events"],
         scorer_squads=scorer_squads,
+        members=members,
+        pool_comments=pool_comments,
+        edit_user_id=edit_user_id,
+        edit_user=edit_user,
+        edit_user_matches=edit_user_matches,
+        edit_user_vote=edit_user_vote,
     )
 
 

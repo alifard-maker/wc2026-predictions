@@ -26,6 +26,180 @@
   <div class="invite-box">{{ invite_url }}</div>
 </div>
 
+<h2 class="section-title">Member management</h2>
+<p style="color: var(--muted)">Rename members, remove users, edit their picks after deadlines, or moderate comments when someone reaches out.</p>
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Pool members ({{ members|length }})</h3>
+  <table class="leaderboard-table admin-members-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Predictions</th>
+        <th>Comments</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in members %}
+      <tr>
+        <td>
+          <strong>{{ m.display_name }}</strong>
+          {% if is_ai_agent(m.display_name) %}<span class="badge">AI</span>{% endif %}
+        </td>
+        <td>{{ m.prediction_count }}</td>
+        <td>{{ m.comment_count }}</td>
+        <td class="admin-member-actions">
+          {% if not is_ai_agent(m.display_name) %}
+          <form method="post" class="admin-rename-form">
+            <input type="hidden" name="action" value="rename_user">
+            <input type="hidden" name="user_id" value="{{ m.id }}">
+            <input type="text" name="new_display_name" value="{{ m.display_name }}" maxlength="40" required>
+            <button type="submit" class="btn btn-secondary btn-sm">Rename</button>
+          </form>
+          <a href="{{ url_for('admin_page', invite_code=pool.invite_code, user_id=m.id) }}#edit-picks" class="btn btn-secondary btn-sm">Edit picks</a>
+          {% if m.comment_count > 0 %}
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete all {{ m.comment_count }} comment(s) by {{ m.display_name }}?')">
+            <input type="hidden" name="action" value="delete_user_comments">
+            <input type="hidden" name="user_id" value="{{ m.id }}">
+            <button type="submit" class="btn-link btn-link-danger">Clear comments</button>
+          </form>
+          {% endif %}
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete {{ m.display_name }}? This removes all their predictions, comments, and tournament picks.')">
+            <input type="hidden" name="action" value="delete_user">
+            <input type="hidden" name="user_id" value="{{ m.id }}">
+            <button type="submit" class="btn-link btn-link-danger">Delete user</button>
+          </form>
+          {% else %}
+          <span style="color: var(--muted); font-size: 0.85rem">AI member</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if edit_user %}
+<div class="card admin-edit-picks-card" id="edit-picks" style="margin-bottom: 2rem; border-color: var(--accent-2)">
+  <h3>Edit picks for {{ edit_user.display_name }}</h3>
+  <p style="color: var(--muted)">Admin override — deadlines do not apply. Leave score fields blank to skip a match.</p>
+
+  <form method="post" style="margin-bottom: 1.5rem">
+    <input type="hidden" name="action" value="admin_tournament_vote">
+    <input type="hidden" name="user_id" value="{{ edit_user.id }}">
+    <h4 style="margin-bottom: 0.75rem">Tournament picks</h4>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem">
+      <div style="grid-column: 1 / -1">
+        {{ scorer_picker('top_scorer', 'admin_member_top_scorer', edit_user_vote.top_scorer if edit_user_vote else '', scorer_squads, allow_other=true) }}
+      </div>
+      <div>
+        <label>Winner</label>
+        <select name="winner" required>
+          <option value="">Select team</option>
+          {% for team in teams %}
+          <option value="{{ team }}" {% if edit_user_vote and edit_user_vote.winner == team %}selected{% endif %}>{{ team }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>2nd place</label>
+        <select name="second_place" required>
+          <option value="">Select team</option>
+          {% for team in teams %}
+          <option value="{{ team }}" {% if edit_user_vote and edit_user_vote.second_place == team %}selected{% endif %}>{{ team }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>3rd place</label>
+        <select name="third_place" required>
+          <option value="">Select team</option>
+          {% for team in teams %}
+          <option value="{{ team }}" {% if edit_user_vote and edit_user_vote.third_place == team %}selected{% endif %}>{{ team }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="grid-column: 1 / -1">
+        <button type="submit" class="btn btn-gold">Save tournament picks</button>
+      </div>
+    </div>
+  </form>
+
+  <form method="post">
+    <input type="hidden" name="action" value="admin_predictions">
+    <input type="hidden" name="user_id" value="{{ edit_user.id }}">
+    <h4 style="margin-bottom: 0.75rem">Match predictions</h4>
+    <div class="admin-picks-scroll">
+      <table class="leaderboard-table admin-picks-table">
+        <thead>
+          <tr>
+            <th>Match</th>
+            <th>Deadline</th>
+            <th>Current</th>
+            <th>H</th>
+            <th>A</th>
+            <th>Bold</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in edit_user_matches %}
+          <tr class="{% if not m.open %}admin-picks-closed{% endif %}">
+            <td>
+              <strong>{{ m.home_team }}</strong> vs <strong>{{ m.away_team }}</strong>
+              <div class="muted-inline">{% if m.group_name %}Group {{ m.group_name }} · {% endif %}{{ m.match_date }}</div>
+            </td>
+            <td>
+              {% if m.open %}<span class="badge">Open</span>{% else %}<span class="badge badge-live">Closed</span>{% endif %}
+            </td>
+            <td>
+              {% if m.prediction %}{{ m.prediction.home_score }}–{{ m.prediction.away_score }}{% if m.prediction.is_bold %} ★{% endif %}{% else %}—{% endif %}
+            </td>
+            <td><input type="number" name="pred_{{ m.id }}_home" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" placeholder="—"></td>
+            <td><input type="number" name="pred_{{ m.id }}_away" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" placeholder="—"></td>
+            <td>
+              <input type="radio" name="bold_match_id" value="{{ m.id }}" {% if m.prediction and m.prediction.is_bold %}checked{% endif %} title="Bold pick (2× points)">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="btn btn-gold" style="margin-top: 1rem">Save match predictions</button>
+  </form>
+</div>
+{% else %}
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Edit member picks</h3>
+  <p style="color: var(--muted)">Choose a member from the table above and click <strong>Edit picks</strong> to post or change predictions after deadlines.</p>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom: 2rem">
+  <h3>Comments moderation</h3>
+  {% if pool_comments %}
+  <div class="admin-comments-list">
+    {% for c in pool_comments %}
+    <div class="admin-comment-row">
+      <div>
+        <strong>{{ c.display_name }}</strong>
+        {% if c.match_id and c.home_team %}<span class="comment-match-tag">⚽ {{ c.home_team }} vs {{ c.away_team }}</span>{% endif %}
+        <span class="comment-time">{{ c.created_at }}</span>
+        <p class="comment-body">{{ c.body }}</p>
+      </div>
+      <form method="post" onsubmit="return confirm('Delete this comment?')">
+        <input type="hidden" name="action" value="delete_comment">
+        <input type="hidden" name="comment_id" value="{{ c.id }}">
+        <button type="submit" class="btn-link btn-link-danger">Delete</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color: var(--muted)">No comments in this pool yet.</p>
+  {% endif %}
+</div>
+
 <div class="card" style="margin-bottom: 2rem">
   <h3>Add knockout match</h3>
   <p style="color: var(--muted)">Once group stage teams are confirmed, add Round of 32, R16, etc.</p>
