@@ -213,9 +213,16 @@
     {% endfor %}
   </div>
 
+  {% if open_count > 0 %}
   <div class="save-predictions-bar">
     <button type="submit" class="btn btn-primary">Save Predictions</button>
+    <span class="muted-inline">Only open matches are saved — closed picks cannot be changed.</span>
   </div>
+  {% else %}
+  <div class="save-predictions-bar">
+    <p class="muted-inline" style="margin: 0">All due picks are locked. View your full sheet on <a href="{{ url_for('my_stats_page', invite_code=pool.invite_code) }}#picks-summary">My Stats</a>.</p>
+  </div>
+  {% endif %}
 </form>
 {% endblock %}
 

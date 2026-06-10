@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from ai_predictor import AI_AGENT_NAMES, is_ai_agent
-from db import db, get_all_matches, get_leaderboard, get_pool_comments
+from db import db, get_all_matches, get_leaderboard, get_pool_comments, get_tournament_vote
 from live_scores import apply_live_state
 from scoring import (
     TIMEZONE,
@@ -32,6 +32,33 @@ def matchday_key(match: dict) -> str:
         return f"md{match['matchday']}"
     stage = match.get("stage") or "knockout"
     return f"ko_{stage}"
+
+
+def _picks_group_sort(key: str) -> tuple:
+    if key.startswith("md"):
+        try:
+            return (0, int(key[2:]))
+        except ValueError:
+            return (0, 99)
+    if key.startswith("ko_"):
+        stage_order = {
+            "round_of_32": 1,
+            "round_of_16": 2,
+            "quarter_final": 3,
+            "semi_final": 4,
+            "third_place": 5,
+            "final": 6,
+        }
+        return (1, stage_order.get(key[3:], 99))
+    return (2, key)
+
+
+def _picks_group_label(match: dict) -> str:
+    if match.get("matchday"):
+        return f"Matchday {match['matchday']}"
+    if match.get("group_name"):
+        return f"Group {match['group_name']}"
+    return (match.get("stage") or "knockout").replace("_", " ").title()
 
 
 def apply_bold_multiplier(base_points: int | None, is_bold: bool) -> int | None:
@@ -758,3 +785,98 @@ def filter_tournament_votes_for_display(
             "hidden": True,
         })
     return filtered
+
+
+def build_player_picks_summary(
+    player_user_id: int,
+    pool_id: int,
+    viewer_user_id: int,
+) -> dict:
+    """Full pick sheet for a player — own profile always visible; others respect deadlines."""
+    now = datetime.now(TIMEZONE)
+    is_own = player_user_id == viewer_user_id
+    all_matches = [dict(m) for m in get_all_matches()]
+    user_preds = {p["match_id"]: p for p in _user_pool_predictions(player_user_id, pool_id)}
+
+    predicted = 0
+    open_to_predict = 0
+    closed_missed = 0
+    groups_map: dict[str, list] = defaultdict(list)
+    group_labels: dict[str, str] = {}
+
+    for m in all_matches:
+        pred = user_preds.get(m["id"])
+        open_for_pred = is_prediction_open(m["match_date"], m["match_time"], now)
+        finished = m["actual_home"] is not None
+        revealed = picks_revealed(m, now)
+        hide = not is_own and not revealed and pred is not None
+
+        if pred:
+            predicted += 1
+        elif open_for_pred:
+            open_to_predict += 1
+        else:
+            closed_missed += 1
+
+        gkey = matchday_key(m)
+        group_labels[gkey] = _picks_group_label(m)
+
+        row = {
+            "match_id": m["id"],
+            "home_team": m["home_team"],
+            "away_team": m["away_team"],
+            "match_date": m["match_date"],
+            "matchday": m.get("matchday"),
+            "group_name": m.get("group_name"),
+            "stage": m.get("stage"),
+            "open": open_for_pred,
+            "finished": finished,
+            "has_prediction": pred is not None,
+            "hidden": hide,
+            "home_score": None,
+            "away_score": None,
+            "is_bold": False,
+            "points": None,
+            "actual_home": m["actual_home"] if finished else None,
+            "actual_away": m["actual_away"] if finished else None,
+        }
+        if pred and not hide:
+            row["home_score"] = pred["home_score"]
+            row["away_score"] = pred["away_score"]
+            row["is_bold"] = bool(pred.get("is_bold"))
+            row["points"] = pred["points"]
+
+        groups_map[gkey].append(row)
+
+    groups = [
+        {"key": k, "label": group_labels[k], "matches": groups_map[k]}
+        for k in sorted(groups_map.keys(), key=_picks_group_sort)
+    ]
+
+    vote = get_tournament_vote(player_user_id)
+    tournament = None
+    tournament_hidden = False
+    tournament_submitted = bool(vote and vote["top_scorer"])
+    if vote and tournament_submitted:
+        if is_own or tournament_picks_revealed(now):
+            tournament = {
+                "top_scorer": vote["top_scorer"],
+                "winner": vote["winner"],
+                "second_place": vote["second_place"],
+                "third_place": vote["third_place"],
+            }
+        else:
+            tournament_hidden = True
+
+    return {
+        "groups": groups,
+        "tournament": tournament,
+        "tournament_hidden": tournament_hidden,
+        "tournament_submitted": tournament_submitted,
+        "totals": {
+            "total_matches": len(all_matches),
+            "predicted": predicted,
+            "open_to_predict": open_to_predict,
+            "closed_missed": closed_missed,
+        },
+    }

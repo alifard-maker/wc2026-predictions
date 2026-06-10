@@ -29,6 +29,113 @@
   </div>
 </div>
 
+<h2 class="section-title" id="picks-summary">{% if is_you %}My picks{% else %}{{ player.display_name }}'s picks{% endif %}</h2>
+<p class="muted-inline" style="margin: -0.5rem 0 1rem">
+  {% if is_you %}
+  Your full prediction sheet — open matches can still be edited on <a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}#matches">Matches</a>.
+  {% else %}
+  Match and tournament picks{% if picks_summary.tournament_hidden %} (some hidden until deadlines){% endif %}.
+  {% endif %}
+</p>
+
+<div class="stats-row picks-summary-stats">
+  <div class="stat">
+    <div class="value">{{ picks_summary.totals.predicted }}/{{ picks_summary.totals.total_matches }}</div>
+    <div class="label">Matches picked</div>
+  </div>
+  {% if is_you and picks_summary.totals.open_to_predict %}
+  <div class="stat">
+    <div class="value">{{ picks_summary.totals.open_to_predict }}</div>
+    <div class="label">Still open</div>
+  </div>
+  {% endif %}
+  {% if picks_summary.totals.closed_missed %}
+  <div class="stat">
+    <div class="value">{{ picks_summary.totals.closed_missed }}</div>
+    <div class="label">Missed (closed)</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if picks_summary.tournament or picks_summary.tournament_hidden or (is_you and not picks_summary.tournament_submitted) %}
+<div class="card picks-summary-tournament" style="margin-bottom: 1.5rem">
+  <h3>Tournament picks</h3>
+  {% if picks_summary.tournament %}
+  <ul class="rules compact-list">
+    <li>Top scorer: <strong>{{ picks_summary.tournament.top_scorer }}</strong></li>
+    <li>Winner: <strong>{{ picks_summary.tournament.winner }}</strong></li>
+    <li>2nd place: <strong>{{ picks_summary.tournament.second_place }}</strong></li>
+    <li>3rd place: <strong>{{ picks_summary.tournament.third_place }}</strong></li>
+  </ul>
+  {% elif picks_summary.tournament_hidden %}
+  <p style="color: var(--muted); margin: 0">Submitted — hidden until the tournament lock passes.</p>
+  {% else %}
+  <p style="color: var(--muted); margin: 0">Not submitted yet. <a href="{{ url_for('tournament_page', invite_code=pool.invite_code) }}">Add tournament picks →</a></p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card picks-summary-card">
+  <div class="picks-summary-scroll">
+    {% for group in picks_summary.groups %}
+    <h4 class="picks-group-title">{{ group.label }}</h4>
+    <table class="leaderboard-table picks-summary-table">
+      <thead>
+        <tr>
+          <th>Match</th>
+          <th>Pick</th>
+          <th>Status</th>
+          <th>Result</th>
+          <th>Pts</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in group.matches %}
+        <tr class="{% if not m.has_prediction and not m.open %}picks-missed{% endif %}">
+          <td>
+            <a href="{{ match_detail_url(pool.invite_code, m.match_id) }}" class="pick-player-link">
+              {{ m.home_team }} vs {{ m.away_team }}
+            </a>
+            <div class="muted-inline">{{ m.match_date }}{% if m.group_name %} · Group {{ m.group_name }}{% endif %}</div>
+          </td>
+          <td>
+            {% if m.hidden %}
+            <span class="picks-hidden">🔒 Hidden</span>
+            {% elif m.has_prediction %}
+            <strong>{{ m.home_score }}–{{ m.away_score }}</strong>{% if m.is_bold %} <span class="bold-tag">BOLD</span>{% endif %}
+            {% elif m.open %}
+            <span class="picks-pending">—</span>
+            {% else %}
+            <span class="picks-missed-label">Missed</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if m.finished %}
+            <span class="badge badge-done">FT</span>
+            {% elif m.open %}
+            <span class="badge badge-open">Open</span>
+            {% else %}
+            <span class="badge badge-closed">Closed</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if m.finished %}
+            {{ m.actual_home }}–{{ m.actual_away }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if m.points is not none %}
+            <strong class="{% if m.points >= 5 %}pick-exact{% endif %}">+{{ m.points }}</strong>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+  </div>
+</div>
+
 {% if stats.achievements %}
 <h2 class="section-title">Achievements</h2>
 <div class="badge-grid">

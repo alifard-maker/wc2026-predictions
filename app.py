@@ -51,6 +51,7 @@ from wc_news import get_wc_news, news_for_json
 from engagement import (
     build_head_to_head,
     build_match_consensus,
+    build_player_picks_summary,
     build_player_season_stats,
     filter_predictions_for_display,
     filter_ticker_predictions,
@@ -401,6 +402,7 @@ def submit_predictions(invite_code):
         saved += 1
 
     bold_updated = 0
+    bold_blocked = 0
     for key, value in request.form.items():
         if not key.startswith("bold_match"):
             continue
@@ -408,15 +410,25 @@ def submit_predictions(invite_code):
         if not match_id_str:
             continue
         try:
-            err = db.set_bold_pick(user_id, int(match_id_str))
-            if err:
-                flash(err, "error")
-            else:
-                bold_updated += 1
+            match_id = int(match_id_str)
         except ValueError:
-            pass
+            continue
+        with db.db() as conn:
+            match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+        if not match:
+            continue
+        if not is_prediction_open(match["match_date"], match["match_time"]):
+            bold_blocked += 1
+            continue
+        err = db.set_bold_pick(user_id, match_id)
+        if err:
+            flash(err, "error")
+        else:
+            bold_updated += 1
     if bold_updated:
         flash("Bold pick updated — 2× points if you're right!", "success")
+    if bold_blocked:
+        flash(f"{bold_blocked} bold pick(s) were past the deadline and were not changed.", "error")
 
     if saved:
         flash(f"Saved {saved} prediction(s).", "success")
@@ -453,6 +465,7 @@ def player_page(invite_code, user_id):
 
     leaderboard = db.get_leaderboard(pool["id"])
     stats = build_player_season_stats(user_id, pool["id"], leaderboard)
+    picks_summary = build_player_picks_summary(user_id, pool["id"], session["user_id"])
     members = db.get_pool_members(pool["id"])
     vs_id = request.args.get("vs", type=int)
     h2h = build_head_to_head(user_id, vs_id, pool["id"]) if vs_id and vs_id != user_id else None
@@ -462,6 +475,7 @@ def player_page(invite_code, user_id):
         pool=pool,
         player=member,
         stats=stats,
+        picks_summary=picks_summary,
         members=members,
         h2h=h2h,
         vs_id=vs_id,
@@ -517,6 +531,15 @@ def set_bold_pick_route(invite_code):
     if not match_id:
         flash("Invalid match.", "error")
         return redirect(url_for("pool_dashboard", invite_code=invite_code))
+
+    with db.db() as conn:
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    if not match:
+        flash("Match not found.", "error")
+        return redirect(url_for("pool_dashboard", invite_code=invite_code))
+    if not is_prediction_open(match["match_date"], match["match_time"]):
+        flash("Bold picks are locked — the prediction deadline has passed.", "error")
+        return redirect(request.referrer or url_for("pool_dashboard", invite_code=invite_code))
 
     err = db.set_bold_pick(session["user_id"], match_id)
     if err:

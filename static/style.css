@@ -455,6 +455,64 @@ select:focus {
   opacity: 0.65;
 }
 
+.fixture.locked .score-input-wrap,
+.fixture.locked .score-input {
+  pointer-events: none;
+}
+
+.picks-summary-stats {
+  margin-bottom: 1rem;
+}
+
+.picks-summary-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.picks-summary-scroll {
+  max-height: 32rem;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.picks-group-title {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--accent-2);
+}
+
+.picks-group-title:first-child {
+  margin-top: 0;
+}
+
+.picks-summary-table td {
+  vertical-align: middle;
+  font-size: 0.9rem;
+}
+
+.picks-summary-table th {
+  font-size: 0.8rem;
+}
+
+.picks-hidden,
+.picks-pending,
+.picks-missed-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.picks-missed-label {
+  color: var(--danger, #e57373);
+}
+
+tr.picks-missed td {
+  opacity: 0.75;
+}
+
+.picks-summary-tournament h3 {
+  margin-top: 0;
+}
+
 .fixture-meta {
   grid-column: 1 / -1;
   display: flex;
