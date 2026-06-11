@@ -53,7 +53,13 @@ API_TEAM_ALIASES: dict[str, str] = {
     "united arab emirates": "United Arab Emirates",
 }
 
-LIVE_API_STATUSES = frozenset({"IN_PLAY", "LIVE", "PAUSED"})
+LIVE_API_STATUSES = frozenset({
+    "IN_PLAY",
+    "LIVE",
+    "PAUSED",
+    "EXTRA_TIME",
+    "PENALTY_SHOOTOUT",
+})
 SYNCABLE_STATUSES = LIVE_API_STATUSES | frozenset({"TIMED"})
 FINISHED_API_STATUS = "FINISHED"
 UNFOLD_HEADERS = {
@@ -183,13 +189,13 @@ def _should_sync_match(api_match: dict) -> bool:
     status = api_match.get("status") or "SCHEDULED"
     if status == FINISHED_API_STATUS or status in LIVE_API_STATUSES:
         return True
-    if status in SYNCABLE_STATUSES and (
-        api_match.get("minute") is not None or api_match.get("goals")
-    ):
-        return True
     kickoff_et = _parse_api_kickoff_et(api_match.get("utcDate", ""))
-    if _kickoff_in_play_window(kickoff_et) and (
-        api_match.get("minute") is not None or api_match.get("goals")
+    if _kickoff_in_play_window(kickoff_et):
+        return True
+    if status in SYNCABLE_STATUSES and (
+        api_match.get("minute") is not None
+        or api_match.get("goals")
+        or api_match.get("bookings")
     ):
         return True
     return False
@@ -509,7 +515,6 @@ def sync_live_scores(force: bool = False) -> dict:
             m["id"]
             for m in api_matches
             if m.get("id")
-            and (_should_sync_match(m) or _needs_penalty_detail(m))
         }
     )
     details = _fetch_match_details(detail_ids) if detail_ids else {}
