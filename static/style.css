@@ -2242,6 +2242,82 @@ a.bracket-match:hover {
   font-size: 0.9rem;
 }
 
+/* Live commentator banner — scores, clock, and events */
+.commentary-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.85rem;
+  background: linear-gradient(90deg, #1a1200 0%, #2a2208 35%, #1a1200 100%);
+  border-bottom: 2px solid rgba(255, 214, 0, 0.55);
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.commentary-banner:hover {
+  background: linear-gradient(90deg, #221800 0%, #332c0a 35%, #221800 100%);
+  text-decoration: none;
+}
+
+.commentary-label {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-2);
+  white-space: nowrap;
+}
+
+.commentary-minute {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.commentary-scoreline {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  color: #fff;
+  padding-right: 0.5rem;
+  border-right: 1px solid rgba(255, 214, 0, 0.25);
+}
+
+.commentary-ticker-wrap {
+  flex: 1;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 1%, #000 97%, transparent);
+}
+
+.commentary-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 45s linear infinite;
+}
+
+.commentary-banner:hover .commentary-track {
+  animation-play-state: paused;
+}
+
+.commentary-content {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding-right: 2rem;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  color: #f5f0d6;
+}
+
+.commentary-item {
+  display: inline-flex;
+  align-items: center;
+}
+
 /* Post-match spotlight — correct predictors until next kickoff */
 .spotlight-banner {
   display: flex;
@@ -2833,6 +2909,29 @@ a.bracket-match:hover {
   #tournament-vote-deadline {
     font-size: 0.72rem;
     line-height: 1.3;
+  }
+
+  .commentary-banner {
+    flex-wrap: wrap;
+    padding: 0.4rem 0.65rem;
+    gap: 0.35rem 0.5rem;
+    min-height: auto;
+  }
+
+  .commentary-scoreline {
+    font-size: 0.82rem;
+    border-right: none;
+    padding-right: 0;
+  }
+
+  .commentary-ticker-wrap {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .commentary-content {
+    font-size: 0.8rem;
+    gap: 1.25rem;
   }
 
   .spotlight-banner {

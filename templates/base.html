@@ -20,6 +20,26 @@
     </div>
   </div>
   <div class="top-banners" id="top-banners">
+  {% if session.get('invite_code') and session.get('user_id') %}
+  <a href="{% if live_commentary %}{{ url_for('match_detail', invite_code=session.invite_code, match_id=live_commentary.match_id) }}{% else %}#{% endif %}"
+     class="commentary-banner{% if not live_commentary %} hidden{% endif %}" id="commentary-banner" title="Watch live">
+    <span class="commentary-label">🎙 Live</span>
+    <span class="badge badge-live commentary-minute" id="commentary-minute">{% if live_commentary %}{{ live_commentary.minute_label }}{% endif %}</span>
+    <span class="commentary-scoreline" id="commentary-scoreline">{% if live_commentary %}{{ live_commentary.scoreline }}{% endif %}</span>
+    <div class="commentary-ticker-wrap">
+      <div class="commentary-track" id="commentary-track">
+        <div class="commentary-content" id="commentary-content">
+          {% if live_commentary %}
+          {% for item in live_commentary.ticker_items %}
+          <span class="commentary-item">{{ item }}</span>
+          {% endfor %}
+          {% endif %}
+        </div>
+        <div class="commentary-content" id="commentary-content-dup" aria-hidden="true"></div>
+      </div>
+    </div>
+  </a>
+  {% endif %}
   <div id="wc-countdown" class="wc-countdown" data-kickoff="{{ opening_kickoff_iso }}">
     <span class="countdown-label">⏱ Opening match</span>
     <span id="countdown-timer" class="countdown-timer">Loading…</span>
@@ -236,12 +256,40 @@
     (function() {
       const banner = document.getElementById('spotlight-banner');
       const body = document.getElementById('spotlight-body');
+      const commentaryBanner = document.getElementById('commentary-banner');
+      const commentaryMinute = document.getElementById('commentary-minute');
+      const commentaryScoreline = document.getElementById('commentary-scoreline');
+      const commentaryContent = document.getElementById('commentary-content');
+      const commentaryDup = document.getElementById('commentary-content-dup');
       const liveUrl = "{{ url_for('matches_live_feed', invite_code=session.invite_code) }}";
-
       function escapeHtml(text) {
         const d = document.createElement('div');
         d.textContent = text;
         return d.innerHTML;
+      }
+
+      function renderCommentary(commentary) {
+        if (!commentaryBanner) return;
+        if (!commentary) {
+          commentaryBanner.classList.add('hidden');
+          commentaryBanner.href = '#';
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          return;
+        }
+        commentaryBanner.classList.remove('hidden');
+        commentaryBanner.href = poolMatchUrl(commentary.match_id);
+        if (commentaryMinute) {
+          commentaryMinute.textContent = commentary.minute_label || 'LIVE';
+        }
+        if (commentaryScoreline) {
+          commentaryScoreline.textContent = commentary.scoreline || '';
+        }
+        const items = (commentary.ticker_items || []).map(item =>
+          `<span class="commentary-item">${escapeHtml(item)}</span>`
+        ).join('');
+        if (commentaryContent) commentaryContent.innerHTML = items;
+        if (commentaryDup) commentaryDup.innerHTML = items;
+        if (typeof updateBannerOffset === 'function') updateBannerOffset();
       }
 
       function renderSpotlight(spotlight) {
@@ -265,15 +313,16 @@
         if (typeof updateBannerOffset === 'function') updateBannerOffset();
       }
 
-      async function refreshSpotlight() {
+      async function refreshLiveFeed() {
         const res = await fetch(liveUrl);
         if (!res.ok) return;
         const data = await res.json();
+        renderCommentary(data.commentary);
         renderSpotlight(data.spotlight);
       }
 
-      refreshSpotlight();
-      setInterval(refreshSpotlight, 30000);
+      refreshLiveFeed();
+      setInterval(refreshLiveFeed, 15000);
     })();
   </script>
   {% endif %}

@@ -595,6 +595,26 @@ def format_goal_minute(minute: int, injury_minute: int | None = None) -> str:
     return f"{minute}'"
 
 
+def get_match_cards(match_id: int) -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.*, m.home_team, m.away_team
+            FROM player_cards c
+            JOIN matches m ON m.id = c.match_id
+            WHERE c.match_id = ?
+            ORDER BY COALESCE(c.minute, 0) ASC, c.id ASC
+            """,
+            (match_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["minute_label"] = f"{r['minute']}'" if r["minute"] is not None else ""
+            result.append(d)
+        return result
+
+
 def get_match_goals(match_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(

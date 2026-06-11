@@ -40,6 +40,7 @@ from team_data import get_match_context
 from team_flags import get_flag_codes_for_js, get_flag_url
 from prediction_simulation import build_predicted_tournament_view
 from tournament_standings import build_tournament_view, tournament_view_for_json
+from live_commentary import build_live_commentary, commentary_for_json
 from match_spotlight import build_pool_spotlight, spotlight_for_json
 from team_groups import get_group_preview
 from team_history import get_coach_wc_record, get_team_history_bundle
@@ -113,6 +114,7 @@ def inject_public_url():
         "flag_url": get_flag_url,
         "wc_titles": get_wc_titles,
         "match_spotlight": None,
+        "live_commentary": None,
         "match_detail_url": match_detail_url,
         "team_page_url": team_page_url,
         "player_page_url": player_page_url,
@@ -122,6 +124,7 @@ def inject_public_url():
     if pool_id and session.get("user_id"):
         matches = enrich_matches(db.get_all_matches())
         ctx["match_spotlight"] = build_pool_spotlight(pool_id, matches)
+        ctx["live_commentary"] = build_live_commentary(matches)
     return ctx
 
 
@@ -206,6 +209,7 @@ def enrich_matches(matches, user_predictions=None):
         else:
             d["prediction"] = None
         d["goals"] = db.get_match_goals(m["id"])
+        d["cards"] = db.get_match_cards(m["id"])
         d["penalties"] = db.get_match_penalties(m["id"])
         enriched.append(d)
     return enriched
@@ -829,8 +833,10 @@ def matches_live_feed(invite_code):
     matches = enrich_matches(db.get_all_matches())
     live = [m for m in matches if m["is_live"]]
     spotlight = build_pool_spotlight(pool["id"], matches)
+    commentary = build_live_commentary(matches)
     return jsonify({
         "live_count": len(live),
+        "commentary": commentary_for_json(commentary),
         "spotlight": spotlight_for_json(spotlight, session.get("user_id")),
         "matches": [
             {
