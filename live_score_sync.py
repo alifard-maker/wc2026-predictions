@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.football-data.org/v4"
 SYNC_COOLDOWN_SECONDS = int(os.environ.get("LIVE_SYNC_INTERVAL", "30"))
+WC_COMPETITION = os.environ.get("FOOTBALL_DATA_COMPETITION", "WC").strip() or "WC"
 
 # football-data.org names → our fixture team names
 API_TEAM_ALIASES: dict[str, str] = {
@@ -194,26 +195,44 @@ def _should_sync_match(api_match: dict) -> bool:
     return False
 
 
+def _ingest_api_matches(payload: dict | None, by_id: dict[int, dict]) -> None:
+    if not payload:
+        return
+    for match in payload.get("matches") or []:
+        if match.get("id"):
+            by_id[match["id"]] = match
+
+
 def _collect_api_matches() -> list[dict]:
-    """Fetch live and today's matches with minimal API calls (free tier: 10/min)."""
+    """Fetch World Cup live and today's matches (goals/bookings unfolded)."""
     today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
     by_id: dict[int, dict] = {}
+    comp = WC_COMPETITION
 
-    live_payload = _api_request("/matches?status=LIVE", unfold=UNFOLD_HEADERS)
-    if live_payload:
-        for match in live_payload.get("matches") or []:
-            if match.get("id"):
-                by_id[match["id"]] = match
+    _ingest_api_matches(
+        _api_request(f"/competitions/{comp}/matches?status=LIVE", unfold=UNFOLD_HEADERS),
+        by_id,
+    )
+    _ingest_api_matches(
+        _api_request(
+            f"/competitions/{comp}/matches?dateFrom={today}&dateTo={today}",
+            unfold=UNFOLD_HEADERS,
+        ),
+        by_id,
+    )
 
     if not by_id:
-        today_payload = _api_request(
-            f"/matches?dateFrom={today}&dateTo={today}",
-            unfold=UNFOLD_HEADERS,
+        _ingest_api_matches(
+            _api_request("/matches?status=LIVE", unfold=UNFOLD_HEADERS),
+            by_id,
         )
-        if today_payload:
-            for match in today_payload.get("matches") or []:
-                if match.get("id"):
-                    by_id[match["id"]] = match
+        _ingest_api_matches(
+            _api_request(
+                f"/matches?dateFrom={today}&dateTo={today}",
+                unfold=UNFOLD_HEADERS,
+            ),
+            by_id,
+        )
 
     return list(by_id.values())
 
@@ -243,6 +262,13 @@ def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, in
     if raw is not None:
         parsed = int(raw)
         if parsed > 0:
+            if injury is None:
+                existing_injury = db_match.get("live_injury_minute")
+                if (
+                    existing_injury is not None
+                    and int(db_match.get("live_minute") or 0) == parsed
+                ):
+                    injury = int(existing_injury)
             return parsed, injury
 
     existing = db_match.get("live_minute")
@@ -325,12 +351,31 @@ def _fetch_match_details(api_ids: list[int]) -> dict[int, dict]:
     return details
 
 
+def _person_name(person: dict | None) -> str | None:
+    if not person:
+        return None
+    for key in ("name", "shortName", "lastName"):
+        value = person.get(key)
+        if value and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _goal_scorer_name(goal: dict) -> str:
+    scorer = _person_name(goal.get("scorer"))
+    if scorer:
+        return scorer
+    assist = _person_name(goal.get("assist"))
+    if assist:
+        return assist
+    return "Unknown scorer"
+
+
 def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> int:
     added = 0
     for goal in api_match.get("goals") or []:
-        scorer = (goal.get("scorer") or {}).get("name")
         parsed = _parse_goal_minute(goal)
-        if not scorer or parsed is None:
+        if parsed is None:
             continue
         minute, injury = parsed
         team_name = canonical_team_name((goal.get("team") or {}).get("name", ""), our_teams)
@@ -342,8 +387,9 @@ def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[s
             side = "away"
         else:
             continue
+        scorer = _goal_scorer_name(goal)
         is_pen = (goal.get("type") or "").upper() == "PENALTY"
-        if db.import_match_goal(match_id, side, scorer, minute, injury, is_pen):
+        if db.upsert_match_goal(match_id, side, scorer, minute, injury, is_pen):
             added += 1
     return added
 
@@ -351,14 +397,16 @@ def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[s
 def _sync_bookings(match_id: int, api_match: dict, our_teams: set[str]) -> int:
     added = 0
     for booking in api_match.get("bookings") or []:
-        player = (booking.get("player") or {}).get("name")
+        player = _person_name(booking.get("player"))
         parsed = _parse_goal_minute(booking)
         card = _card_type(booking.get("card", ""))
         team_name = canonical_team_name((booking.get("team") or {}).get("name", ""), our_teams)
-        if not player or not card or not team_name or parsed is None:
+        if not player or not card or not team_name:
             continue
-        minute, _injury = parsed
-        if db.import_player_card(match_id, player, team_name, card, minute):
+        minute = parsed[0] if parsed else None
+        if minute is not None and minute < 1:
+            minute = None
+        if db.upsert_player_card(match_id, player, team_name, card, minute):
             added += 1
     return added
 

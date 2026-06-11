@@ -152,7 +152,7 @@
         <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
         <span>{{ m.venue }}</span>
         {% if m.is_live %}
-        <span class="badge badge-live" data-live-badge="{{ m.id }}">LIVE {{ m.minute_label | live_minute }} · {{ m.display_home }}–{{ m.display_away }}</span>
+        <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
         {% elif m.is_finished %}
         <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
         {% elif m.open %}
@@ -322,7 +322,10 @@
       const score = document.querySelector(`[data-live-score="${m.id}"]`);
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
-        badge.textContent = `LIVE ${sanitizeMinuteLabel(m.minute_label)} · ${m.display_home}–${m.display_away}`;
+        const clock = m.status === 'halftime'
+          ? sanitizeMinuteLabel(m.minute_label)
+          : `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
+        badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;

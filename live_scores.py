@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from scoring import OPENING_MATCH_DATE, OPENING_MATCH_TIME, TIMEZONE, parse_match_datetime
 
 MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45
+FIRST_HALF_MINUTES = 45
+HALFTIME_BREAK = timedelta(minutes=15)
 
 
 def normalize_stored_minute(minute: int | None) -> int | None:
@@ -73,7 +75,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             status = "halftime"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
-            minute_label = "HT"
+            minute_label = format_halftime_label(kickoff, now)
         else:
             status = "live"
             display_home = 0 if live_home is None else live_home
@@ -107,6 +109,20 @@ def estimate_minute(elapsed: timedelta) -> int:
     return min(90, mins - 15)
 
 
+def second_half_kickoff(kickoff: datetime) -> datetime:
+    """Scheduled second-half restart (45' played + 15' break)."""
+    return kickoff + timedelta(minutes=FIRST_HALF_MINUTES) + HALFTIME_BREAK
+
+
+def format_halftime_label(kickoff: datetime, now: datetime) -> str:
+    resume = second_half_kickoff(kickoff)
+    remaining = resume - now
+    if remaining.total_seconds() <= 0:
+        return "HT · Resuming soon"
+    mins = max(1, int((remaining.total_seconds() + 59) // 60))
+    return f"HT · Resuming in {mins}'"
+
+
 def format_minute(
     minute: int | None,
     status: str,
@@ -120,6 +136,9 @@ def format_minute(
         return "LIVE"
     if injury_minute and injury_minute > 0:
         return f"{minute}+{injury_minute}'"
+    # API sometimes reports absolute minutes during 1st-half stoppage (46–49).
+    if FIRST_HALF_MINUTES < minute < FIRST_HALF_MINUTES + 20:
+        return f"{FIRST_HALF_MINUTES}+{minute - FIRST_HALF_MINUTES}'"
     return f"{minute}'"
 
 

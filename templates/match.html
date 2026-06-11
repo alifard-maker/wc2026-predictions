@@ -14,7 +14,7 @@
     <span class="badge badge-group">Group {{ match.group_name }}</span>
     {% endif %}
     {% if match.is_live %}
-    <span class="badge badge-live" id="match-status-badge">LIVE {{ match.minute_label | live_minute }}</span>
+    <span class="badge badge-live" id="match-status-badge">{% if match.status == 'halftime' %}{{ match.minute_label | live_minute }}{% else %}LIVE {{ match.minute_label | live_minute }}{% endif %}</span>
     {% elif match.is_finished %}
     <span class="badge badge-done" id="match-status-badge">Full time</span>
     {% elif match.open %}
@@ -196,7 +196,9 @@
     const badge = document.getElementById('match-status-badge');
     if (badge && m.is_live) {
       badge.className = 'badge badge-live';
-      badge.textContent = `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
+      badge.textContent = m.status === 'halftime'
+        ? sanitizeMinuteLabel(m.minute_label)
+        : `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
     } else if (badge && m.is_finished) {
       badge.className = 'badge badge-done';
       badge.textContent = 'Full time';

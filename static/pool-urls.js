@@ -35,6 +35,7 @@
     if (!label) return 'LIVE';
     const text = String(label).trim();
     if (text === '0' || text === "0'") return 'LIVE';
+    if (text.startsWith('HT')) return text;
     return text;
   };
 

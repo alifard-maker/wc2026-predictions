@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from live_scores import (
+    format_halftime_label,
     is_match_in_progress,
     sanitize_goal_minute_label,
     sanitize_minute_label,
@@ -135,6 +136,9 @@ def _scoreline(match: dict) -> str:
 
 def _minute_badge(match: dict) -> str:
     if match.get("status") == "halftime":
+        kickoff = match.get("kickoff")
+        if kickoff:
+            return format_halftime_label(kickoff, datetime.now(TIMEZONE))
         return "HT"
     return sanitize_minute_label(match.get("minute_label"))
 
@@ -145,7 +149,10 @@ def _ticker_items(match: dict, events: list[dict]) -> list[str]:
     items: list[str] = []
 
     if match.get("status") == "halftime":
-        items.append(f"⏸ {scoreline} at the break")
+        items.append(f"⏸ Half-time break — {scoreline}")
+        kickoff = match.get("kickoff")
+        if kickoff:
+            items.append(f"⏱ {format_halftime_label(kickoff, datetime.now(TIMEZONE))}")
     else:
         items.append(f"▶ {minute} — {scoreline}")
 

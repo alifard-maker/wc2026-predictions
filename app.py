@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.2"
+APP_VERSION = "Beta 1.3"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -332,6 +332,8 @@ def health():
             "commentary_banner": True,
             "minute_fix": True,
             "api_live_clock": True,
+            "halftime_countdown": True,
+            "wc_competition_sync": True,
         },
     }
     try:
