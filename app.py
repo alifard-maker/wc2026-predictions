@@ -1,5 +1,7 @@
 import json
 import os
+import threading
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -18,6 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
 from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_badge, is_ai_agent
+import live_score_sync
 from live_scores import apply_live_state, opening_kickoff_iso
 from scoring import (
     PHASE_BONUS_PTS,
@@ -251,11 +254,34 @@ def find_next_prediction_needed(enriched_matches: list[dict]) -> dict | None:
     }
 
 
+def _start_live_sync_background() -> None:
+    if os.environ.get("LIVE_SYNC_ENABLED", "1").strip().lower() in ("0", "false", "no"):
+        return
+    if not live_score_sync.is_enabled():
+        return
+
+    def _loop() -> None:
+        time.sleep(5)
+        while True:
+            try:
+                live_score_sync.sync_live_scores()
+            except Exception:
+                pass
+            time.sleep(live_score_sync.SYNC_COOLDOWN_SECONDS)
+
+    threading.Thread(target=_loop, daemon=True, name="live-score-sync").start()
+
+
+_start_live_sync_background()
+
+
 @app.route("/health")
 def health():
     if MAINTENANCE_MODE:
         return jsonify({"status": "maintenance", "retry_minutes": 5}), 503
-    return jsonify({"status": "ok", "version": APP_VERSION})
+    payload = {"status": "ok", "version": APP_VERSION}
+    payload["live_sync"] = live_score_sync.get_sync_status()
+    return jsonify(payload)
 
 
 @app.route("/")
@@ -791,6 +817,7 @@ def matches_live_feed(invite_code):
     if not pool or pool["id"] != session.get("pool_id"):
         return jsonify({"error": "unauthorized"}), 403
 
+    live_score_sync.sync_live_scores()
     matches = enrich_matches(db.get_all_matches())
     live = [m for m in matches if m["is_live"]]
     spotlight = build_pool_spotlight(pool["id"], matches)
@@ -1075,6 +1102,7 @@ def match_watch_feed(invite_code, match_id):
     if not match:
         return jsonify({"error": "not_found"}), 404
 
+    live_score_sync.sync_live_scores()
     enriched = enrich_matches([match])[0]
     raw_preds = db.get_pool_predictions_summary(pool["id"], match_id)
     preds = filter_predictions_for_display(raw_preds, session["user_id"], dict(match))
@@ -1423,6 +1451,7 @@ def admin_page(invite_code):
         edit_user=edit_user,
         edit_user_matches=edit_user_matches,
         edit_user_vote=edit_user_vote,
+        live_sync=live_score_sync.get_sync_status(),
     )
 
 

@@ -26,6 +26,33 @@
   <div class="invite-box">{{ invite_url }}</div>
 </div>
 
+<div class="card" style="margin-bottom: 2rem; border-color: var(--accent)">
+  <h3>Live score sync</h3>
+  {% if live_sync.enabled %}
+  <p style="color: var(--muted); margin: 0 0 0.5rem">
+    Automatic updates every <strong>{{ live_sync.interval_seconds }}s</strong> from football-data.org.
+    Manual live/FT entry below is only needed as a backup.
+  </p>
+  {% if live_sync.last_summary %}
+  <p style="margin: 0; font-size: 0.9rem">
+    Last sync: {{ live_sync.last_summary.synced_at or '—' }}
+    · {{ live_sync.last_summary.updated_live }} live
+    · {{ live_sync.last_summary.finished }} finished
+    · {{ live_sync.last_summary.goals_added }} new goals
+  </p>
+  {% endif %}
+  {% if live_sync.last_error %}
+  <p style="color: var(--danger); margin: 0.5rem 0 0; font-size: 0.9rem">Error: {{ live_sync.last_error }}</p>
+  {% endif %}
+  {% else %}
+  <p style="color: var(--muted); margin: 0">
+    Set <code>FOOTBALL_DATA_API_TOKEN</code> on Railway to enable automatic live scores (free at
+    <a href="https://www.football-data.org/client/register" target="_blank" rel="noopener">football-data.org</a>).
+    Until then, enter scores manually below.
+  </p>
+  {% endif %}
+</div>
+
 <h2 class="section-title">Member management</h2>
 <p style="color: var(--muted)">Rename members, remove users, edit their picks after deadlines, or moderate comments when someone reaches out.</p>
 

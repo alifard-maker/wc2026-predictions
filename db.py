@@ -143,6 +143,11 @@ def init_db() -> None:
                 injury_minute INTEGER,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS sync_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
 
@@ -270,6 +275,85 @@ def get_pool_users(pool_id: int) -> list[sqlite3.Row]:
 def get_user(user_id: int) -> sqlite3.Row | None:
     with db() as conn:
         return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def get_distinct_teams() -> list[str]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT home_team AS team FROM matches
+            UNION
+            SELECT away_team AS team FROM matches
+            ORDER BY team
+            """
+        ).fetchall()
+    return [r["team"] for r in rows]
+
+
+def get_sync_meta(key: str) -> str | None:
+    with db() as conn:
+        row = conn.execute("SELECT value FROM sync_meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_sync_meta(key: str, value: str) -> None:
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+def try_begin_live_sync(cooldown_seconds: int) -> bool:
+    import time
+
+    now = time.time()
+    with db() as conn:
+        row = conn.execute("SELECT value FROM sync_meta WHERE key = 'live_sync_at'").fetchone()
+        if row:
+            try:
+                if now - float(row["value"]) < cooldown_seconds:
+                    return False
+            except ValueError:
+                pass
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES ('live_sync_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(now),),
+        )
+    return True
+
+
+def import_match_goal(
+    match_id: int,
+    team_side: str,
+    scorer_name: str,
+    minute: int,
+    injury_minute: int | None = None,
+    is_penalty: bool = False,
+) -> bool:
+    """Insert a goal from an external feed if not already recorded. Does not bump live score."""
+    name = scorer_name.strip()
+    if not name or team_side not in ("home", "away"):
+        return False
+    with db() as conn:
+        existing = conn.execute(
+            """
+            SELECT id FROM match_goals
+            WHERE match_id = ? AND team_side = ? AND scorer_name = ? AND minute = ?
+                  AND COALESCE(injury_minute, 0) = COALESCE(?, 0)
+            """,
+            (match_id, team_side, name, minute, injury_minute),
+        ).fetchone()
+        if existing:
+            return False
+        conn.execute(
+            """
+            INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (match_id, team_side, name, minute, injury_minute, 1 if is_penalty else 0),
+        )
+    return True
 
 
 def get_all_matches(stage: str | None = None) -> list[sqlite3.Row]:
