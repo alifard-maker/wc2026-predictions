@@ -11,6 +11,7 @@ import urllib.request
 from datetime import datetime, timedelta
 
 import db
+from live_scores import second_half_kickoff
 from scoring import TIMEZONE, parse_match_datetime
 
 MATCH_WINDOW = timedelta(minutes=105)
@@ -262,13 +263,20 @@ def _parse_goal_minute(goal: dict) -> tuple[int, int | None] | None:
 
 
 def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, int | None]:
-    """Use the API match clock only — never estimate from scheduled kickoff."""
+    """Use the API match clock only — never reuse a stale DB minute during live play."""
+    api_status = (api_match.get("status") or "").upper()
     raw = api_match.get("minute")
-    injury = _injury_minute(api_match)
+    kickoff = _match_kickoff_et(api_match, db_match)
+    now = datetime.now(TIMEZONE)
+    in_second_half = bool(kickoff and now >= second_half_kickoff(kickoff))
+
     if raw is not None:
         parsed = int(raw)
         if parsed > 0:
-            if injury is None:
+            injury = _injury_minute(api_match)
+            if in_second_half:
+                injury = injury if parsed >= 90 and injury else None
+            elif injury is None:
                 existing_injury = db_match.get("live_injury_minute")
                 if (
                     existing_injury is not None
@@ -276,6 +284,9 @@ def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, in
                 ):
                     injury = int(existing_injury)
             return parsed, injury
+
+    if api_status in LIVE_API_STATUSES or api_status == "IN_PLAY":
+        return None, None
 
     existing = db_match.get("live_minute")
     if existing is not None and int(existing) > 0:
@@ -354,7 +365,32 @@ def _fetch_match_details(api_ids: list[int]) -> dict[int, dict]:
         for match in payload.get("matches") or []:
             if match.get("id"):
                 details[match["id"]] = match
+
+    for api_id in api_ids:
+        if api_id in details:
+            continue
+        single = _api_request(f"/matches/{api_id}", unfold=UNFOLD_HEADERS)
+        if single and single.get("id"):
+            details[api_id] = single
     return details
+
+
+def _richest_match(api_match: dict, details: dict[int, dict]) -> dict:
+    """Prefer batch detail, then per-match fetch, for goals/bookings/minute."""
+    api_id = api_match.get("id")
+    if not api_id:
+        return api_match
+    enriched = details.get(api_id) or api_match
+    if enriched is api_match or not enriched.get("bookings"):
+        single = _api_request(f"/matches/{api_id}", unfold=UNFOLD_HEADERS)
+        if single and single.get("id"):
+            merged = dict(single)
+            if not merged.get("goals") and enriched.get("goals"):
+                merged["goals"] = enriched["goals"]
+            if not merged.get("bookings") and enriched.get("bookings"):
+                merged["bookings"] = enriched["bookings"]
+            return merged
+    return enriched
 
 
 def _person_name(person: dict | None) -> str | None:
@@ -400,18 +436,56 @@ def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[s
     return added
 
 
-def _sync_bookings(match_id: int, api_match: dict, our_teams: set[str]) -> int:
+def _booking_player_name(booking: dict) -> str | None:
+    player = _person_name(booking.get("player"))
+    if player:
+        return player
+    for key in ("playerName", "name"):
+        value = booking.get(key)
+        if value and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _booking_team_name(
+    booking: dict,
+    api_match: dict,
+    our_teams: set[str],
+) -> str | None:
+    team_name = canonical_team_name((booking.get("team") or {}).get("name", ""), our_teams)
+    if team_name:
+        return team_name
+    team_id = (booking.get("team") or {}).get("id")
+    if team_id:
+        for side in ("homeTeam", "awayTeam"):
+            side_team = api_match.get(side) or {}
+            if side_team.get("id") == team_id:
+                return canonical_team_name(side_team.get("name", ""), our_teams)
+    return None
+
+
+def _sync_bookings(
+    match_id: int,
+    api_match: dict,
+    our_teams: set[str],
+) -> int:
     added = 0
-    for booking in api_match.get("bookings") or []:
-        player = _person_name(booking.get("player"))
-        parsed = _parse_goal_minute(booking)
+    bookings = api_match.get("bookings") or []
+    for booking in bookings:
+        player = _booking_player_name(booking)
         card = _card_type(booking.get("card", ""))
-        team_name = canonical_team_name((booking.get("team") or {}).get("name", ""), our_teams)
+        team_name = _booking_team_name(booking, api_match, our_teams)
         if not player or not card or not team_name:
             continue
-        minute = parsed[0] if parsed else None
-        if minute is not None and minute < 1:
-            minute = None
+        raw_minute = booking.get("minute")
+        minute = None
+        if raw_minute is not None:
+            try:
+                minute_val = int(raw_minute)
+                if minute_val > 0:
+                    minute = minute_val
+            except (TypeError, ValueError):
+                minute = None
         if db.upsert_player_card(match_id, player, team_name, card, minute):
             added += 1
     return added
@@ -488,6 +562,8 @@ def _process_api_match(
 
     result["goals_added"] = _sync_goals(match_id, db_match, api_match, our_teams)
     result["cards_added"] = _sync_bookings(match_id, api_match, our_teams)
+    result["api_bookings"] = len(api_match.get("bookings") or [])
+    result["api_goals"] = len(api_match.get("goals") or [])
     result["penalties_added"] = _sync_penalties(match_id, db_match, api_match, our_teams)
     return result
 
@@ -531,9 +607,7 @@ def sync_live_scores(force: bool = False) -> dict:
     }
 
     for api_match in api_matches:
-        enriched = details.get(api_match.get("id"))
-        if enriched:
-            api_match = enriched
+        api_match = _richest_match(api_match, details)
 
         row = _process_api_match(api_match, db_matches, our_teams)
         for key in totals:

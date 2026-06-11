@@ -217,6 +217,13 @@ def repair_live_display_data() -> None:
     with db() as conn:
         conn.execute("UPDATE matches SET live_minute = NULL WHERE live_minute = 0")
         conn.execute("DELETE FROM match_goals WHERE minute = 0")
+        conn.execute(
+            """
+            UPDATE matches
+            SET status = 'live', live_injury_minute = NULL
+            WHERE status = 'halftime' AND live_minute > 45 AND actual_home IS NULL
+            """
+        )
 
 
 def sync_knockout_stage() -> dict:
@@ -1065,6 +1072,7 @@ def update_match_live(
                 conn.execute(
                     """
                     UPDATE matches SET live_home = ?, live_away = ?, live_minute = ?,
+                           live_injury_minute = NULL,
                            status = CASE WHEN ? = 'scheduled' THEN 'scheduled' ELSE ? END
                     WHERE id = ? AND actual_home IS NULL
                     """,

@@ -71,7 +71,8 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
         display_home, display_away = actual_home, actual_away
         minute_label = "FT"
     elif in_progress and actual_home is None:
-        if db_status == "halftime":
+        past_halftime = now >= second_half_kickoff(kickoff)
+        if db_status == "halftime" and not past_halftime:
             status = "halftime"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
@@ -81,7 +82,13 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
             minute_label = sanitize_minute_label(
-                format_minute(live_minute, "live", live_injury_minute)
+                format_minute(
+                    live_minute,
+                    "live",
+                    live_injury_minute,
+                    kickoff=kickoff,
+                    now=now,
+                )
             )
     else:
         status = "scheduled"
@@ -127,6 +134,9 @@ def format_minute(
     minute: int | None,
     status: str,
     injury_minute: int | None = None,
+    *,
+    kickoff: datetime | None = None,
+    now: datetime | None = None,
 ) -> str:
     if status == "halftime":
         return "HT"
@@ -134,10 +144,15 @@ def format_minute(
         return "FT"
     if minute is None or minute <= 0:
         return "LIVE"
+    now = now or datetime.now(TIMEZONE)
+    in_second_half = kickoff is not None and now >= second_half_kickoff(kickoff)
     if injury_minute and injury_minute > 0:
         return f"{minute}+{injury_minute}'"
-    # API sometimes reports absolute minutes during 1st-half stoppage (46–49).
-    if FIRST_HALF_MINUTES < minute < FIRST_HALF_MINUTES + 20:
+    # 1st-half stoppage only (46–49 before the break) — never rewrite 2nd-half minutes.
+    if (
+        not in_second_half
+        and FIRST_HALF_MINUTES < minute < 50
+    ):
         return f"{FIRST_HALF_MINUTES}+{minute - FIRST_HALF_MINUTES}'"
     return f"{minute}'"
 
