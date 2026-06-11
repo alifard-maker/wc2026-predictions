@@ -604,6 +604,8 @@ def sync_live_scores(force: bool = False) -> dict:
         "goals_added": 0,
         "cards_added": 0,
         "penalties_added": 0,
+        "api_goals_seen": 0,
+        "api_bookings_seen": 0,
     }
 
     for api_match in api_matches:
