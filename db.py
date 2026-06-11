@@ -423,7 +423,7 @@ def import_match_goal(
 ) -> bool:
     """Insert a goal from an external feed if not already recorded. Does not bump live score."""
     name = scorer_name.strip()
-    if not name or team_side not in ("home", "away"):
+    if not name or team_side not in ("home", "away") or minute < 1:
         return False
     with db() as conn:
         existing = conn.execute(
@@ -436,6 +436,25 @@ def import_match_goal(
         ).fetchone()
         if existing:
             return False
+
+        placeholder = conn.execute(
+            """
+            SELECT id FROM match_goals
+            WHERE match_id = ? AND team_side = ? AND scorer_name = ? AND minute = 0
+            """,
+            (match_id, team_side, name),
+        ).fetchone()
+        if placeholder:
+            conn.execute(
+                """
+                UPDATE match_goals
+                SET minute = ?, injury_minute = ?, is_penalty = ?
+                WHERE id = ?
+                """,
+                (minute, injury_minute, 1 if is_penalty else 0, placeholder["id"]),
+            )
+            return True
+
         conn.execute(
             """
             INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty)
@@ -590,6 +609,8 @@ def update_match_result(match_id: int, actual_home: int, actual_away: int) -> No
 
 
 def format_goal_minute(minute: int, injury_minute: int | None = None) -> str:
+    if minute < 1:
+        return "—"
     if injury_minute:
         return f"{minute}+{injury_minute}'"
     return f"{minute}'"
@@ -962,18 +983,28 @@ def update_match_live(
     match_id: int,
     live_home: int,
     live_away: int,
-    live_minute: int,
+    live_minute: int | None,
     status: str = "live",
 ) -> None:
     with db() as conn:
-        conn.execute(
-            """
-            UPDATE matches SET live_home = ?, live_away = ?, live_minute = ?,
-                   status = CASE WHEN ? = 'scheduled' THEN 'scheduled' ELSE ? END
-            WHERE id = ? AND actual_home IS NULL
-            """,
-            (live_home, live_away, live_minute, status, status, match_id),
-        )
+        if live_minute is not None and live_minute > 0:
+            conn.execute(
+                """
+                UPDATE matches SET live_home = ?, live_away = ?, live_minute = ?,
+                       status = CASE WHEN ? = 'scheduled' THEN 'scheduled' ELSE ? END
+                WHERE id = ? AND actual_home IS NULL
+                """,
+                (live_home, live_away, live_minute, status, status, match_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE matches SET live_home = ?, live_away = ?,
+                       status = CASE WHEN ? = 'scheduled' THEN 'scheduled' ELSE ? END
+                WHERE id = ? AND actual_home IS NULL
+                """,
+                (live_home, live_away, status, status, match_id),
+            )
 
 
 def ensure_ai_user(pool_id: int, display_name: str) -> int:

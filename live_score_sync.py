@@ -11,14 +11,15 @@ import urllib.request
 from datetime import datetime, timedelta
 
 import db
-from scoring import TIMEZONE
+from live_scores import estimate_minute
+from scoring import TIMEZONE, parse_match_datetime
 
 MATCH_WINDOW = timedelta(minutes=105)
 
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.football-data.org/v4"
-SYNC_COOLDOWN_SECONDS = int(os.environ.get("LIVE_SYNC_INTERVAL", "10"))
+SYNC_COOLDOWN_SECONDS = int(os.environ.get("LIVE_SYNC_INTERVAL", "30"))
 
 # football-data.org names → our fixture team names
 API_TEAM_ALIASES: dict[str, str] = {
@@ -195,23 +196,62 @@ def _should_sync_match(api_match: dict) -> bool:
 
 
 def _collect_api_matches() -> list[dict]:
-    """Merge competition list, today's fixtures, and live filter (deduped by API id)."""
+    """Fetch live and today's matches with minimal API calls (free tier: 10/min)."""
     today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
-    paths = [
-        "/competitions/WC/matches?season=2026",
-        f"/matches?dateFrom={today}&dateTo={today}",
-        "/matches?status=LIVE",
-    ]
     by_id: dict[int, dict] = {}
-    for path in paths:
-        payload = _api_request(path, unfold=UNFOLD_HEADERS)
-        if not payload:
-            continue
-        for match in payload.get("matches") or []:
-            match_id = match.get("id")
-            if match_id:
-                by_id[match_id] = match
+
+    live_payload = _api_request("/matches?status=LIVE", unfold=UNFOLD_HEADERS)
+    if live_payload:
+        for match in live_payload.get("matches") or []:
+            if match.get("id"):
+                by_id[match["id"]] = match
+
+    if not by_id:
+        today_payload = _api_request(
+            f"/matches?dateFrom={today}&dateTo={today}",
+            unfold=UNFOLD_HEADERS,
+        )
+        if today_payload:
+            for match in today_payload.get("matches") or []:
+                if match.get("id"):
+                    by_id[match["id"]] = match
+
     return list(by_id.values())
+
+
+def _match_kickoff_et(api_match: dict, db_match: dict) -> datetime | None:
+    kickoff = _parse_api_kickoff_et(api_match.get("utcDate", ""))
+    if kickoff:
+        return kickoff
+    return parse_match_datetime(db_match["match_date"], db_match["match_time"])
+
+
+def _parse_goal_minute(goal: dict) -> tuple[int, int | None] | None:
+    raw = goal.get("minute")
+    if raw is None:
+        return None
+    minute = int(raw)
+    if minute < 1:
+        return None
+    injury = _injury_minute(goal)
+    return minute, injury
+
+
+def _resolve_live_minute(api_match: dict, db_match: dict) -> int | None:
+    raw = api_match.get("minute")
+    if raw is not None:
+        parsed = int(raw)
+        if parsed > 0:
+            return parsed
+
+    kickoff = _match_kickoff_et(api_match, db_match)
+    if kickoff and _kickoff_in_play_window(kickoff):
+        return estimate_minute(datetime.now(TIMEZONE) - kickoff)
+
+    existing = db_match.get("live_minute")
+    if existing is not None and int(existing) > 0:
+        return int(existing)
+    return None
 
 
 def _injury_minute(goal_or_booking: dict) -> int | None:
@@ -272,20 +312,27 @@ def _needs_penalty_detail(api_match: dict) -> bool:
 def _fetch_match_details(api_ids: list[int]) -> dict[int, dict]:
     if not api_ids:
         return {}
-    ids = ",".join(str(i) for i in api_ids[:8])
-    payload = _api_request(f"/matches?ids={ids}", unfold=UNFOLD_HEADERS)
-    if not payload:
-        return {}
-    return {m["id"]: m for m in payload.get("matches") or [] if m.get("id")}
+    details: dict[int, dict] = {}
+    for i in range(0, len(api_ids), 8):
+        batch = api_ids[i : i + 8]
+        ids = ",".join(str(mid) for mid in batch)
+        payload = _api_request(f"/matches?ids={ids}", unfold=UNFOLD_HEADERS)
+        if not payload:
+            continue
+        for match in payload.get("matches") or []:
+            if match.get("id"):
+                details[match["id"]] = match
+    return details
 
 
 def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> int:
     added = 0
     for goal in api_match.get("goals") or []:
         scorer = (goal.get("scorer") or {}).get("name")
-        minute = goal.get("minute")
-        if not scorer or minute is None:
+        parsed = _parse_goal_minute(goal)
+        if not scorer or parsed is None:
             continue
+        minute, injury = parsed
         team_name = canonical_team_name((goal.get("team") or {}).get("name", ""), our_teams)
         if not team_name:
             continue
@@ -295,9 +342,8 @@ def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[s
             side = "away"
         else:
             continue
-        injury = _injury_minute(goal)
         is_pen = (goal.get("type") or "").upper() == "PENALTY"
-        if db.import_match_goal(match_id, side, scorer, int(minute), injury, is_pen):
+        if db.import_match_goal(match_id, side, scorer, minute, injury, is_pen):
             added += 1
     return added
 
@@ -374,9 +420,10 @@ def _process_api_match(
             db.update_match_result(match_id, home_score, away_score)
             result["finished"] = 1
     elif db_match["actual_home"] is None:
-        minute = api_match.get("minute")
-        live_minute = int(minute) if minute is not None else 0
-        db.update_match_live(match_id, home_score, away_score, live_minute, _db_status(status))
+        live_minute = _resolve_live_minute(api_match, db_match)
+        db.update_match_live(
+            match_id, home_score, away_score, live_minute, _db_status(status)
+        )
         result["updated_live"] = 1
 
     result["goals_added"] = _sync_goals(match_id, db_match, api_match, our_teams)
@@ -400,11 +447,14 @@ def sync_live_scores(force: bool = False) -> dict:
     our_teams = set(db.get_distinct_teams())
     db_matches = [dict(m) for m in db.get_all_matches()]
 
-    detail_ids = [
-        m["id"]
-        for m in api_matches
-        if m.get("id") and _needs_penalty_detail(m)
-    ]
+    detail_ids = list(
+        {
+            m["id"]
+            for m in api_matches
+            if m.get("id")
+            and (_should_sync_match(m) or _needs_penalty_detail(m))
+        }
+    )
     details = _fetch_match_details(detail_ids) if detail_ids else {}
 
     totals = {
