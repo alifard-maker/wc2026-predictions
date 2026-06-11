@@ -208,6 +208,14 @@ def init_db() -> None:
                 )
 
     sync_knockout_stage()
+    repair_live_display_data()
+
+
+def repair_live_display_data() -> None:
+    """Clear bogus 0-minute values left by bad API imports."""
+    with db() as conn:
+        conn.execute("UPDATE matches SET live_minute = NULL WHERE live_minute = 0")
+        conn.execute("DELETE FROM match_goals WHERE minute = 0")
 
 
 def sync_knockout_stage() -> dict:
@@ -631,7 +639,7 @@ def get_match_cards(match_id: int) -> list[dict]:
         result = []
         for r in rows:
             d = dict(r)
-            d["minute_label"] = f"{r['minute']}'" if r["minute"] is not None else ""
+            d["minute_label"] = format_goal_minute(r["minute"] or 0, None) if r["minute"] is not None else ""
             result.append(d)
         return result
 

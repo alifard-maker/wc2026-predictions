@@ -32,7 +32,7 @@
        class="commentary-panel commentary-banner{% if not live_commentary %} hidden{% endif %}"
        title="Watch live">
       <span class="commentary-label">🎙 Live</span>
-      <span class="badge badge-live commentary-minute" id="commentary-minute">{% if live_commentary %}{{ live_commentary.minute_label }}{% endif %}</span>
+      <span class="badge badge-live commentary-minute" id="commentary-minute">{% if live_commentary %}{{ live_commentary.minute_label | live_minute }}{% endif %}</span>
       <span class="commentary-scoreline" id="commentary-scoreline">{% if live_commentary %}{{ live_commentary.scoreline }}{% endif %}</span>
       <div class="commentary-ticker-wrap">
         <div class="commentary-track" id="commentary-track">
@@ -289,7 +289,7 @@
         commentaryPanel.classList.remove('hidden');
         commentaryPanel.href = poolMatchUrl(commentary.match_id);
         if (commentaryMinute) {
-          commentaryMinute.textContent = commentary.minute_label || 'LIVE';
+          commentaryMinute.textContent = sanitizeMinuteLabel(commentary.minute_label);
         }
         if (commentaryScoreline) {
           commentaryScoreline.textContent = commentary.scoreline || '';

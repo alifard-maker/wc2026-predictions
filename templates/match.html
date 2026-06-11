@@ -14,7 +14,7 @@
     <span class="badge badge-group">Group {{ match.group_name }}</span>
     {% endif %}
     {% if match.is_live %}
-    <span class="badge badge-live" id="match-status-badge">LIVE {{ match.minute_label }}</span>
+    <span class="badge badge-live" id="match-status-badge">LIVE {{ match.minute_label | live_minute }}</span>
     {% elif match.is_finished %}
     <span class="badge badge-done" id="match-status-badge">Full time</span>
     {% elif match.open %}
@@ -34,7 +34,7 @@
     <span class="team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
   </h1>
 
-  <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label }}</p>
+  <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label | live_minute }}</p>
 
   <div id="match-goals-wrap">{{ render_goals(goals, match.home_team, match.away_team) }}</div>
 
@@ -189,12 +189,12 @@
     const minEl = document.getElementById('match-minute');
     if (minEl && m.is_live) {
       minEl.style.display = '';
-      minEl.textContent = m.minute_label;
+      minEl.textContent = sanitizeMinuteLabel(m.minute_label);
     }
     const badge = document.getElementById('match-status-badge');
     if (badge && m.is_live) {
       badge.className = 'badge badge-live';
-      badge.textContent = `LIVE ${m.minute_label}`;
+      badge.textContent = `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
     }
 
     const tbody = document.querySelector('#picks-table tbody');

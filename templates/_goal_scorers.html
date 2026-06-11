@@ -5,7 +5,7 @@
     <div class="goal-column-title">{{ home_team }}</div>
     {% for g in goals if g.team_side == 'home' %}
     <div class="goal-event">
-      <span class="goal-minute">{{ g.minute_label }}</span>
+      <span class="goal-minute">{{ g.minute_label | goal_minute }}</span>
       <span class="goal-player">{{ g.scorer_name }}{% if g.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %}</span>
     </div>
     {% endfor %}
@@ -14,7 +14,7 @@
     <div class="goal-column-title">{{ away_team }}</div>
     {% for g in goals if g.team_side == 'away' %}
     <div class="goal-event">
-      <span class="goal-minute">{{ g.minute_label }}</span>
+      <span class="goal-minute">{{ g.minute_label | goal_minute }}</span>
       <span class="goal-player">{{ g.scorer_name }}{% if g.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %}</span>
     </div>
     {% endfor %}

@@ -9,6 +9,25 @@ from scoring import OPENING_MATCH_DATE, OPENING_MATCH_TIME, TIMEZONE, parse_matc
 MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45
 
 
+def normalize_stored_minute(minute: int | None) -> int | None:
+    if minute is None:
+        return None
+    try:
+        value = int(minute)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def sanitize_minute_label(label: str | None) -> str:
+    if not label:
+        return "LIVE"
+    cleaned = label.strip()
+    if cleaned in {"0", "0'", "0''"}:
+        return "LIVE"
+    return cleaned
+
+
 def is_match_in_progress(kickoff: datetime, now: datetime) -> bool:
     """True only while the match is actually being played."""
     return kickoff <= now < kickoff + MATCH_DURATION
@@ -24,7 +43,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     db_status = m.get("status") or "scheduled"
     live_home = m.get("live_home")
     live_away = m.get("live_away")
-    live_minute = m.get("live_minute")
+    live_minute = normalize_stored_minute(m.get("live_minute"))
     actual_home = m.get("actual_home")
     actual_away = m.get("actual_away")
 
@@ -42,11 +61,11 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             status = "live"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
-            effective_minute = live_minute if live_minute and live_minute > 0 else None
+            effective_minute = live_minute
             if effective_minute is None:
                 effective_minute = estimate_minute(now - kickoff)
-                live_minute = effective_minute
-            minute_label = format_minute(effective_minute, "live")
+            live_minute = effective_minute
+            minute_label = sanitize_minute_label(format_minute(effective_minute, "live"))
     else:
         status = "scheduled"
         display_home = display_away = None

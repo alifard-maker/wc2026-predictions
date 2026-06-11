@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from live_scores import is_match_in_progress
+from live_scores import is_match_in_progress, sanitize_minute_label
 from scoring import TIMEZONE
 
 
@@ -116,7 +116,7 @@ def _scoreline(match: dict) -> str:
 def _minute_badge(match: dict) -> str:
     if match.get("status") == "halftime":
         return "HT"
-    return match.get("minute_label") or "LIVE"
+    return sanitize_minute_label(match.get("minute_label"))
 
 
 def _ticker_items(match: dict, events: list[dict]) -> list[str]:

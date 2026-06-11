@@ -152,7 +152,7 @@
         <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
         <span>{{ m.venue }}</span>
         {% if m.is_live %}
-        <span class="badge badge-live" data-live-badge="{{ m.id }}">LIVE {{ m.minute_label }} · {{ m.display_home }}–{{ m.display_away }}</span>
+        <span class="badge badge-live" data-live-badge="{{ m.id }}">LIVE {{ m.minute_label | live_minute }} · {{ m.display_home }}–{{ m.display_away }}</span>
         {% elif m.is_finished %}
         <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
         {% elif m.open %}
@@ -168,7 +168,7 @@
       {% if m.is_live or m.is_finished %}
       <div class="live-score-display" data-live-score="{{ m.id }}">
         {{ m.display_home }} – {{ m.display_away }}
-        <div style="font-size:0.75rem;color:var(--muted)">{{ m.minute_label }}</div>
+        <div style="font-size:0.75rem;color:var(--muted)">{{ m.minute_label | live_minute }}</div>
         <div data-live-goals="{{ m.id }}">{{ render_goals(m.goals, m.home_team, m.away_team, compact=true) }}</div>
         {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
         <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
@@ -323,7 +323,7 @@
       const score = document.querySelector(`[data-live-score="${m.id}"]`);
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
-        badge.textContent = `LIVE ${m.minute_label} · ${m.display_home}–${m.display_away}`;
+        badge.textContent = `LIVE ${sanitizeMinuteLabel(m.minute_label)} · ${m.display_home}–${m.display_away}`;
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
@@ -332,14 +332,14 @@
         let goalsHtml = '';
         if (m.goals && m.goals.length) {
           const home = m.goals.filter(g => g.team_side === 'home').map(g =>
-            `<div class="goal-event"><span class="goal-minute">${g.minute_label}</span><span class="goal-player">${g.scorer_name}</span></div>`
+            `<div class="goal-event"><span class="goal-minute">${sanitizeGoalMinute(g.minute_label)}</span><span class="goal-player">${g.scorer_name}</span></div>`
           ).join('');
           const away = m.goals.filter(g => g.team_side === 'away').map(g =>
-            `<div class="goal-event"><span class="goal-minute">${g.minute_label}</span><span class="goal-player">${g.scorer_name}</span></div>`
+            `<div class="goal-event"><span class="goal-minute">${sanitizeGoalMinute(g.minute_label)}</span><span class="goal-player">${g.scorer_name}</span></div>`
           ).join('');
           goalsHtml = `<div class="goal-scorers goal-scorers-compact"><div class="goal-column goal-home">${home}</div><div class="goal-column goal-away">${away}</div></div>`;
         }
-        score.innerHTML = `${m.display_home} – ${m.display_away}<div style="font-size:0.75rem;color:var(--muted)">${m.minute_label}</div>${goalsHtml}`;
+        score.innerHTML = `${m.display_home} – ${m.display_away}<div style="font-size:0.75rem;color:var(--muted)">${sanitizeMinuteLabel(m.minute_label)}</div>${goalsHtml}`;
       }
     });
   }

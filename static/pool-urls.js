@@ -30,4 +30,18 @@
     if (!code || userId == null) return '#';
     return `/pool/${encodeURIComponent(code)}/player/${userId}`;
   };
+
+  global.sanitizeMinuteLabel = function (label) {
+    if (!label) return 'LIVE';
+    const text = String(label).trim();
+    if (text === '0' || text === "0'") return 'LIVE';
+    return text;
+  };
+
+  global.sanitizeGoalMinute = function (label) {
+    if (!label) return '—';
+    const text = String(label).trim();
+    if (text === '0' || text === "0'") return '—';
+    return text;
+  };
 })(window);

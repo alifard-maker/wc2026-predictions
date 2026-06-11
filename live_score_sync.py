@@ -437,7 +437,10 @@ def sync_live_scores(force: bool = False) -> dict:
     if not is_enabled():
         return {"ok": False, "skipped": True, "reason": "no_api_token"}
 
-    if not force and not db.try_begin_live_sync(SYNC_COOLDOWN_SECONDS):
+    cooldown = SYNC_COOLDOWN_SECONDS
+    if db.get_sync_meta("live_sync_error") == "HTTP 429":
+        cooldown = max(cooldown, 120)
+    if not force and not db.try_begin_live_sync(cooldown):
         return {"ok": True, "skipped": True, "reason": "cooldown"}
 
     api_matches = _collect_api_matches()

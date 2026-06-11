@@ -21,7 +21,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import db
 from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_badge, is_ai_agent
 import live_score_sync
-from live_scores import apply_live_state, opening_kickoff_iso
+from live_scores import apply_live_state, opening_kickoff_iso, sanitize_minute_label
 from scoring import (
     PHASE_BONUS_PTS,
     TIMEZONE,
@@ -66,12 +66,24 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.0"
+APP_VERSION = "Beta 1.1"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 init_done = False
+
+
+@app.template_filter("live_minute")
+def live_minute_filter(value: str | None) -> str:
+    return sanitize_minute_label(value)
+
+
+@app.template_filter("goal_minute")
+def goal_minute_filter(value: str | None) -> str:
+    if not value or str(value).strip() in {"0", "0'"}:
+        return "—"
+    return str(value).strip()
 MAINTENANCE_MODE = os.environ.get("MAINTENANCE_MODE", "").strip().lower() in ("1", "true", "yes")
 
 
@@ -134,6 +146,7 @@ def ensure_db():
         db.init_db()
         db.ensure_ai_in_all_pools()
         init_done = True
+    db.repair_live_display_data()
 
 
 @app.before_request
@@ -284,7 +297,11 @@ def health():
         ensure_db()
     except Exception as exc:
         return jsonify({"status": "error", "error": str(exc)}), 503
-    payload = {"status": "ok", "version": APP_VERSION, "features": {"commentary_banner": True}}
+    payload = {
+        "status": "ok",
+        "version": APP_VERSION,
+        "features": {"commentary_banner": True, "minute_fix": True},
+    }
     try:
         payload["live_sync"] = live_score_sync.get_sync_status()
     except Exception as exc:
@@ -1266,7 +1283,10 @@ def admin_page(invite_code):
             try:
                 live_home = int(request.form.get("live_home", ""))
                 live_away = int(request.form.get("live_away", ""))
-                live_minute = int(request.form.get("live_minute", ""))
+                live_minute_raw = request.form.get("live_minute", "").strip()
+                live_minute = int(live_minute_raw) if live_minute_raw else None
+                if live_minute is not None and live_minute <= 0:
+                    live_minute = None
             except ValueError:
                 flash("Invalid live score.", "error")
             else:
