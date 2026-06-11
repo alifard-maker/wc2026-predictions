@@ -67,6 +67,20 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     now = now or datetime.now(TIMEZONE)
     m = dict(match)
     kickoff = parse_match_datetime(m["match_date"], m["match_time"])
+    actual_home = m.get("actual_home")
+    actual_away = m.get("actual_away")
+
+    if actual_home is None and now < kickoff:
+        m["status"] = "scheduled"
+        m["kickoff"] = kickoff
+        m["display_home"] = None
+        m["display_away"] = None
+        m["minute_label"] = None
+        m["live_minute"] = None
+        m["is_live"] = False
+        m["is_finished"] = False
+        return m
+
     db_status = m.get("status") or "scheduled"
     synced_live = is_synced_live(m, now)
     in_progress = is_match_in_progress(kickoff, now, m)
@@ -81,9 +95,6 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
                 live_injury_minute = None
         except (TypeError, ValueError):
             live_injury_minute = None
-    actual_home = m.get("actual_home")
-    actual_away = m.get("actual_away")
-
     if actual_home is not None and actual_away is not None:
         status = "finished"
         display_home, display_away = actual_home, actual_away

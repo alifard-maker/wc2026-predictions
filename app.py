@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.3"
+APP_VERSION = "Beta 2.4"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -148,8 +148,8 @@ def ensure_db():
     if not init_done:
         db.init_db()
         db.ensure_ai_in_all_pools()
+        db.repair_live_display_data()
         init_done = True
-    db.repair_live_display_data()
 
 
 @app.before_request
@@ -461,6 +461,7 @@ ensure_db()
 def _warm_live_data() -> None:
     try:
         live_score_sync._run_espn_sync()
+        db.repair_live_display_data()
     except Exception:
         pass
 

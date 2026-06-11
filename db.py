@@ -15,7 +15,7 @@ MAX_USERS_PER_POOL = 100
 
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -227,7 +227,12 @@ def clear_match_live_state(match_id: int) -> None:
 
 
 def repair_live_display_data() -> None:
-    """Clear bogus 0-minute values left by bad API imports."""
+    """Clear bogus live state left by bad API imports."""
+    from datetime import datetime
+
+    from scoring import TIMEZONE, parse_match_datetime
+
+    now = datetime.now(TIMEZONE)
     with db() as conn:
         conn.execute("UPDATE matches SET live_minute = NULL WHERE live_minute = 0")
         conn.execute("DELETE FROM match_goals WHERE minute = 0")
@@ -245,13 +250,31 @@ def repair_live_display_data() -> None:
                 live_minute = NULL, live_injury_minute = NULL
             WHERE actual_home IS NULL
               AND status IN ('live', 'halftime')
-              AND COALESCE(live_minute, 0) = 0
               AND COALESCE(live_home, 0) = 0
               AND COALESCE(live_away, 0) = 0
               AND id NOT IN (SELECT DISTINCT match_id FROM match_goals)
               AND id NOT IN (SELECT DISTINCT match_id FROM player_cards)
             """
         )
+        rows = conn.execute(
+            """
+            SELECT id, match_date, match_time
+            FROM matches
+            WHERE actual_home IS NULL AND status IN ('live', 'halftime')
+            """
+        ).fetchall()
+        for row in rows:
+            kickoff = parse_match_datetime(row["match_date"], row["match_time"])
+            if now < kickoff:
+                conn.execute(
+                    """
+                    UPDATE matches
+                    SET status = 'scheduled', live_home = NULL, live_away = NULL,
+                        live_minute = NULL, live_injury_minute = NULL
+                    WHERE id = ?
+                    """,
+                    (row["id"],),
+                )
 
 
 def sync_knockout_stage() -> dict:
@@ -1076,7 +1099,19 @@ def update_match_live(
     status: str = "live",
     live_injury_minute: int | None = None,
 ) -> None:
+    from datetime import datetime
+
+    from scoring import TIMEZONE, parse_match_datetime
+
     with db() as conn:
+        row = conn.execute(
+            "SELECT match_date, match_time FROM matches WHERE id = ?",
+            (match_id,),
+        ).fetchone()
+        if row and status in ("live", "halftime"):
+            kickoff = parse_match_datetime(row["match_date"], row["match_time"])
+            if datetime.now(TIMEZONE) < kickoff:
+                return
         if live_minute is not None and live_minute > 0:
             if live_injury_minute is not None:
                 conn.execute(
