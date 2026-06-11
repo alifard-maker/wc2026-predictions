@@ -51,6 +51,7 @@ API_TEAM_ALIASES: dict[str, str] = {
 }
 
 LIVE_API_STATUSES = frozenset({"IN_PLAY", "LIVE", "PAUSED"})
+SYNCABLE_STATUSES = LIVE_API_STATUSES | frozenset({"TIMED"})
 FINISHED_API_STATUS = "FINISHED"
 UNFOLD_HEADERS = {
     "Goals": True,
@@ -120,14 +121,83 @@ def _parse_api_kickoff_et(utc_date: str) -> datetime | None:
         return None
 
 
-def _extract_score(api_match: dict) -> tuple[int | None, int | None]:
-    score = api_match.get("score") or {}
-    full = score.get("fullTime") or {}
-    home = full.get("homeTeam")
-    away = full.get("awayTeam")
+def _score_part(part: dict | None) -> tuple[int | None, int | None]:
+    """Read home/away from a score node (v4 uses home/away; v2 used homeTeam/awayTeam)."""
+    if not part:
+        return None, None
+    home = part.get("home")
+    away = part.get("away")
+    if home is None:
+        home = part.get("homeTeam")
+    if away is None:
+        away = part.get("awayTeam")
     if home is None or away is None:
         return None, None
     return int(home), int(away)
+
+
+def _score_from_goals(api_match: dict, our_teams: set[str]) -> tuple[int | None, int | None]:
+    goals = api_match.get("goals") or []
+    if goals:
+        home, away = _score_part(goals[-1].get("score"))
+        if home is not None and away is not None:
+            return home, away
+
+    home_name = canonical_team_name((api_match.get("homeTeam") or {}).get("name", ""), our_teams)
+    away_name = canonical_team_name((api_match.get("awayTeam") or {}).get("name", ""), our_teams)
+    if not home_name or not away_name:
+        return None, None
+
+    home_goals = away_goals = 0
+    for goal in goals:
+        team_name = canonical_team_name((goal.get("team") or {}).get("name", ""), our_teams)
+        if team_name == home_name:
+            home_goals += 1
+        elif team_name == away_name:
+            away_goals += 1
+    if goals:
+        return home_goals, away_goals
+    return None, None
+
+
+def _extract_score(api_match: dict, our_teams: set[str]) -> tuple[int | None, int | None]:
+    score = api_match.get("score") or {}
+    for key in ("fullTime", "regularTime", "halfTime"):
+        home, away = _score_part(score.get(key))
+        if home is not None and away is not None:
+            return home, away
+    return _score_from_goals(api_match, our_teams)
+
+
+def _should_sync_match(api_match: dict) -> bool:
+    status = api_match.get("status") or "SCHEDULED"
+    if status == FINISHED_API_STATUS or status in LIVE_API_STATUSES:
+        return True
+    if status in SYNCABLE_STATUSES and (
+        api_match.get("minute") is not None or api_match.get("goals")
+    ):
+        return True
+    return False
+
+
+def _collect_api_matches() -> list[dict]:
+    """Merge competition list, today's fixtures, and live filter (deduped by API id)."""
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    paths = [
+        "/competitions/WC/matches?season=2026",
+        f"/matches?dateFrom={today}&dateTo={today}",
+        "/matches?status=LIVE",
+    ]
+    by_id: dict[int, dict] = {}
+    for path in paths:
+        payload = _api_request(path, unfold=UNFOLD_HEADERS)
+        if not payload:
+            continue
+        for match in payload.get("matches") or []:
+            match_id = match.get("id")
+            if match_id:
+                by_id[match_id] = match
+    return list(by_id.values())
 
 
 def _injury_minute(goal_or_booking: dict) -> int | None:
@@ -140,7 +210,7 @@ def _injury_minute(goal_or_booking: dict) -> int | None:
 def _db_status(api_status: str) -> str:
     if api_status == "PAUSED":
         return "halftime"
-    if api_status in LIVE_API_STATUSES:
+    if api_status in LIVE_API_STATUSES or api_status == "TIMED":
         return "live"
     return "scheduled"
 
@@ -264,7 +334,7 @@ def _process_api_match(
     our_teams: set[str],
 ) -> dict:
     status = api_match.get("status") or "SCHEDULED"
-    if status not in LIVE_API_STATUSES and status != FINISHED_API_STATUS:
+    if not _should_sync_match(api_match):
         return {}
 
     db_match = _find_db_match(api_match, db_matches, our_teams)
@@ -272,7 +342,7 @@ def _process_api_match(
         return {}
 
     match_id = db_match["id"]
-    home_score, away_score = _extract_score(api_match)
+    home_score, away_score = _extract_score(api_match, our_teams)
     if home_score is None or away_score is None:
         return {"matched": 1}
 
@@ -309,13 +379,12 @@ def sync_live_scores(force: bool = False) -> dict:
     if not force and not db.try_begin_live_sync(SYNC_COOLDOWN_SECONDS):
         return {"ok": True, "skipped": True, "reason": "cooldown"}
 
-    payload = _api_request("/competitions/WC/matches?season=2026", unfold=UNFOLD_HEADERS)
-    if payload is None:
+    api_matches = _collect_api_matches()
+    if not api_matches:
         return {"ok": False, "error": "api_request_failed"}
 
     our_teams = set(db.get_distinct_teams())
     db_matches = [dict(m) for m in db.get_all_matches()]
-    api_matches = list(payload.get("matches") or [])
 
     detail_ids = [
         m["id"]
@@ -325,6 +394,8 @@ def sync_live_scores(force: bool = False) -> dict:
     details = _fetch_match_details(detail_ids) if detail_ids else {}
 
     totals = {
+        "api_matches": len(api_matches),
+        "api_syncable": sum(1 for m in api_matches if _should_sync_match(m)),
         "matched": 0,
         "updated_live": 0,
         "finished": 0,

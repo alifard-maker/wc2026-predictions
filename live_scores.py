@@ -45,8 +45,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             if live_minute is not None:
                 minute_label = format_minute(live_minute, "live")
             else:
-                live_minute = estimate_minute(now - kickoff)
-                minute_label = format_minute(live_minute, "live")
+                minute_label = "LIVE"
     else:
         status = "scheduled"
         display_home = display_away = None
