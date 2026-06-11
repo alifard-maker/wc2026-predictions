@@ -76,16 +76,23 @@
     <span id="tournament-vote-timer" class="countdown-timer">—</span>
     <span id="tournament-vote-deadline" class="countdown-match"></span>
   </a>
-  <a href="{{ url_for('comments_page', invite_code=session.invite_code) }}" class="comment-ticker" id="comment-ticker" title="View all comments">
-    <span class="ticker-label">💬 Live</span>
-    <div class="ticker-wrap">
-      <div class="ticker-track" id="ticker-track">
-        <div class="ticker-content" id="ticker-content"></div>
-        <div class="ticker-content" id="ticker-content-dup" aria-hidden="true"></div>
-      </div>
+  <a href="{{ url_for('leaderboard_page', invite_code=session.invite_code) }}" class="leaderboard-ticker" id="leaderboard-ticker" title="View full leaderboard">
+    <span class="ticker-label">🏆 Top 5</span>
+    <div class="leaderboard-ticker-body" id="leaderboard-ticker-body">
+      {% if top_leaderboard %}
+      {% for row in top_leaderboard %}
+      <span class="leaderboard-ticker-item{% if row.rank and row.rank <= 3 %} lb-rank-{{ row.rank }}{% endif %}">
+        <span class="leaderboard-ticker-rank">{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</span>
+        <span class="leaderboard-ticker-name">{{ row.display_name }}{% if row.id == session.user_id %} (you){% endif %}</span>
+        <span class="leaderboard-ticker-points">{{ row.total_points }}<span class="leaderboard-ticker-pts-label"> pts</span></span>
+      </span>
+      {% endfor %}
+      {% else %}
+      <span class="leaderboard-ticker-empty">No standings yet — waiting for first match results</span>
+      {% endif %}
     </div>
   </a>
-  <a href="{{ url_for('pool_dashboard', invite_code=session.invite_code) }}" class="comment-ticker prediction-ticker" id="prediction-ticker" title="View matches">
+  <a href="{{ url_for('pool_dashboard', invite_code=session.invite_code) }}" class="prediction-ticker" id="prediction-ticker" title="View matches">
     <span class="ticker-label">⚽ Picks</span>
     <div class="ticker-wrap">
       <div class="ticker-track" id="prediction-ticker-track">
@@ -155,36 +162,7 @@
     (function() {
       const feedUrl = "{{ url_for('comments_feed', invite_code=session.invite_code) }}";
       const badge = document.getElementById('comment-badge');
-      const ticker = document.getElementById('comment-ticker');
-      const tickerContent = document.getElementById('ticker-content');
-      const tickerDup = document.getElementById('ticker-content-dup');
-      const tickerTrack = document.getElementById('ticker-track');
       let lastUnread = 0;
-
-      function escapeHtml(text) {
-        const d = document.createElement('div');
-        d.textContent = text;
-        return d.innerHTML;
-      }
-
-      function buildTickerItems(comments) {
-        if (!comments.length) {
-          return '<span class="ticker-item ticker-empty">No comments yet — tap here to start the chat!</span>';
-        }
-        return comments.map(c =>
-          `<span class="ticker-item"><strong>${escapeHtml(c.display_name)}:</strong> ${escapeHtml(c.body)}</span>`
-        ).join('<span class="ticker-sep">•</span>');
-      }
-
-      function updateTicker(comments) {
-        if (!tickerContent) return;
-        const html = buildTickerItems(comments);
-        tickerContent.innerHTML = html;
-        if (tickerDup) tickerDup.innerHTML = html;
-        if (tickerTrack) {
-          tickerTrack.classList.toggle('ticker-paused', comments.length === 0);
-        }
-      }
 
       async function checkComments() {
         const res = await fetch(feedUrl);
@@ -194,7 +172,6 @@
           badge.textContent = data.unread;
           badge.classList.toggle('hidden', data.unread === 0);
         }
-        updateTicker(data.comments.slice().reverse());
         if (data.unread > lastUnread && data.unread > 0 && document.hidden && Notification.permission === 'granted') {
           new Notification('WC 2026 Predictions', {
             body: data.unread === 1 ? 'New comment in your pool!' : data.unread + ' new comments in your pool!',
@@ -209,6 +186,47 @@
 
       checkComments();
       setInterval(checkComments, 30000);
+    })();
+
+    (function() {
+      const feedUrl = "{{ url_for('leaderboard_feed', invite_code=session.invite_code) }}";
+      const body = document.getElementById('leaderboard-ticker-body');
+      if (!body) return;
+
+      function escapeHtml(text) {
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+      }
+
+      function renderTop(rows) {
+        if (!rows.length) {
+          body.innerHTML = '<span class="leaderboard-ticker-empty">No standings yet — waiting for first match results</span>';
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          return;
+        }
+        body.innerHTML = rows.map(row => {
+          const rankClass = row.rank && row.rank <= 3 ? ` lb-rank-${row.rank}` : '';
+          const rank = row.rank ? row.rank : '—';
+          const you = row.is_you ? ' (you)' : '';
+          return `<span class="leaderboard-ticker-item${rankClass}">` +
+            `<span class="leaderboard-ticker-rank">${rank}</span>` +
+            `<span class="leaderboard-ticker-name">${escapeHtml(row.display_name)}${you}</span>` +
+            `<span class="leaderboard-ticker-points">${row.total_points}<span class="leaderboard-ticker-pts-label"> pts</span></span>` +
+            `</span>`;
+        }).join('');
+        if (typeof updateBannerOffset === 'function') updateBannerOffset();
+      }
+
+      async function refreshLeaderboard() {
+        const res = await fetch(feedUrl);
+        if (!res.ok) return;
+        const data = await res.json();
+        renderTop(data.top || []);
+      }
+
+      refreshLeaderboard();
+      setInterval(refreshLeaderboard, 30000);
     })();
 
     (function() {

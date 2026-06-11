@@ -1704,23 +1704,101 @@ textarea:focus {
   font-size: 0.8rem;
 }
 
-.comment-ticker {
+.leaderboard-ticker {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  height: 2.5rem;
-  background: #0f2418;
-  background: linear-gradient(90deg, #0f2418 0%, #1a3d28 50%, #0f2418 100%);
-  border-bottom: 1px solid var(--accent);
+  align-items: stretch;
+  min-height: 2.5rem;
+  background: #1a1508;
+  background: linear-gradient(90deg, #1a1508 0%, #2a2210 50%, #1a1508 100%);
+  border-bottom: 1px solid var(--accent-2);
   color: var(--text);
   text-decoration: none;
   overflow: hidden;
   cursor: pointer;
 }
 
-.comment-ticker:hover {
-  background: linear-gradient(90deg, #142a1c 0%, #1f4a32 50%, #142a1c 100%);
+.leaderboard-ticker:hover {
+  background: linear-gradient(90deg, #221c0c 0%, #342a14 50%, #221c0c 100%);
   text-decoration: none;
+}
+
+.leaderboard-ticker .ticker-label {
+  color: var(--accent-2);
+}
+
+.leaderboard-ticker-body {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.leaderboard-ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.75rem;
+  border-right: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.leaderboard-ticker-item:last-child {
+  border-right: none;
+}
+
+.leaderboard-ticker-rank {
+  flex-shrink: 0;
+  width: 1.25rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  text-align: center;
+}
+
+.leaderboard-ticker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-ticker-points {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+.leaderboard-ticker-pts-label {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.leaderboard-ticker-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.leaderboard-ticker-item.lb-rank-1 .leaderboard-ticker-rank,
+.leaderboard-ticker-item.lb-rank-1 .leaderboard-ticker-points {
+  color: #ffd700;
+}
+
+.leaderboard-ticker-item.lb-rank-2 .leaderboard-ticker-rank,
+.leaderboard-ticker-item.lb-rank-2 .leaderboard-ticker-points {
+  color: #c0c0c0;
+}
+
+.leaderboard-ticker-item.lb-rank-3 .leaderboard-ticker-rank,
+.leaderboard-ticker-item.lb-rank-3 .leaderboard-ticker-points {
+  color: #cd7f32;
 }
 
 .badge-live {
@@ -1840,9 +1918,21 @@ textarea:focus {
 }
 
 .prediction-ticker {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2.5rem;
   background: #0a1a10;
   background: linear-gradient(90deg, #0a1a10 0%, #14261a 50%, #0a1a10 100%);
-  border-bottom-color: var(--accent);
+  border-bottom: 1px solid var(--accent);
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.prediction-ticker:hover {
+  text-decoration: none;
 }
 
 .prediction-ticker .ticker-label {
@@ -3071,9 +3161,25 @@ a.bracket-match:hover {
     padding: 0.2rem 0.45rem;
   }
 
-  .comment-ticker,
+  .leaderboard-ticker,
   .prediction-ticker {
-    height: 2.15rem;
+    min-height: 2.15rem;
+  }
+
+  .leaderboard-ticker-body {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .leaderboard-ticker-item {
+    flex: 0 0 auto;
+    min-width: 7.5rem;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.55rem;
+  }
+
+  .leaderboard-ticker-pts-label {
+    display: none;
   }
 
   .ticker-label {

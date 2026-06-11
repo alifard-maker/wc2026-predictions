@@ -72,7 +72,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.6"
+APP_VERSION = "Beta 2.7"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -115,6 +115,24 @@ def get_comments_seen(pool_id: int) -> str | None:
     return session.get(comments_seen_key(pool_id))
 
 
+def leaderboard_top_for_json(pool_id: int, user_id: int | None) -> dict:
+    board = db.get_leaderboard(pool_id)
+    return {
+        "leader_message": db.get_leader_message(board),
+        "top": [
+            {
+                "user_id": r["id"],
+                "rank": r["rank"],
+                "display_name": r["display_name"],
+                "total_points": r["total_points"],
+                "exact_scores": r["exact_scores"],
+                "is_you": r["id"] == user_id,
+            }
+            for r in board[:5]
+        ],
+    }
+
+
 @app.context_processor
 def inject_public_url():
     ctx = {
@@ -141,6 +159,9 @@ def inject_public_url():
         matches = enrich_matches(db.get_all_matches())
         ctx["match_spotlight"] = build_pool_spotlight(pool_id, matches)
         ctx["live_commentary"] = build_live_commentary(matches)
+        lb = db.get_leaderboard(pool_id)
+        ctx["top_leaderboard"] = lb[:5]
+        ctx["leader_message"] = db.get_leader_message(lb)
     return ctx
 
 
@@ -762,6 +783,16 @@ def set_bold_pick_route(invite_code):
     else:
         flash("Bold pick set — 2× points if correct!", "success")
     return redirect(request.referrer or url_for("pool_dashboard", invite_code=invite_code))
+
+
+@app.route("/pool/<invite_code>/leaderboard/feed")
+@login_required
+def leaderboard_feed(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        return jsonify({"error": "unauthorized"}), 403
+
+    return jsonify(leaderboard_top_for_json(pool["id"], session.get("user_id")))
 
 
 @app.route("/pool/<invite_code>/leaderboard")
