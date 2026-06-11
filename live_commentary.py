@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from live_scores import is_match_in_progress, sanitize_minute_label
+from live_scores import (
+    is_match_in_progress,
+    sanitize_goal_minute_label,
+    sanitize_minute_label,
+)
 from scoring import TIMEZONE
 
 
@@ -25,12 +29,20 @@ def _events_for_match(match: dict) -> list[dict]:
     for goal in match.get("goals") or []:
         team = goal.get("team_name") or (home if goal.get("team_side") == "home" else away)
         scorer = goal.get("scorer_name") or "Unknown"
-        minute_label = goal.get("minute_label") or ""
+        minute_label = sanitize_goal_minute_label(goal.get("minute_label"))
         is_pen = bool(goal.get("is_penalty"))
         if is_pen:
-            text = f"⚽ {minute_label} Penalty goal — {scorer} ({team})"
+            text = (
+                f"⚽ {minute_label} Penalty goal — {scorer} ({team})"
+                if minute_label != "—"
+                else f"⚽ Penalty goal — {scorer} ({team})"
+            )
         else:
-            text = f"⚽ {minute_label} GOAL! {scorer} ({team})"
+            text = (
+                f"⚽ {minute_label} GOAL! {scorer} ({team})"
+                if minute_label != "—"
+                else f"⚽ GOAL! {scorer} ({team})"
+            )
         events.append(
             {
                 "type": "goal",
@@ -43,12 +55,20 @@ def _events_for_match(match: dict) -> list[dict]:
     for card in match.get("cards") or []:
         team = card.get("team") or ""
         player = card.get("player_name") or "Player"
-        minute_label = card.get("minute_label") or ""
+        minute_label = sanitize_goal_minute_label(card.get("minute_label"))
         if card.get("card_type") == "red":
-            text = f"🟥 {minute_label} Red card — {player} ({team})"
+            text = (
+                f"🟥 {minute_label} Red card — {player} ({team})"
+                if minute_label != "—"
+                else f"🟥 Red card — {player} ({team})"
+            )
             kind = "red_card"
         else:
-            text = f"🟨 {minute_label} Yellow card — {player} ({team})"
+            text = (
+                f"🟨 {minute_label} Yellow card — {player} ({team})"
+                if minute_label != "—"
+                else f"🟨 Yellow card — {player} ({team})"
+            )
             kind = "yellow_card"
         events.append(
             {
@@ -218,7 +238,7 @@ def commentary_for_json(commentary: dict | None) -> dict | None:
         "away_team": commentary["away_team"],
         "display_home": commentary["display_home"],
         "display_away": commentary["display_away"],
-        "minute_label": commentary["minute_label"],
+        "minute_label": sanitize_minute_label(commentary["minute_label"]),
         "status": commentary["status"],
         "scoreline": commentary["scoreline"],
         "headline": commentary["headline"],

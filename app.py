@@ -21,7 +21,12 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import db
 from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_badge, is_ai_agent
 import live_score_sync
-from live_scores import apply_live_state, opening_kickoff_iso, sanitize_minute_label
+from live_scores import (
+    apply_live_state,
+    opening_kickoff_iso,
+    sanitize_goal_minute_label,
+    sanitize_minute_label,
+)
 from scoring import (
     PHASE_BONUS_PTS,
     TIMEZONE,
@@ -81,9 +86,7 @@ def live_minute_filter(value: str | None) -> str:
 
 @app.template_filter("goal_minute")
 def goal_minute_filter(value: str | None) -> str:
-    if not value or str(value).strip() in {"0", "0'"}:
-        return "—"
-    return str(value).strip()
+    return sanitize_goal_minute_label(value)
 MAINTENANCE_MODE = os.environ.get("MAINTENANCE_MODE", "").strip().lower() in ("1", "true", "yes")
 
 
@@ -862,7 +865,7 @@ def matches_live_feed(invite_code):
                 "away_team": m["away_team"],
                 "display_home": m["display_home"],
                 "display_away": m["display_away"],
-                "minute_label": m["minute_label"],
+                "minute_label": sanitize_minute_label(m["minute_label"]),
                 "status": m["status"],
                 "is_live": m["is_live"],
                 "is_finished": m["is_finished"],
@@ -870,7 +873,7 @@ def matches_live_feed(invite_code):
                     {
                         "team_side": g["team_side"],
                         "scorer_name": g["scorer_name"],
-                        "minute_label": g["minute_label"],
+                        "minute_label": sanitize_goal_minute_label(g["minute_label"]),
                         "team_name": g["team_name"],
                     }
                     for g in m.get("goals", [])

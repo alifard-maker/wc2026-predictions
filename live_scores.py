@@ -28,6 +28,15 @@ def sanitize_minute_label(label: str | None) -> str:
     return cleaned
 
 
+def sanitize_goal_minute_label(label: str | None) -> str:
+    if not label:
+        return "—"
+    cleaned = label.strip()
+    if cleaned in {"0", "0'", "0''", "—"}:
+        return "—"
+    return cleaned
+
+
 def is_match_in_progress(kickoff: datetime, now: datetime) -> bool:
     """True only while the match is actually being played."""
     return kickoff <= now < kickoff + MATCH_DURATION
