@@ -71,8 +71,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
         display_home, display_away = actual_home, actual_away
         minute_label = "FT"
     elif in_progress and actual_home is None:
-        past_halftime = now >= second_half_kickoff(kickoff)
-        if db_status == "halftime" and not past_halftime:
+        if is_halftime_break(kickoff, now, db_status):
             status = "halftime"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
@@ -124,10 +123,31 @@ def second_half_kickoff(kickoff: datetime) -> datetime:
     return kickoff + timedelta(minutes=FIRST_HALF_MINUTES) + HALFTIME_BREAK
 
 
-def derive_second_half_minute(kickoff: datetime, now: datetime) -> int:
-    """Wall-clock minute in 2nd half when API clock is stuck at or before 45."""
-    elapsed = now - second_half_kickoff(kickoff)
-    return min(90, FIRST_HALF_MINUTES + max(1, int(elapsed.total_seconds() // 60)))
+def elapsed_wall_minutes(kickoff: datetime, now: datetime) -> int:
+    if now < kickoff:
+        return 0
+    return int((now - kickoff).total_seconds() // 60)
+
+
+def minute_from_kickoff(kickoff: datetime, now: datetime) -> int | None:
+    """Match clock from kickoff wall time (45' + 15' HT break + 2nd half)."""
+    elapsed = elapsed_wall_minutes(kickoff, now)
+    if elapsed <= 0:
+        return None
+    if elapsed <= FIRST_HALF_MINUTES:
+        return max(1, elapsed)
+    if elapsed <= 60:
+        return FIRST_HALF_MINUTES
+    return min(90, FIRST_HALF_MINUTES + elapsed - 60)
+
+
+def is_halftime_break(kickoff: datetime, now: datetime, db_status: str) -> bool:
+    elapsed = elapsed_wall_minutes(kickoff, now)
+    if elapsed > 60:
+        return False
+    if db_status == "halftime":
+        return True
+    return 45 < elapsed <= 60
 
 
 def effective_live_minute(
@@ -136,16 +156,24 @@ def effective_live_minute(
     stored_minute: int | None,
     stored_injury: int | None = None,
 ) -> tuple[int | None, int | None]:
-    """Prefer API/stored minute; derive 2nd-half clock when API freezes at HT."""
-    if now < second_half_kickoff(kickoff):
-        return stored_minute, stored_injury
-    derived = derive_second_half_minute(kickoff, now)
-    if stored_minute is None or stored_minute <= FIRST_HALF_MINUTES:
-        return derived, None
-    if stored_minute > FIRST_HALF_MINUTES:
+    """Use API minute when ahead; otherwise derive from kickoff when stuck at 45'."""
+    kickoff_minute = minute_from_kickoff(kickoff, now)
+    elapsed = elapsed_wall_minutes(kickoff, now)
+
+    if stored_minute is not None and stored_minute > FIRST_HALF_MINUTES:
         injury = stored_injury if stored_minute >= 90 else None
         return stored_minute, injury
-    return derived, None
+
+    if elapsed > 60 and kickoff_minute and kickoff_minute > FIRST_HALF_MINUTES:
+        return kickoff_minute, None
+
+    if stored_minute is not None and stored_injury and stored_minute <= FIRST_HALF_MINUTES:
+        return stored_minute, stored_injury
+
+    if stored_minute is not None and elapsed <= 45:
+        return stored_minute, None
+
+    return kickoff_minute, None
 
 
 def format_halftime_label(kickoff: datetime, now: datetime) -> str:

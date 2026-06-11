@@ -166,7 +166,7 @@
       <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
 
       {% if m.is_live or m.is_finished %}
-      <div class="live-score-display" data-live-score="{{ m.id }}">
+      <div class="live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
         {{ m.display_home }} – {{ m.display_away }}
         <div data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
         {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
@@ -322,9 +322,8 @@
       const score = document.querySelector(`[data-live-score="${m.id}"]`);
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
-        const clock = m.status === 'halftime'
-          ? sanitizeMinuteLabel(m.minute_label)
-          : `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
+        const minute = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
+        const clock = m.status === 'halftime' ? minute : `LIVE ${minute}`;
         badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
@@ -336,8 +335,23 @@
       }
     });
   }
+  function tickLiveClocks() {
+    document.querySelectorAll('[data-live-score][data-kickoff]').forEach(el => {
+      const kickoff = el.dataset.kickoff;
+      const matchId = el.dataset.liveScore;
+      const badge = document.querySelector(`[data-live-badge="${matchId}"]`);
+      if (!badge || !kickoff) return;
+      const minute = deriveLiveMinuteFromKickoff(kickoff);
+      if (!minute || minute === 'HT') return;
+      const parts = badge.textContent.split('·');
+      if (parts.length < 2) return;
+      badge.textContent = `LIVE ${minute} · ${parts.slice(1).join('·').trim()}`;
+    });
+  }
   setInterval(refreshLiveScores, 15000);
+  setInterval(tickLiveClocks, 10000);
   refreshLiveScores();
+  tickLiveClocks();
 
   (function() {
     const listEl = document.getElementById('wc-news-list');

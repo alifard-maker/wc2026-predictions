@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 import db
 from live_scores import (
     effective_live_minute,
+    minute_from_kickoff,
     normalize_stored_minute,
-    second_half_kickoff,
 )
 from scoring import TIMEZONE, parse_match_datetime
 
@@ -279,11 +279,9 @@ def _parse_goal_minute(goal: dict) -> tuple[int, int | None] | None:
 
 def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, int | None]:
     """API minute when available; derive 2nd-half clock if API freezes at 45."""
-    api_status = (api_match.get("status") or "").upper()
     raw = api_match.get("minute")
     kickoff = _match_kickoff_et(api_match, db_match)
     now = datetime.now(TIMEZONE)
-    in_second_half = bool(kickoff and now >= second_half_kickoff(kickoff))
     stored = normalize_stored_minute(db_match.get("live_minute"))
     stored_injury = db_match.get("live_injury_minute")
     if stored_injury is not None:
@@ -299,27 +297,13 @@ def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, in
         if parsed > 0:
             api_minute = parsed
             api_injury = _injury_minute(api_match)
-            if in_second_half:
-                api_injury = api_injury if parsed >= 90 and api_injury else None
-            elif api_injury is None and stored_injury and stored == parsed:
+            if api_injury is None and stored_injury and stored == parsed:
                 api_injury = stored_injury
 
-    if kickoff and in_second_half:
-        if api_minute is None or api_minute <= 45:
-            return effective_live_minute(kickoff, now, api_minute or stored, api_injury)
-        return api_minute, api_injury
-
-    if api_minute is not None:
-        return api_minute, api_injury
-
-    if api_status in LIVE_API_STATUSES or api_status == "IN_PLAY":
-        if kickoff and in_second_half:
-            return effective_live_minute(kickoff, now, stored, stored_injury)
-        return None, None
-
-    if stored is not None:
-        return effective_live_minute(kickoff, now, stored, stored_injury) if kickoff else (stored, stored_injury)
-    return None, None
+    best_minute = api_minute if api_minute is not None else stored
+    if kickoff:
+        return effective_live_minute(kickoff, now, best_minute, api_injury or stored_injury)
+    return best_minute, api_injury or stored_injury
 
 
 def _injury_minute(goal_or_booking: dict) -> int | None:
@@ -582,14 +566,20 @@ def _process_api_match(
         if db_match["actual_home"] is None:
             db.update_match_result(match_id, home_score, away_score)
             result["finished"] = 1
-    elif db_match["actual_home"] is None and in_window:
+    elif in_window and db_match.get("actual_home") is None:
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
+        db_status = _db_status(status)
+        if db_status == "halftime" and kickoff:
+            from live_scores import is_halftime_break
+
+            if not is_halftime_break(kickoff, datetime.now(TIMEZONE), db_status):
+                db_status = "live"
         db.update_match_live(
             match_id,
             home_score,
             away_score,
             live_minute,
-            _db_status(status),
+            db_status,
             live_injury,
         )
         result["updated_live"] = 1

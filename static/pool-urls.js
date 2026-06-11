@@ -31,6 +31,29 @@
     return `/pool/${encodeURIComponent(code)}/player/${userId}`;
   };
 
+  global.deriveLiveMinuteFromKickoff = function (kickoffIso) {
+    if (!kickoffIso) return null;
+    const kickoff = new Date(kickoffIso);
+    if (Number.isNaN(kickoff.getTime())) return null;
+    const elapsedMins = Math.floor((Date.now() - kickoff.getTime()) / 60000);
+    if (elapsedMins <= 45) return `${Math.max(1, elapsedMins)}'`;
+    if (elapsedMins <= 60) return 'HT';
+    return `${Math.min(90, 45 + elapsedMins - 60)}'`;
+  };
+
+  global.resolveLiveMinuteLabel = function (minuteLabel, kickoffIso, status) {
+    const derived = deriveLiveMinuteFromKickoff(kickoffIso);
+    const cleaned = sanitizeMinuteLabel(minuteLabel);
+    if (status === 'halftime' || derived === 'HT') {
+      if (cleaned.startsWith('HT')) return cleaned;
+      return derived || cleaned || 'HT';
+    }
+    if (derived && (cleaned === "45'" || cleaned === 'LIVE' || !minuteLabel)) {
+      return derived;
+    }
+    return cleaned;
+  };
+
   global.sanitizeMinuteLabel = function (label) {
     if (!label) return 'LIVE';
     const text = String(label).trim();

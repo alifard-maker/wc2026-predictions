@@ -189,16 +189,15 @@
     const minEl = document.getElementById('match-minute');
     if (minEl && m.is_live) {
       minEl.style.display = '';
-      minEl.textContent = sanitizeMinuteLabel(m.minute_label);
+      minEl.textContent = resolveLiveMinuteLabel(m.minute_label, data.match.kickoff_iso, m.status);
     } else if (minEl) {
       minEl.style.display = 'none';
     }
     const badge = document.getElementById('match-status-badge');
     if (badge && m.is_live) {
       badge.className = 'badge badge-live';
-      badge.textContent = m.status === 'halftime'
-        ? sanitizeMinuteLabel(m.minute_label)
-        : `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
+      const minute = resolveLiveMinuteLabel(m.minute_label, data.match.kickoff_iso, m.status);
+      badge.textContent = m.status === 'halftime' ? minute : `LIVE ${minute}`;
     } else if (badge && m.is_finished) {
       badge.className = 'badge badge-done';
       badge.textContent = 'Full time';

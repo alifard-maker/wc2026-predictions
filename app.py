@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.5"
+APP_VERSION = "Beta 1.6"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -340,6 +340,29 @@ def health():
         payload["live_sync"] = live_score_sync.get_sync_status()
     except Exception as exc:
         payload["live_sync"] = {"enabled": live_score_sync.is_enabled(), "error": str(exc)}
+    try:
+        from datetime import datetime
+
+        from live_scores import apply_live_state, minute_from_kickoff
+        from scoring import TIMEZONE
+
+        now = datetime.now(TIMEZONE)
+        for row in db.get_all_matches():
+            m = dict(row)
+            if m.get("home_team") == "Mexico" and m.get("away_team") == "South Africa":
+                enriched = apply_live_state(m, now)
+                kickoff = enriched.get("kickoff")
+                payload["clock_debug"] = {
+                    "db_live_minute": m.get("live_minute"),
+                    "db_status": m.get("status"),
+                    "minute_label": enriched.get("minute_label"),
+                    "display_status": enriched.get("status"),
+                    "kickoff_minute": minute_from_kickoff(kickoff, now) if kickoff else None,
+                    "actual_home": m.get("actual_home"),
+                }
+                break
+    except Exception:
+        pass
     return jsonify(payload)
 
 
@@ -897,6 +920,7 @@ def matches_live_feed(invite_code):
                 "display_home": m["display_home"],
                 "display_away": m["display_away"],
                 "minute_label": sanitize_minute_label(m["minute_label"]),
+                "kickoff_iso": m["kickoff"].isoformat() if m.get("kickoff") else None,
                 "status": m["status"],
                 "is_live": m["is_live"],
                 "is_finished": m["is_finished"],
@@ -1205,6 +1229,7 @@ def match_watch_feed(invite_code, match_id):
             "display_home": enriched["display_home"],
             "display_away": enriched["display_away"],
             "minute_label": sanitize_minute_label(enriched["minute_label"]),
+            "kickoff_iso": enriched["kickoff"].isoformat() if enriched.get("kickoff") else None,
             "is_live": enriched["is_live"],
             "is_finished": enriched["is_finished"],
             "status": enriched["status"],

@@ -289,7 +289,12 @@
         commentaryPanel.classList.remove('hidden');
         commentaryPanel.href = poolMatchUrl(commentary.match_id);
         if (commentaryMinute) {
-          commentaryMinute.textContent = sanitizeMinuteLabel(commentary.minute_label);
+          const barKickoff = liveTopBar?.dataset?.kickoff;
+          commentaryMinute.textContent = resolveLiveMinuteLabel(
+            commentary.minute_label,
+            barKickoff,
+            commentary.status
+          );
         }
         if (commentaryScoreline) {
           commentaryScoreline.textContent = commentary.scoreline || '';
@@ -331,8 +336,18 @@
         renderSpotlight(data.spotlight);
       }
 
+      function tickCommentaryClock() {
+        const bar = document.getElementById('live-top-bar');
+        const el = document.getElementById('commentary-minute');
+        if (!bar?.dataset?.kickoff || !el) return;
+        const minute = deriveLiveMinuteFromKickoff(bar.dataset.kickoff);
+        if (minute && minute !== 'HT') el.textContent = minute;
+      }
+
       refreshLiveFeed();
       setInterval(refreshLiveFeed, 15000);
+      setInterval(tickCommentaryClock, 10000);
+      tickCommentaryClock();
     })();
   </script>
   {% endif %}
