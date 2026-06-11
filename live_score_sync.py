@@ -8,10 +8,12 @@ import os
 import unicodedata
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import db
 from scoring import TIMEZONE
+
+MATCH_WINDOW = timedelta(minutes=105)
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +171,23 @@ def _extract_score(api_match: dict, our_teams: set[str]) -> tuple[int | None, in
     return _score_from_goals(api_match, our_teams)
 
 
+def _kickoff_in_play_window(kickoff_et: datetime | None) -> bool:
+    if not kickoff_et:
+        return False
+    now = datetime.now(TIMEZONE)
+    return kickoff_et <= now < kickoff_et + MATCH_WINDOW
+
+
 def _should_sync_match(api_match: dict) -> bool:
     status = api_match.get("status") or "SCHEDULED"
     if status == FINISHED_API_STATUS or status in LIVE_API_STATUSES:
         return True
     if status in SYNCABLE_STATUSES and (
+        api_match.get("minute") is not None or api_match.get("goals")
+    ):
+        return True
+    kickoff_et = _parse_api_kickoff_et(api_match.get("utcDate", ""))
+    if _kickoff_in_play_window(kickoff_et) and (
         api_match.get("minute") is not None or api_match.get("goals")
     ):
         return True
