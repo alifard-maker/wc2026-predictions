@@ -33,7 +33,8 @@ In Railway → your service → **Variables**, add:
 |----------|--------|
 | `SECRET_KEY` | Long random string (e.g. `openssl rand -hex 32`) |
 | `DATABASE_PATH` | `/data/predictions.db` |
-| `FOOTBALL_DATA_API_TOKEN` | Free API token from [football-data.org](https://www.football-data.org/client/register) — enables automatic live scores every 30s |
+| `FOOTBALL_DATA_API_TOKEN` | Free API token from [football-data.org](https://www.football-data.org/client/register) — enables automatic live scores, cards, and penalties every 10s |
+| `LIVE_SYNC_INTERVAL` | Optional — seconds between syncs (default `10`) |
 
 Do **not** set `PUBLIC_URL` — invite links use the Railway hostname automatically.
 

@@ -323,6 +323,78 @@ def try_begin_live_sync(cooldown_seconds: int) -> bool:
     return True
 
 
+def import_player_card(
+    match_id: int,
+    player_name: str,
+    team: str,
+    card_type: str,
+    minute: int | None = None,
+) -> bool:
+    """Insert a card from an external feed if not already recorded."""
+    name = player_name.strip()
+    team_name = team.strip()
+    if not name or not team_name or card_type not in ("yellow", "red"):
+        return False
+    with db() as conn:
+        existing = conn.execute(
+            """
+            SELECT id FROM player_cards
+            WHERE match_id = ? AND player_name = ? AND team = ? AND card_type = ?
+                  AND COALESCE(minute, -1) = COALESCE(?, -1)
+            """,
+            (match_id, name, team_name, card_type, minute),
+        ).fetchone()
+        if existing:
+            return False
+        conn.execute(
+            """
+            INSERT INTO player_cards (match_id, player_name, team, card_type, minute)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (match_id, name, team_name, card_type, minute),
+        )
+    return True
+
+
+def import_match_penalty(
+    match_id: int,
+    taker_team: str,
+    outcome: str,
+    minute: int,
+    taker_name: str | None = None,
+    injury_minute: int | None = None,
+) -> bool:
+    """Insert a penalty event from an external feed if not already recorded. Does not bump score."""
+    team = taker_team.strip()
+    taker = (taker_name or "").strip() or None
+    if not team or outcome not in ("scored", "saved", "missed"):
+        return False
+    with db() as conn:
+        match = conn.execute("SELECT home_team, away_team FROM matches WHERE id = ?", (match_id,)).fetchone()
+        if not match or team not in (match["home_team"], match["away_team"]):
+            return False
+        existing = conn.execute(
+            """
+            SELECT id FROM match_penalties
+            WHERE match_id = ? AND taker_team = ? AND outcome = ? AND minute = ?
+                  AND COALESCE(injury_minute, 0) = COALESCE(?, 0)
+                  AND COALESCE(taker_name, '') = COALESCE(?, '')
+            """,
+            (match_id, team, outcome, minute, injury_minute, taker or ""),
+        ).fetchone()
+        if existing:
+            return False
+        conn.execute(
+            """
+            INSERT INTO match_penalties
+            (match_id, taker_team, taker_name, goalkeeper_name, outcome, minute, injury_minute)
+            VALUES (?, ?, ?, NULL, ?, ?, ?)
+            """,
+            (match_id, team, taker, outcome, minute, injury_minute),
+        )
+    return True
+
+
 def import_match_goal(
     match_id: int,
     team_side: str,

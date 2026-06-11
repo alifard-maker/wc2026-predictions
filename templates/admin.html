@@ -30,15 +30,18 @@
   <h3>Live score sync</h3>
   {% if live_sync.enabled %}
   <p style="color: var(--muted); margin: 0 0 0.5rem">
-    Automatic updates every <strong>{{ live_sync.interval_seconds }}s</strong> from football-data.org.
-    Manual live/FT entry below is only needed as a backup.
+    Automatic updates every <strong>{{ live_sync.interval_seconds }}s</strong> from football-data.org
+    — scores, goal scorers, yellow/red cards, and penalties.
+    Manual entry below is only a backup.
   </p>
   {% if live_sync.last_summary %}
   <p style="margin: 0; font-size: 0.9rem">
     Last sync: {{ live_sync.last_summary.synced_at or '—' }}
     · {{ live_sync.last_summary.updated_live }} live
     · {{ live_sync.last_summary.finished }} finished
-    · {{ live_sync.last_summary.goals_added }} new goals
+    · {{ live_sync.last_summary.goals_added }} goals
+    · {{ live_sync.last_summary.cards_added or 0 }} cards
+    · {{ live_sync.last_summary.penalties_added or 0 }} penalties
   </p>
   {% endif %}
   {% if live_sync.last_error %}
