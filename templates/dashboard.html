@@ -153,7 +153,7 @@
         <span>{{ m.venue }}</span>
         {% if m.is_live %}
         <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
-        {% elif m.is_finished %}
+        {% elif m.is_finished or m.show_result %}
         <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
         {% elif m.open %}
         <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
@@ -165,7 +165,7 @@
 
       <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
 
-      {% if m.is_live or m.is_finished %}
+      {% if m.show_result %}
       <div class="live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
         {{ m.display_home }} – {{ m.display_away }}
         <div data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
@@ -325,13 +325,24 @@
         const minute = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
         const clock = m.status === 'halftime' ? minute : `LIVE ${minute}`;
         badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
-      } else if (m.is_finished && badge) {
+      } else if ((m.is_finished || m.show_result) && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
       }
-      if ((m.is_live || m.is_finished) && score) {
+      if ((m.is_live || m.is_finished || m.show_result) && score) {
         const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
         score.innerHTML = `${m.display_home} – ${m.display_away}${eventsHtml}`;
+      } else if ((m.is_finished || m.show_result) && !score) {
+        const fixture = document.getElementById(`match-${m.id}`);
+        const homeTeam = fixture?.querySelector('.team.home');
+        if (fixture && homeTeam) {
+          const wrap = document.createElement('div');
+          wrap.className = 'live-score-display';
+          wrap.dataset.liveScore = String(m.id);
+          const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
+          wrap.innerHTML = `${m.display_home} – ${m.display_away}${eventsHtml}`;
+          homeTeam.insertAdjacentElement('afterend', wrap);
+        }
       }
     });
   }

@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.0"
+APP_VERSION = "Beta 2.1"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -228,11 +228,42 @@ def cards_for_json(cards: list[dict]) -> list[dict]:
     ]
 
 
+def _fill_result_display(match: dict, raw: dict) -> None:
+    """Keep final/synced scores visible after kickoff when apply_live_state cleared them."""
+    if match.get("display_home") is not None:
+        return
+    actual_home = raw.get("actual_home")
+    actual_away = raw.get("actual_away")
+    live_home = raw.get("live_home")
+    live_away = raw.get("live_away")
+    if actual_home is not None and actual_away is not None:
+        match["display_home"] = actual_home
+        match["display_away"] = actual_away
+        match["status"] = "finished"
+        match["is_finished"] = True
+        match["is_live"] = False
+        match["minute_label"] = "FT"
+    elif live_home is not None or live_away is not None:
+        match["display_home"] = 0 if live_home is None else live_home
+        match["display_away"] = 0 if live_away is None else live_away
+
+
+def match_show_result(match: dict) -> bool:
+    return bool(
+        match.get("is_live")
+        or match.get("is_finished")
+        or match.get("display_home") is not None
+        or match.get("goals")
+        or match.get("cards")
+    )
+
+
 def enrich_matches(matches, user_predictions=None):
     now = datetime.now(TIMEZONE)
     enriched = []
     for m in matches:
-        d = apply_live_state(dict(m), now)
+        raw = dict(m)
+        d = apply_live_state(raw, now)
         d["deadline"] = prediction_deadline(m["match_date"], m["match_time"])
         d["open"] = is_prediction_open(m["match_date"], m["match_time"], now)
         d["deadline_urgent"] = (
@@ -252,6 +283,8 @@ def enrich_matches(matches, user_predictions=None):
         d["goals"] = db.get_match_goals(m["id"])
         d["cards"] = db.get_match_cards(m["id"])
         d["penalties"] = db.get_match_penalties(m["id"])
+        _fill_result_display(d, raw)
+        d["show_result"] = match_show_result(d)
         enriched.append(d)
     return enriched
 
@@ -967,6 +1000,7 @@ def matches_live_feed(invite_code):
                 "status": m["status"],
                 "is_live": m["is_live"],
                 "is_finished": m["is_finished"],
+                "show_result": m.get("show_result", False),
                 "goals": goals_for_json(m.get("goals", [])),
                 "cards": cards_for_json(m.get("cards", [])),
             }
