@@ -86,11 +86,28 @@ def _parse_espn_minute(display: str | None) -> tuple[int | None, int | None]:
     return minute, injury
 
 
+ESPN_NOT_STARTED = frozenset({
+    "STATUS_SCHEDULED",
+    "STATUS_PRE",
+    "STATUS_DELAYED",
+    "STATUS_POSTPONED",
+    "STATUS_CANCELED",
+    "STATUS_CANCELLED",
+})
+
+
+def _espn_not_started(comp_status: dict | None) -> bool:
+    name = ((comp_status or {}).get("type") or {}).get("name") or ""
+    return name in ESPN_NOT_STARTED
+
+
 def _espn_status(comp_status: dict | None) -> str | None:
     type_info = (comp_status or {}).get("type") or {}
     name = type_info.get("name") or ""
     state = type_info.get("state") or ""
     completed = bool(type_info.get("completed"))
+    if name in ESPN_NOT_STARTED:
+        return None
     if name in {"STATUS_HALFTIME", "STATUS_PAUSE"}:
         return "halftime"
     if completed or name in {"STATUS_FULL_TIME", "STATUS_FINAL"}:
@@ -180,6 +197,15 @@ def _sync_espn_event(
         return result
 
     match_id = db_match["id"]
+    comp_status = competition.get("status") or event.get("status") or {}
+
+    if _espn_not_started(comp_status):
+        if (db_match.get("status") or "") in ("live", "halftime") and db_match.get("actual_home") is None:
+            db.clear_match_live_state(match_id)
+            db.set_sync_meta(f"espn_live_source_{match_id}", "")
+            result["reset_scheduled"] = 1
+        return result
+
     result["matched"] = 1
     result["match_id"] = match_id
 
@@ -195,7 +221,6 @@ def _sync_espn_event(
         elif competitor.get("homeAway") == "away":
             away_score = value
 
-    comp_status = competition.get("status") or event.get("status") or {}
     db_status = _espn_status(comp_status)
 
     display_clock = (
@@ -302,7 +327,7 @@ def sync_from_espn(
             if key == "matched_match_ids":
                 continue
             totals[key] += row.get(key, 0)
-        if row.get("match_id"):
+        if row.get("updated_live") and row.get("match_id"):
             totals["matched_match_ids"].append(row["match_id"])
         if row.get("espn_minute") is not None and row["espn_minute"] > 0:
             totals["espn_minute"] = row["espn_minute"]

@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.2"
+APP_VERSION = "Beta 2.3"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -228,9 +228,32 @@ def cards_for_json(cards: list[dict]) -> list[dict]:
     ]
 
 
-def _fill_result_display(match: dict, raw: dict) -> None:
+def _match_has_played_data(raw: dict, now: datetime) -> bool:
+    if raw.get("actual_home") is not None:
+        return True
+    kickoff = parse_match_datetime(raw["match_date"], raw["match_time"])
+    if now < kickoff:
+        return False
+    if (raw.get("status") or "") not in ("live", "halftime", "finished"):
+        return False
+    live_minute = raw.get("live_minute")
+    try:
+        if live_minute is not None and int(live_minute) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    live_home = raw.get("live_home")
+    live_away = raw.get("live_away")
+    if (live_home or 0) + (live_away or 0) > 0:
+        return True
+    return False
+
+
+def _fill_result_display(match: dict, raw: dict, now: datetime) -> None:
     """Keep final/synced scores visible after kickoff when apply_live_state cleared them."""
     if match.get("display_home") is not None:
+        return
+    if not _match_has_played_data(raw, now):
         return
     actual_home = raw.get("actual_home")
     actual_away = raw.get("actual_away")
@@ -248,14 +271,15 @@ def _fill_result_display(match: dict, raw: dict) -> None:
         match["display_away"] = 0 if live_away is None else live_away
 
 
-def match_show_result(match: dict) -> bool:
-    return bool(
-        match.get("is_live")
-        or match.get("is_finished")
-        or match.get("display_home") is not None
-        or match.get("goals")
-        or match.get("cards")
-    )
+def match_show_result(match: dict, raw: dict | None = None, now: datetime | None = None) -> bool:
+    now = now or datetime.now(TIMEZONE)
+    if match.get("is_live") or match.get("is_finished"):
+        return True
+    if match.get("goals") or match.get("cards"):
+        return True
+    if raw and _match_has_played_data(raw, now):
+        return match.get("display_home") is not None
+    return False
 
 
 def enrich_matches(matches, user_predictions=None):
@@ -283,8 +307,8 @@ def enrich_matches(matches, user_predictions=None):
         d["goals"] = db.get_match_goals(m["id"])
         d["cards"] = db.get_match_cards(m["id"])
         d["penalties"] = db.get_match_penalties(m["id"])
-        _fill_result_display(d, raw)
-        d["show_result"] = match_show_result(d)
+        _fill_result_display(d, raw, now)
+        d["show_result"] = match_show_result(d, raw, now)
         enriched.append(d)
     return enriched
 

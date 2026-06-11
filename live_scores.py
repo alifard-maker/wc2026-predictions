@@ -40,11 +40,15 @@ def sanitize_goal_minute_label(label: str | None) -> str:
     return cleaned
 
 
-def is_synced_live(match: dict) -> bool:
+def is_synced_live(match: dict, now: datetime | None = None) -> bool:
     """True when the live sync feed still has this match in play."""
+    now = now or datetime.now(TIMEZONE)
     if match.get("actual_home") is not None:
         return False
-    return (match.get("status") or "") in ("live", "halftime")
+    if (match.get("status") or "") not in ("live", "halftime"):
+        return False
+    kickoff = parse_match_datetime(match["match_date"], match["match_time"])
+    return now >= kickoff
 
 
 def is_match_in_progress(
@@ -64,7 +68,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     m = dict(match)
     kickoff = parse_match_datetime(m["match_date"], m["match_time"])
     db_status = m.get("status") or "scheduled"
-    synced_live = is_synced_live(m)
+    synced_live = is_synced_live(m, now)
     in_progress = is_match_in_progress(kickoff, now, m)
     live_home = m.get("live_home")
     live_away = m.get("live_away")

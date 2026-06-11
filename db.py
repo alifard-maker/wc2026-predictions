@@ -212,6 +212,20 @@ def init_db() -> None:
     repair_live_display_data()
 
 
+def clear_match_live_state(match_id: int) -> None:
+    """Reset a fixture to scheduled when it was wrongly marked live before kickoff."""
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE matches
+            SET status = 'scheduled', live_home = NULL, live_away = NULL,
+                live_minute = NULL, live_injury_minute = NULL
+            WHERE id = ? AND actual_home IS NULL
+            """,
+            (match_id,),
+        )
+
+
 def repair_live_display_data() -> None:
     """Clear bogus 0-minute values left by bad API imports."""
     with db() as conn:
@@ -222,6 +236,20 @@ def repair_live_display_data() -> None:
             UPDATE matches
             SET status = 'live', live_injury_minute = NULL
             WHERE status = 'halftime' AND live_minute > 45 AND actual_home IS NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE matches
+            SET status = 'scheduled', live_home = NULL, live_away = NULL,
+                live_minute = NULL, live_injury_minute = NULL
+            WHERE actual_home IS NULL
+              AND status IN ('live', 'halftime')
+              AND COALESCE(live_minute, 0) = 0
+              AND COALESCE(live_home, 0) = 0
+              AND COALESCE(live_away, 0) = 0
+              AND id NOT IN (SELECT DISTINCT match_id FROM match_goals)
+              AND id NOT IN (SELECT DISTINCT match_id FROM player_cards)
             """
         )
 
