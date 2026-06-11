@@ -290,6 +290,17 @@ def _second_half_start(match_id: int) -> datetime | None:
         return None
 
 
+def _espn_controls_match(match_id: int) -> bool:
+    raw = db.get_sync_meta(f"espn_live_source_{match_id}")
+    if not raw:
+        return False
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    return (datetime.now(TIMEZONE) - when).total_seconds() < 6 * 3600
+
+
 def _track_second_half_start(match_id: int, api_status: str) -> None:
     now = datetime.now(TIMEZONE)
     prev = db.get_sync_meta(f"api_status_{match_id}") or ""
@@ -610,7 +621,12 @@ def _process_api_match(
         if db_match["actual_home"] is None:
             db.update_match_result(match_id, home_score, away_score)
             result["finished"] = 1
-    elif in_window and db_match.get("actual_home") is None and not skip_live_update:
+    elif (
+        in_window
+        and db_match.get("actual_home") is None
+        and not skip_live_update
+        and not _espn_controls_match(match_id)
+    ):
         _track_second_half_start(match_id, status)
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
         db_status = _db_status(status)

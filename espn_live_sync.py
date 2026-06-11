@@ -67,13 +67,21 @@ def _fetch_scoreboard() -> dict | None:
 def _parse_espn_minute(display: str | None) -> tuple[int | None, int | None]:
     if not display:
         return None, None
-    text = str(display).strip().rstrip("'").strip()
+    text = (
+        str(display)
+        .strip()
+        .replace("′", "'")
+        .replace("'", "")
+        .strip()
+    )
     if not text or text.upper() in {"HT", "HALFTIME"}:
         return 45, None
     match = re.match(r"^(\d+)(?:\+(\d+))?$", text)
     if not match:
         return None, None
     minute = int(match.group(1))
+    if minute < 1:
+        return None, None
     injury = int(match.group(2)) if match.group(2) else None
     return minute, injury
 
@@ -95,8 +103,11 @@ def _espn_status(comp_status: dict | None) -> str | None:
         "STATUS_PENALTY_SHOOTOUT",
     }:
         return "live"
-    if (comp_status or {}).get("displayClock"):
-        return "live"
+    display = (comp_status or {}).get("displayClock")
+    if display:
+        minute, _ = _parse_espn_minute(display)
+        if minute and minute > 0:
+            return "live"
     return None
 
 
@@ -202,6 +213,8 @@ def _sync_espn_event(
         if db_status == "halftime":
             live_minute = 45
             live_injury = None
+        if live_minute is not None and live_minute <= 0:
+            live_minute = None
         db.update_match_live(
             match_id,
             home_score,
@@ -211,6 +224,8 @@ def _sync_espn_event(
             live_injury,
         )
         result["updated_live"] = 1
+        result["live_home"] = home_score
+        result["live_away"] = away_score
         db.set_sync_meta(f"espn_live_source_{match_id}", datetime.now(TIMEZONE).isoformat())
 
     for detail in competition.get("details") or []:
@@ -289,7 +304,7 @@ def sync_from_espn(
             totals[key] += row.get(key, 0)
         if row.get("match_id"):
             totals["matched_match_ids"].append(row["match_id"])
-        if row.get("espn_minute") is not None:
+        if row.get("espn_minute") is not None and row["espn_minute"] > 0:
             totals["espn_minute"] = row["espn_minute"]
 
     summary = {

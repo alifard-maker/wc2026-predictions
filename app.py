@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.8"
+APP_VERSION = "Beta 1.9"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -378,13 +378,19 @@ def health():
             if m.get("home_team") == "Mexico" and m.get("away_team") == "South Africa":
                 enriched = apply_live_state(m, now)
                 kickoff = enriched.get("kickoff")
+                goals = db.get_match_goals(m["id"])
                 payload["clock_debug"] = {
                     "db_live_minute": m.get("live_minute"),
                     "db_status": m.get("status"),
+                    "live_home": m.get("live_home"),
+                    "live_away": m.get("live_away"),
                     "minute_label": enriched.get("minute_label"),
                     "display_status": enriched.get("status"),
                     "kickoff_minute": minute_from_kickoff(kickoff, now) if kickoff else None,
                     "actual_home": m.get("actual_home"),
+                    "goals_in_db": len(goals),
+                    "goal_scorers": [g["scorer_name"] for g in goals],
+                    "espn_source": db.get_sync_meta(f"espn_live_source_{m['id']}"),
                 }
                 break
     except Exception:
@@ -393,6 +399,16 @@ def health():
 
 
 ensure_db()
+
+
+def _warm_live_data() -> None:
+    try:
+        live_score_sync._run_espn_sync()
+    except Exception:
+        pass
+
+
+_warm_live_data()
 _start_espn_sync_background()
 _start_live_sync_background()
 
