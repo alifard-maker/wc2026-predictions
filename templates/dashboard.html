@@ -166,9 +166,27 @@
       <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
 
       {% if m.show_result %}
-      <div class="live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
-        {{ m.display_home }} – {{ m.display_away }}
-        <div data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
+      <div class="fixture-result-stack live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
+        <div class="fixture-actual-row">
+          <span class="fixture-result-label">{% if m.is_live %}Live{% else %}Result{% endif %}</span>
+          <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">{{ m.display_home }} – {{ m.display_away }}</span>
+          <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
+        </div>
+        {% if m.prediction %}
+        <div class="fixture-prediction-row" data-fixture-prediction="{{ m.id }}">
+          <span class="fixture-result-label">Your pick</span>
+          <span class="fixture-result-score">{{ m.prediction.home_score }} – {{ m.prediction.away_score }}</span>
+          {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+          {% if m.prediction.points is not none %}
+          <span class="points-earned" data-prediction-points="{{ m.id }}">+{{ m.prediction.points }} pts</span>
+          {% endif %}
+        </div>
+        {% elif not m.open %}
+        <div class="fixture-prediction-row fixture-prediction-missing">
+          <span class="fixture-result-label">Your pick</span>
+          <span class="fixture-no-pick">—</span>
+        </div>
+        {% endif %}
         {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
         <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
           <span class="fixture-winners-label">Called it:</span>
@@ -288,6 +306,46 @@
   }
 
   const liveUrl = "{{ url_for('matches_live_feed', invite_code=pool.invite_code) }}";
+
+  function renderFixtureResultInnerHtml(m) {
+    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
+    const actualLabel = m.is_live ? 'Live' : 'Result';
+    let predHtml = '';
+    if (m.prediction) {
+      const bold = m.prediction.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
+      const pts = m.prediction.points != null
+        ? ` <span class="points-earned" data-prediction-points="${m.id}">+${m.prediction.points} pts</span>`
+        : '';
+      predHtml = `<div class="fixture-prediction-row" data-fixture-prediction="${m.id}">
+        <span class="fixture-result-label">Your pick</span>
+        <span class="fixture-result-score">${m.prediction.home_score} – ${m.prediction.away_score}</span>${bold}${pts}
+      </div>`;
+    } else if (!m.is_live) {
+      predHtml = `<div class="fixture-prediction-row fixture-prediction-missing">
+        <span class="fixture-result-label">Your pick</span>
+        <span class="fixture-no-pick">—</span>
+      </div>`;
+    }
+    return `<div class="fixture-actual-row">
+      <span class="fixture-result-label">${actualLabel}</span>
+      <span class="fixture-result-score" data-live-actual-score="${m.id}">${m.display_home} – ${m.display_away}</span>
+      <div class="fixture-result-events" data-live-events="${m.id}">${eventsHtml}</div>
+    </div>${predHtml}`;
+  }
+
+  function updateFixtureResult(scoreEl, m) {
+    const actualScore = scoreEl.querySelector(`[data-live-actual-score="${m.id}"]`);
+    const events = scoreEl.querySelector(`[data-live-events="${m.id}"]`);
+    const actualLabel = scoreEl.querySelector('.fixture-actual-row .fixture-result-label');
+    if (actualScore) actualScore.textContent = `${m.display_home} – ${m.display_away}`;
+    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true);
+    if (actualLabel) actualLabel.textContent = m.is_live ? 'Live' : 'Result';
+    const ptsEl = scoreEl.querySelector(`[data-prediction-points="${m.id}"]`);
+    if (ptsEl && m.prediction && m.prediction.points != null) {
+      ptsEl.textContent = `+${m.prediction.points} pts`;
+    }
+  }
+
   function renderWinnerChips(predictors) {
     return predictors.map(p =>
       `<span class="spotlight-chip${p.points === 5 ? ' spotlight-exact' : ''}">${p.display_name}${p.is_you ? ' (you)' : ''} +${p.points}</span>`
@@ -330,17 +388,16 @@
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
       }
       if ((m.is_live || m.is_finished || m.show_result) && score) {
-        const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
-        score.innerHTML = `${m.display_home} – ${m.display_away}${eventsHtml}`;
+        updateFixtureResult(score, m);
       } else if ((m.is_finished || m.show_result) && !score) {
         const fixture = document.getElementById(`match-${m.id}`);
         const homeTeam = fixture?.querySelector('.team.home');
         if (fixture && homeTeam) {
           const wrap = document.createElement('div');
-          wrap.className = 'live-score-display';
+          wrap.className = 'fixture-result-stack live-score-display';
           wrap.dataset.liveScore = String(m.id);
-          const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
-          wrap.innerHTML = `${m.display_home} – ${m.display_away}${eventsHtml}`;
+          if (m.kickoff_iso) wrap.dataset.kickoff = m.kickoff_iso;
+          wrap.innerHTML = renderFixtureResultInnerHtml(m);
           homeTeam.insertAdjacentElement('afterend', wrap);
         }
       }

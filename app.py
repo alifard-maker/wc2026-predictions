@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.1"
+APP_VERSION = "Beta 2.2"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -980,7 +980,9 @@ def matches_live_feed(invite_code):
         return jsonify({"error": "unauthorized"}), 403
 
     live_score_sync.sync_live_scores()
-    matches = enrich_matches(db.get_all_matches())
+    user_id = session["user_id"]
+    predictions = db.get_user_predictions(user_id)
+    matches = enrich_matches(db.get_all_matches(), predictions)
     live = [m for m in matches if m["is_live"]]
     spotlight = build_pool_spotlight(pool["id"], matches)
     commentary = build_live_commentary(matches)
@@ -1003,6 +1005,16 @@ def matches_live_feed(invite_code):
                 "show_result": m.get("show_result", False),
                 "goals": goals_for_json(m.get("goals", [])),
                 "cards": cards_for_json(m.get("cards", [])),
+                "prediction": (
+                    {
+                        "home_score": m["prediction"]["home_score"],
+                        "away_score": m["prediction"]["away_score"],
+                        "points": m["prediction"]["points"],
+                        "is_bold": m["prediction"]["is_bold"],
+                    }
+                    if m.get("prediction")
+                    else None
+                ),
             }
             for m in matches
         ],
