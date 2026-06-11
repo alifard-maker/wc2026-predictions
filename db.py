@@ -168,6 +168,7 @@ def init_db() -> None:
                 ("live_minute", "INTEGER"),
                 ("live_home", "INTEGER"),
                 ("live_away", "INTEGER"),
+                ("match_number", "INTEGER"),
             ]:
                 if col not in match_cols:
                     conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {typedef}")
@@ -205,6 +206,14 @@ def init_db() -> None:
                         i + 1,
                     ),
                 )
+
+    sync_knockout_stage()
+
+
+def sync_knockout_stage() -> dict:
+    from knockout_sync import sync_knockout_stage as _sync
+
+    return _sync()
 
 
 def generate_invite_code() -> str:

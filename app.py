@@ -1158,6 +1158,7 @@ def admin_page(invite_code):
                 flash("Invalid score.", "error")
             else:
                 db.update_match_result(match_id, actual_home, actual_away)
+                db.sync_knockout_stage()
                 flash("Result saved — points updated for all players.", "success")
         elif action == "add_match" and session.get("admin_secret") == pool["admin_secret"]:
             home = request.form.get("home_team", "").strip()

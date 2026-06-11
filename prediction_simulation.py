@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from knockout_bracket import resolve_r32_pairings
 from tournament_standings import (
     GROUPS,
     KNOCKOUT_STAGES,
@@ -69,32 +70,17 @@ def predicted_winner(home_score: int, away_score: int, home_team: str, away_team
     return home_team
 
 
-def _qualifiers_for_r32(standings: dict[str, list[dict]]) -> list[str | None]:
-    teams: list[str | None] = []
-    for g in GROUPS:
-        if g in standings and standings[g]:
-            teams.append(standings[g][0]["team"])
-        else:
-            teams.append(None)
-    for g in GROUPS:
-        if g in standings and len(standings[g]) >= 2:
-            teams.append(standings[g][1]["team"])
-        else:
-            teams.append(None)
-    thirds: list[dict] = []
-    for g in GROUPS:
-        if g in standings and len(standings[g]) >= 3:
-            thirds.append({**standings[g][2], "group": g})
-    thirds.sort(key=lambda r: (-r["pts"], -r["gd"], -r["gf"], r["team"]))
-    teams.extend([t["team"] for t in thirds[:8]])
-    while len(teams) < 32:
-        teams.append(None)
-    return teams[:32]
-
-
-def _r32_pairings(standings: dict[str, list[dict]]) -> list[tuple[str | None, str | None]]:
-    qualifiers = _qualifiers_for_r32(standings)
-    return [(qualifiers[i * 2], qualifiers[i * 2 + 1]) for i in range(16)]
+def _r32_pairings(
+    standings: dict[str, list[dict]],
+    matches: list[dict],
+    predictions: dict[int, dict],
+) -> list[tuple[str | None, str | None]]:
+    ready_groups = {
+        g
+        for g in GROUPS
+        if _group_predictions_complete(g, matches, predictions)
+    }
+    return resolve_r32_pairings(standings, matches, ready_groups=ready_groups)
 
 
 def _predicted_slot(
@@ -142,7 +128,7 @@ def build_predicted_knockout_bracket(
     standings: dict[str, list[dict]],
 ) -> dict:
     knockout_matches = [m for m in matches if m.get("stage") != "group"]
-    r32_pairings = _r32_pairings(standings)
+    r32_pairings = _r32_pairings(standings, matches, predictions)
     prev_round_slots: list[dict] | None = None
     rounds: list[dict] = []
 

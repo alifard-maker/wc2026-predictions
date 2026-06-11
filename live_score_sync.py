@@ -346,9 +346,12 @@ def sync_live_scores(force: bool = False) -> dict:
         for key in totals:
             totals[key] += row.get(key, 0)
 
+    knockout = db.sync_knockout_stage()
+
     summary = {
         "ok": True,
         **totals,
+        "knockout": knockout,
         "synced_at": datetime.now(TIMEZONE).isoformat(),
     }
     db.set_sync_meta("live_sync_summary", json.dumps(summary))
