@@ -11,7 +11,11 @@ import urllib.request
 from datetime import datetime, timedelta
 
 import db
-from live_scores import second_half_kickoff
+from live_scores import (
+    effective_live_minute,
+    normalize_stored_minute,
+    second_half_kickoff,
+)
 from scoring import TIMEZONE, parse_match_datetime
 
 MATCH_WINDOW = timedelta(minutes=105)
@@ -170,13 +174,24 @@ def _score_from_goals(api_match: dict, our_teams: set[str]) -> tuple[int | None,
     return None, None
 
 
-def _extract_score(api_match: dict, our_teams: set[str]) -> tuple[int | None, int | None]:
+def _extract_score(
+    api_match: dict,
+    our_teams: set[str],
+    db_match: dict | None = None,
+) -> tuple[int | None, int | None]:
     score = api_match.get("score") or {}
     for key in ("fullTime", "regularTime", "halfTime"):
         home, away = _score_part(score.get(key))
         if home is not None and away is not None:
             return home, away
-    return _score_from_goals(api_match, our_teams)
+    from_goals = _score_from_goals(api_match, our_teams)
+    if from_goals[0] is not None and from_goals[1] is not None:
+        return from_goals
+    if db_match is not None:
+        lh, la = db_match.get("live_home"), db_match.get("live_away")
+        if lh is not None and la is not None:
+            return int(lh), int(la)
+    return None, None
 
 
 def _kickoff_in_play_window(kickoff_et: datetime | None) -> bool:
@@ -263,37 +278,47 @@ def _parse_goal_minute(goal: dict) -> tuple[int, int | None] | None:
 
 
 def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, int | None]:
-    """Use the API match clock only — never reuse a stale DB minute during live play."""
+    """API minute when available; derive 2nd-half clock if API freezes at 45."""
     api_status = (api_match.get("status") or "").upper()
     raw = api_match.get("minute")
     kickoff = _match_kickoff_et(api_match, db_match)
     now = datetime.now(TIMEZONE)
     in_second_half = bool(kickoff and now >= second_half_kickoff(kickoff))
+    stored = normalize_stored_minute(db_match.get("live_minute"))
+    stored_injury = db_match.get("live_injury_minute")
+    if stored_injury is not None:
+        try:
+            stored_injury = int(stored_injury) if int(stored_injury) > 0 else None
+        except (TypeError, ValueError):
+            stored_injury = None
 
+    api_minute: int | None = None
+    api_injury: int | None = None
     if raw is not None:
         parsed = int(raw)
         if parsed > 0:
-            injury = _injury_minute(api_match)
+            api_minute = parsed
+            api_injury = _injury_minute(api_match)
             if in_second_half:
-                injury = injury if parsed >= 90 and injury else None
-            elif injury is None:
-                existing_injury = db_match.get("live_injury_minute")
-                if (
-                    existing_injury is not None
-                    and int(db_match.get("live_minute") or 0) == parsed
-                ):
-                    injury = int(existing_injury)
-            return parsed, injury
+                api_injury = api_injury if parsed >= 90 and api_injury else None
+            elif api_injury is None and stored_injury and stored == parsed:
+                api_injury = stored_injury
+
+    if kickoff and in_second_half:
+        if api_minute is None or api_minute <= 45:
+            return effective_live_minute(kickoff, now, api_minute or stored, api_injury)
+        return api_minute, api_injury
+
+    if api_minute is not None:
+        return api_minute, api_injury
 
     if api_status in LIVE_API_STATUSES or api_status == "IN_PLAY":
+        if kickoff and in_second_half:
+            return effective_live_minute(kickoff, now, stored, stored_injury)
         return None, None
 
-    existing = db_match.get("live_minute")
-    if existing is not None and int(existing) > 0:
-        existing_injury = db_match.get("live_injury_minute")
-        return int(existing), (
-            int(existing_injury) if existing_injury is not None else None
-        )
+    if stored is not None:
+        return effective_live_minute(kickoff, now, stored, stored_injury) if kickoff else (stored, stored_injury)
     return None, None
 
 
@@ -531,9 +556,17 @@ def _process_api_match(
         return {}
 
     match_id = db_match["id"]
-    home_score, away_score = _extract_score(api_match, our_teams)
+    kickoff = _match_kickoff_et(api_match, db_match)
+    in_window = _kickoff_in_play_window(kickoff)
+    home_score, away_score = _extract_score(api_match, our_teams, db_match)
     if home_score is None or away_score is None:
-        return {"matched": 1}
+        if not in_window:
+            return {
+                "matched": 1,
+                "api_minute": api_match.get("minute"),
+            }
+        home_score = int(db_match.get("live_home") or 0)
+        away_score = int(db_match.get("live_away") or 0)
 
     result = {
         "matched": 1,
@@ -542,13 +575,14 @@ def _process_api_match(
         "goals_added": 0,
         "cards_added": 0,
         "penalties_added": 0,
+        "api_minute": api_match.get("minute"),
     }
 
     if status == FINISHED_API_STATUS:
         if db_match["actual_home"] is None:
             db.update_match_result(match_id, home_score, away_score)
             result["finished"] = 1
-    elif db_match["actual_home"] is None:
+    elif db_match["actual_home"] is None and in_window:
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
         db.update_match_live(
             match_id,
@@ -559,6 +593,7 @@ def _process_api_match(
             live_injury,
         )
         result["updated_live"] = 1
+        result["stored_minute"] = live_minute
 
     result["goals_added"] = _sync_goals(match_id, db_match, api_match, our_teams)
     result["cards_added"] = _sync_bookings(match_id, api_match, our_teams)
@@ -606,6 +641,8 @@ def sync_live_scores(force: bool = False) -> dict:
         "penalties_added": 0,
         "api_goals_seen": 0,
         "api_bookings_seen": 0,
+        "api_minute": None,
+        "stored_minute": None,
     }
 
     for api_match in api_matches:

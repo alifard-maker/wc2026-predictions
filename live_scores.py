@@ -81,6 +81,9 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             status = "live"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
+            live_minute, live_injury_minute = effective_live_minute(
+                kickoff, now, live_minute, live_injury_minute
+            )
             minute_label = sanitize_minute_label(
                 format_minute(
                     live_minute,
@@ -119,6 +122,30 @@ def estimate_minute(elapsed: timedelta) -> int:
 def second_half_kickoff(kickoff: datetime) -> datetime:
     """Scheduled second-half restart (45' played + 15' break)."""
     return kickoff + timedelta(minutes=FIRST_HALF_MINUTES) + HALFTIME_BREAK
+
+
+def derive_second_half_minute(kickoff: datetime, now: datetime) -> int:
+    """Wall-clock minute in 2nd half when API clock is stuck at or before 45."""
+    elapsed = now - second_half_kickoff(kickoff)
+    return min(90, FIRST_HALF_MINUTES + max(1, int(elapsed.total_seconds() // 60)))
+
+
+def effective_live_minute(
+    kickoff: datetime,
+    now: datetime,
+    stored_minute: int | None,
+    stored_injury: int | None = None,
+) -> tuple[int | None, int | None]:
+    """Prefer API/stored minute; derive 2nd-half clock when API freezes at HT."""
+    if now < second_half_kickoff(kickoff):
+        return stored_minute, stored_injury
+    derived = derive_second_half_minute(kickoff, now)
+    if stored_minute is None or stored_minute <= FIRST_HALF_MINUTES:
+        return derived, None
+    if stored_minute > FIRST_HALF_MINUTES:
+        injury = stored_injury if stored_minute >= 90 else None
+        return stored_minute, injury
+    return derived, None
 
 
 def format_halftime_label(kickoff: datetime, now: datetime) -> str:
