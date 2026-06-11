@@ -336,18 +336,8 @@
         renderSpotlight(data.spotlight);
       }
 
-      function tickCommentaryClock() {
-        const bar = document.getElementById('live-top-bar');
-        const el = document.getElementById('commentary-minute');
-        if (!bar?.dataset?.kickoff || !el) return;
-        const minute = deriveLiveMinuteFromKickoff(bar.dataset.kickoff);
-        if (minute && minute !== 'HT') el.textContent = minute;
-      }
-
       refreshLiveFeed();
       setInterval(refreshLiveFeed, 15000);
-      setInterval(tickCommentaryClock, 10000);
-      tickCommentaryClock();
     })();
   </script>
   {% endif %}

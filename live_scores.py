@@ -80,8 +80,13 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             status = "live"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
+            second_half_start = _second_half_start_for_match(m.get("id"))
             live_minute, live_injury_minute = effective_live_minute(
-                kickoff, now, live_minute, live_injury_minute
+                kickoff,
+                now,
+                live_minute,
+                live_injury_minute,
+                second_half_start,
             )
             minute_label = sanitize_minute_label(
                 format_minute(
@@ -150,30 +155,53 @@ def is_halftime_break(kickoff: datetime, now: datetime, db_status: str) -> bool:
     return 45 < elapsed <= 60
 
 
+def _second_half_start_for_match(match_id: int | None) -> datetime | None:
+    if not match_id:
+        return None
+    import db
+
+    raw = db.get_sync_meta(f"second_half_start_{match_id}")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def minute_from_second_half_start(second_half_start: datetime, now: datetime) -> int:
+    elapsed = int((now - second_half_start).total_seconds() // 60)
+    return min(90, FIRST_HALF_MINUTES + max(1, elapsed))
+
+
 def effective_live_minute(
     kickoff: datetime,
     now: datetime,
     stored_minute: int | None,
     stored_injury: int | None = None,
+    second_half_start: datetime | None = None,
 ) -> tuple[int | None, int | None]:
-    """Use API minute when ahead; otherwise derive from kickoff when stuck at 45'."""
-    kickoff_minute = minute_from_kickoff(kickoff, now)
+    """Prefer stored/API minute; derive 2nd half from restart time, not kickoff+15'."""
     elapsed = elapsed_wall_minutes(kickoff, now)
 
     if stored_minute is not None and stored_minute > FIRST_HALF_MINUTES:
         injury = stored_injury if stored_minute >= 90 else None
         return stored_minute, injury
 
-    if elapsed > 60 and kickoff_minute and kickoff_minute > FIRST_HALF_MINUTES:
-        return kickoff_minute, None
+    if second_half_start and now >= second_half_start:
+        return minute_from_second_half_start(second_half_start, now), None
 
     if stored_minute is not None and stored_injury and stored_minute <= FIRST_HALF_MINUTES:
         return stored_minute, stored_injury
 
-    if stored_minute is not None and elapsed <= 45:
+    if stored_minute is not None and elapsed <= FIRST_HALF_MINUTES:
         return stored_minute, None
 
-    return kickoff_minute, None
+    kickoff_minute = minute_from_kickoff(kickoff, now)
+    if elapsed <= 60:
+        return kickoff_minute, None
+
+    return stored_minute, stored_injury
 
 
 def format_halftime_label(kickoff: datetime, now: datetime) -> str:

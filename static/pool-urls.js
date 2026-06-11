@@ -42,14 +42,18 @@
   };
 
   global.resolveLiveMinuteLabel = function (minuteLabel, kickoffIso, status) {
-    const derived = deriveLiveMinuteFromKickoff(kickoffIso);
     const cleaned = sanitizeMinuteLabel(minuteLabel);
-    if (status === 'halftime' || derived === 'HT') {
-      if (cleaned.startsWith('HT')) return cleaned;
-      return derived || cleaned || 'HT';
+    if (status === 'halftime' || cleaned.startsWith('HT')) {
+      return cleaned.startsWith('HT') ? cleaned : 'HT';
     }
-    if (derived && (cleaned === "45'" || cleaned === 'LIVE' || !minuteLabel)) {
-      return derived;
+    // Trust server-synced minute from ESPN/API polling.
+    if (cleaned && cleaned !== 'LIVE' && cleaned.endsWith("'")) {
+      return cleaned;
+    }
+    const derived = deriveLiveMinuteFromKickoff(kickoffIso);
+    if (derived === 'HT') return 'HT';
+    if (cleaned === "45'" || cleaned === 'LIVE' || !minuteLabel) {
+      return derived || cleaned;
     }
     return cleaned;
   };

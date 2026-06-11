@@ -277,11 +277,30 @@ def _parse_goal_minute(goal: dict) -> tuple[int, int | None] | None:
     return minute, injury
 
 
+def _second_half_start(match_id: int) -> datetime | None:
+    raw = db.get_sync_meta(f"second_half_start_{match_id}")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _track_second_half_start(match_id: int, api_status: str) -> None:
+    now = datetime.now(TIMEZONE)
+    prev = db.get_sync_meta(f"api_status_{match_id}") or ""
+    if prev == "PAUSED" and api_status == "IN_PLAY":
+        db.set_sync_meta(f"second_half_start_{match_id}", now.isoformat())
+    db.set_sync_meta(f"api_status_{match_id}", api_status)
+
+
 def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, int | None]:
-    """API minute when available; derive 2nd-half clock if API freezes at 45."""
+    """API minute when available; derive 2nd-half clock from restart if API freezes at 45."""
     raw = api_match.get("minute")
     kickoff = _match_kickoff_et(api_match, db_match)
     now = datetime.now(TIMEZONE)
+    match_id = db_match["id"]
     stored = normalize_stored_minute(db_match.get("live_minute"))
     stored_injury = db_match.get("live_injury_minute")
     if stored_injury is not None:
@@ -301,8 +320,15 @@ def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, in
                 api_injury = stored_injury
 
     best_minute = api_minute if api_minute is not None else stored
+    second_half_start = _second_half_start(match_id)
     if kickoff:
-        return effective_live_minute(kickoff, now, best_minute, api_injury or stored_injury)
+        return effective_live_minute(
+            kickoff,
+            now,
+            best_minute,
+            api_injury or stored_injury,
+            second_half_start,
+        )
     return best_minute, api_injury or stored_injury
 
 
@@ -567,6 +593,7 @@ def _process_api_match(
             db.update_match_result(match_id, home_score, away_score)
             result["finished"] = 1
     elif in_window and db_match.get("actual_home") is None:
+        _track_second_half_start(match_id, status)
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
         db_status = _db_status(status)
         if db_status == "halftime" and kickoff:
@@ -641,6 +668,17 @@ def sync_live_scores(force: bool = False) -> dict:
         row = _process_api_match(api_match, db_matches, our_teams)
         for key in totals:
             totals[key] += row.get(key, 0)
+
+    try:
+        import espn_live_sync
+
+        espn = espn_live_sync.sync_from_espn(db_matches, our_teams)
+        for key in ("matched", "updated_live", "finished", "goals_added", "cards_added"):
+            totals[key] += espn.get(key, 0)
+        totals["espn"] = espn
+    except Exception as exc:
+        logger.warning("ESPN live sync failed: %s", exc)
+        totals["espn"] = {"ok": False, "error": str(exc)[:200]}
 
     knockout = db.sync_knockout_stage()
 

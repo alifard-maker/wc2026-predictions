@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.6"
+APP_VERSION = "Beta 1.7"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -334,12 +334,20 @@ def health():
             "api_live_clock": True,
             "halftime_countdown": True,
             "wc_competition_sync": True,
+            "espn_events_sync": True,
         },
     }
     try:
         payload["live_sync"] = live_score_sync.get_sync_status()
     except Exception as exc:
         payload["live_sync"] = {"enabled": live_score_sync.is_enabled(), "error": str(exc)}
+    try:
+        import json
+
+        espn_raw = db.get_sync_meta("espn_sync_summary")
+        payload["espn_sync"] = json.loads(espn_raw) if espn_raw else None
+    except Exception:
+        payload["espn_sync"] = None
     try:
         from datetime import datetime
 

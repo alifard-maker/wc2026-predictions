@@ -335,23 +335,8 @@
       }
     });
   }
-  function tickLiveClocks() {
-    document.querySelectorAll('[data-live-score][data-kickoff]').forEach(el => {
-      const kickoff = el.dataset.kickoff;
-      const matchId = el.dataset.liveScore;
-      const badge = document.querySelector(`[data-live-badge="${matchId}"]`);
-      if (!badge || !kickoff) return;
-      const minute = deriveLiveMinuteFromKickoff(kickoff);
-      if (!minute || minute === 'HT') return;
-      const parts = badge.textContent.split('·');
-      if (parts.length < 2) return;
-      badge.textContent = `LIVE ${minute} · ${parts.slice(1).join('·').trim()}`;
-    });
-  }
   setInterval(refreshLiveScores, 15000);
-  setInterval(tickLiveClocks, 10000);
   refreshLiveScores();
-  tickLiveClocks();
 
   (function() {
     const listEl = document.getElementById('wc-news-list');
