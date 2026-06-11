@@ -21,10 +21,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import db
 from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_badge, is_ai_agent
 import live_score_sync
-from live_scores import apply_live_state, opening_kickoff_iso
+from live_scores import apply_live_state, is_match_in_progress, opening_kickoff_iso
 from scoring import (
     PHASE_BONUS_PTS,
     TIMEZONE,
+    parse_match_datetime,
     TOURNAMENT_SECOND_PTS,
     TOURNAMENT_THIRD_PTS,
     TOURNAMENT_TOP_SCORER_PTS,
@@ -122,10 +123,25 @@ def inject_public_url():
     }
     pool_id = session.get("pool_id")
     if pool_id and session.get("user_id"):
-        matches = enrich_matches(db.get_all_matches())
+        raw_matches = db.get_all_matches()
+        _maybe_sync_live_scores(raw_matches)
+        matches = enrich_matches(raw_matches)
         ctx["match_spotlight"] = build_pool_spotlight(pool_id, matches)
         ctx["live_commentary"] = build_live_commentary(matches)
     return ctx
+
+
+def _maybe_sync_live_scores(matches) -> None:
+    if not live_score_sync.is_enabled():
+        return
+    now = datetime.now(TIMEZONE)
+    for m in matches:
+        if m["actual_home"] is not None:
+            continue
+        kickoff = parse_match_datetime(m["match_date"], m["match_time"])
+        if is_match_in_progress(kickoff, now):
+            live_score_sync.sync_live_scores()
+            return
 
 
 def ensure_db():
@@ -284,7 +300,7 @@ def health():
         ensure_db()
     except Exception as exc:
         return jsonify({"status": "error", "error": str(exc)}), 503
-    payload = {"status": "ok", "version": APP_VERSION}
+    payload = {"status": "ok", "version": APP_VERSION, "features": {"commentary_banner": True}}
     try:
         payload["live_sync"] = live_score_sync.get_sync_status()
     except Exception as exc:

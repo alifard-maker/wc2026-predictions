@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from live_scores import is_match_in_progress
 from scoring import TIMEZONE
 
 
@@ -160,9 +161,40 @@ def commentary_for_match(match: dict) -> dict:
     }
 
 
+def _active_live_matches(enriched_matches: list[dict], now: datetime | None = None) -> list[dict]:
+    now = now or datetime.now(TIMEZONE)
+    live: list[dict] = []
+    seen: set[int] = set()
+    for m in enriched_matches:
+        if m.get("is_live") and m["id"] not in seen:
+            live.append(m)
+            seen.add(m["id"])
+    if live:
+        return live
+
+    for m in enriched_matches:
+        if m["id"] in seen or m.get("actual_home") is not None:
+            continue
+        kickoff = m.get("kickoff")
+        if kickoff and is_match_in_progress(kickoff, now):
+            row = dict(m)
+            row["display_home"] = row.get("display_home")
+            if row.get("display_home") is None:
+                row["display_home"] = row.get("live_home") if row.get("live_home") is not None else 0
+            if row.get("display_away") is None:
+                row["display_away"] = row.get("live_away") if row.get("live_away") is not None else 0
+            if not row.get("minute_label"):
+                row["minute_label"] = "LIVE"
+            row["is_live"] = True
+            row["status"] = row.get("status") or "live"
+            live.append(row)
+            seen.add(m["id"])
+    return live
+
+
 def build_live_commentary(enriched_matches: list[dict]) -> dict | None:
     """Primary live match commentary for the top banner."""
-    live = [m for m in enriched_matches if m.get("is_live")]
+    live = _active_live_matches(enriched_matches)
     if not live:
         return None
     live.sort(key=lambda m: m.get("kickoff") or datetime.min.replace(tzinfo=TIMEZONE))

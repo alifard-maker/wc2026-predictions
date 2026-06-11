@@ -20,30 +20,34 @@
     </div>
   </div>
   <div class="top-banners" id="top-banners">
-  {% if session.get('invite_code') and session.get('user_id') %}
-  <a href="{% if live_commentary %}{{ url_for('match_detail', invite_code=session.invite_code, match_id=live_commentary.match_id) }}{% else %}#{% endif %}"
-     class="commentary-banner{% if not live_commentary %} hidden{% endif %}" id="commentary-banner" title="Watch live">
-    <span class="commentary-label">🎙 Live</span>
-    <span class="badge badge-live commentary-minute" id="commentary-minute">{% if live_commentary %}{{ live_commentary.minute_label }}{% endif %}</span>
-    <span class="commentary-scoreline" id="commentary-scoreline">{% if live_commentary %}{{ live_commentary.scoreline }}{% endif %}</span>
-    <div class="commentary-ticker-wrap">
-      <div class="commentary-track" id="commentary-track">
-        <div class="commentary-content" id="commentary-content">
-          {% if live_commentary %}
-          {% for item in live_commentary.ticker_items %}
-          <span class="commentary-item">{{ item }}</span>
-          {% endfor %}
-          {% endif %}
-        </div>
-        <div class="commentary-content" id="commentary-content-dup" aria-hidden="true"></div>
-      </div>
+  <div id="live-top-bar" class="live-top-bar{% if live_commentary %} live-top-bar--match{% endif %}" data-kickoff="{{ opening_kickoff_iso }}">
+    <div id="countdown-panel" class="countdown-panel wc-countdown{% if live_commentary %} hidden{% endif %}">
+      <span class="countdown-label">⏱ Opening match</span>
+      <span id="countdown-timer" class="countdown-timer">Loading…</span>
+      <span class="countdown-match">Mexico vs South Africa · 11 Jun 2026, 15:00 ET</span>
     </div>
-  </a>
-  {% endif %}
-  <div id="wc-countdown" class="wc-countdown" data-kickoff="{{ opening_kickoff_iso }}">
-    <span class="countdown-label">⏱ Opening match</span>
-    <span id="countdown-timer" class="countdown-timer">Loading…</span>
-    <span class="countdown-match">Mexico vs South Africa · 11 Jun 2026, 15:00 ET</span>
+    {% if session.get('invite_code') and session.get('user_id') %}
+    <a href="{% if live_commentary %}{{ url_for('match_detail', invite_code=session.invite_code, match_id=live_commentary.match_id) }}{% else %}#{% endif %}"
+       id="commentary-panel"
+       class="commentary-panel commentary-banner{% if not live_commentary %} hidden{% endif %}"
+       title="Watch live">
+      <span class="commentary-label">🎙 Live</span>
+      <span class="badge badge-live commentary-minute" id="commentary-minute">{% if live_commentary %}{{ live_commentary.minute_label }}{% endif %}</span>
+      <span class="commentary-scoreline" id="commentary-scoreline">{% if live_commentary %}{{ live_commentary.scoreline }}{% endif %}</span>
+      <div class="commentary-ticker-wrap">
+        <div class="commentary-track" id="commentary-track">
+          <div class="commentary-content" id="commentary-content">
+            {% if live_commentary %}
+            {% for item in live_commentary.ticker_items %}
+            <span class="commentary-item">{{ item }}</span>
+            {% endfor %}
+            {% endif %}
+          </div>
+          <div class="commentary-content" id="commentary-content-dup" aria-hidden="true"></div>
+        </div>
+      </div>
+    </a>
+    {% endif %}
   </div>
 
   {% if session.get('invite_code') and session.get('user_id') %}
@@ -256,7 +260,9 @@
     (function() {
       const banner = document.getElementById('spotlight-banner');
       const body = document.getElementById('spotlight-body');
-      const commentaryBanner = document.getElementById('commentary-banner');
+      const liveTopBar = document.getElementById('live-top-bar');
+      const countdownPanel = document.getElementById('countdown-panel');
+      const commentaryPanel = document.getElementById('commentary-panel');
       const commentaryMinute = document.getElementById('commentary-minute');
       const commentaryScoreline = document.getElementById('commentary-scoreline');
       const commentaryContent = document.getElementById('commentary-content');
@@ -269,15 +275,19 @@
       }
 
       function renderCommentary(commentary) {
-        if (!commentaryBanner) return;
+        if (!commentaryPanel) return;
         if (!commentary) {
-          commentaryBanner.classList.add('hidden');
-          commentaryBanner.href = '#';
+          commentaryPanel.classList.add('hidden');
+          commentaryPanel.href = '#';
+          liveTopBar?.classList.remove('live-top-bar--match');
           if (typeof updateBannerOffset === 'function') updateBannerOffset();
           return;
         }
-        commentaryBanner.classList.remove('hidden');
-        commentaryBanner.href = poolMatchUrl(commentary.match_id);
+        countdownPanel?.classList.add('hidden');
+        liveTopBar?.classList.remove('hidden');
+        liveTopBar?.classList.add('live-top-bar--match');
+        commentaryPanel.classList.remove('hidden');
+        commentaryPanel.href = poolMatchUrl(commentary.match_id);
         if (commentaryMinute) {
           commentaryMinute.textContent = commentary.minute_label || 'LIVE';
         }
@@ -420,18 +430,30 @@
   </script>
   <script>
     (function() {
-      const bar = document.getElementById('wc-countdown');
+      const liveTopBar = document.getElementById('live-top-bar');
+      const countdownPanel = document.getElementById('countdown-panel');
+      const commentaryPanel = document.getElementById('commentary-panel');
       const timer = document.getElementById('countdown-timer');
-      if (!bar || !timer) return;
-      const kickoff = new Date(bar.dataset.kickoff);
+      if (!liveTopBar || !countdownPanel || !timer) return;
+      const kickoff = new Date(liveTopBar.dataset.kickoff);
 
       function tick() {
-        const diff = kickoff - new Date();
-        if (diff <= 0) {
-          bar.classList.add('hidden');
-          document.body.classList.add('wc-started');
+        if (commentaryPanel && !commentaryPanel.classList.contains('hidden')) {
+          liveTopBar.classList.remove('hidden');
           return;
         }
+        const diff = kickoff - new Date();
+        if (diff <= 0) {
+          countdownPanel.classList.add('hidden');
+          document.body.classList.add('wc-started');
+          if (!commentaryPanel || commentaryPanel.classList.contains('hidden')) {
+            liveTopBar.classList.add('hidden');
+          }
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          return;
+        }
+        liveTopBar.classList.remove('hidden');
+        countdownPanel.classList.remove('hidden');
         const d = Math.floor(diff / 86400000);
         const h = Math.floor((diff % 86400000) / 3600000);
         const m = Math.floor((diff % 3600000) / 60000);
