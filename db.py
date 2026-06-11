@@ -176,6 +176,15 @@ def init_db() -> None:
         if goal_cols and "is_penalty" not in goal_cols:
             conn.execute("ALTER TABLE match_goals ADD COLUMN is_penalty INTEGER NOT NULL DEFAULT 0")
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sync_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+
         count = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
         if count == 0:
             for i, f in enumerate(GROUP_FIXTURES):

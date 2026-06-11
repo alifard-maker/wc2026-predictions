@@ -272,16 +272,24 @@ def _start_live_sync_background() -> None:
     threading.Thread(target=_loop, daemon=True, name="live-score-sync").start()
 
 
-_start_live_sync_background()
-
-
 @app.route("/health")
 def health():
     if MAINTENANCE_MODE:
         return jsonify({"status": "maintenance", "retry_minutes": 5}), 503
+    try:
+        ensure_db()
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 503
     payload = {"status": "ok", "version": APP_VERSION}
-    payload["live_sync"] = live_score_sync.get_sync_status()
+    try:
+        payload["live_sync"] = live_score_sync.get_sync_status()
+    except Exception as exc:
+        payload["live_sync"] = {"enabled": live_score_sync.is_enabled(), "error": str(exc)}
     return jsonify(payload)
+
+
+ensure_db()
+_start_live_sync_background()
 
 
 @app.route("/")
