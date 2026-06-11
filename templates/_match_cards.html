@@ -1,0 +1,16 @@
+{% macro render_cards(cards, compact=false) %}
+{% if cards %}
+<div class="match-card-events{% if compact %} match-card-events-compact{% endif %}">
+  {% for c in cards %}
+  <div class="card-event card-event-{{ c.card_type }}">
+    <span class="card-icon">{% if c.card_type == 'yellow' %}🟨{% else %}🟥{% endif %}</span>
+    {% if c.minute_label and c.minute_label != '—' %}
+    <span class="card-minute">{{ c.minute_label | goal_minute }}</span>
+    {% endif %}
+    <span class="card-player">{{ c.player_name }}</span>
+    <span class="card-team">({{ c.team }})</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}

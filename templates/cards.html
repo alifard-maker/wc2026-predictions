@@ -25,7 +25,7 @@
         <th>Status</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="cards-summary-body">
       {% for p in card_summary %}
       <tr>
         <td><strong>{{ p.player_name }}</strong></td>
@@ -53,7 +53,7 @@
     <thead>
       <tr><th>Player</th><th>Team</th><th>Card</th><th>Min</th><th>Match</th><th>Date</th></tr>
     </thead>
-    <tbody>
+    <tbody id="cards-events-body">
       {% for e in card_events %}
       <tr>
         <td><strong>{{ e.player_name }}</strong></td>
@@ -69,4 +69,42 @@
     </tbody>
   </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const feedUrl = "{{ url_for('cards_feed', invite_code=pool.invite_code) }}";
+  const summaryBody = document.getElementById('cards-summary-body');
+  const eventsBody = document.getElementById('cards-events-body');
+  if (!feedUrl || !summaryBody || !eventsBody) return;
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  async function refreshCards() {
+    const res = await fetch(feedUrl);
+    if (!res.ok) return;
+    const data = await res.json();
+    summaryBody.innerHTML = (data.summary || []).map(p => {
+      const status = p.status
+        ? `<span class="badge ${p.status.includes('Suspended') ? 'badge-closed' : 'badge-open'}">${esc(p.status)}</span>`
+        : '<span style="color:var(--muted)">—</span>';
+      return `<tr><td><strong>${esc(p.player_name)}</strong></td><td>${esc(p.team)}</td><td>${p.yellow_count}</td><td>${p.red_count}</td><td>${status}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" style="color:var(--muted)">No cards recorded yet</td></tr>';
+
+    eventsBody.innerHTML = (data.events || []).map(e => {
+      const card = e.card_type === 'yellow' ? '🟨 Yellow' : '🟥 Red';
+      const min = e.minute ? `${e.minute}'` : '—';
+      return `<tr><td><strong>${esc(e.player_name)}</strong></td><td>${esc(e.team)}</td><td>${card}</td><td>${min}</td><td>${esc(e.match_label)}</td><td style="color:var(--muted)">${esc(e.match_date)}</td></tr>`;
+    }).join('') || '<tr><td colspan="6" style="color:var(--muted)">Cards appear here as they are issued</td></tr>';
+  }
+
+  refreshCards();
+  setInterval(refreshCards, 30000);
+})();
+</script>
 {% endblock %}

@@ -53,6 +53,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     live_home = m.get("live_home")
     live_away = m.get("live_away")
     live_minute = normalize_stored_minute(m.get("live_minute"))
+    live_injury_minute = normalize_stored_minute(m.get("live_injury_minute"))
     actual_home = m.get("actual_home")
     actual_away = m.get("actual_away")
 
@@ -70,11 +71,9 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             status = "live"
             display_home = 0 if live_home is None else live_home
             display_away = 0 if live_away is None else live_away
-            effective_minute = live_minute
-            if effective_minute is None:
-                effective_minute = estimate_minute(now - kickoff)
-            live_minute = effective_minute
-            minute_label = sanitize_minute_label(format_minute(effective_minute, "live"))
+            minute_label = sanitize_minute_label(
+                format_minute(live_minute, "live", live_injury_minute)
+            )
     else:
         status = "scheduled"
         display_home = display_away = None
@@ -101,15 +100,23 @@ def estimate_minute(elapsed: timedelta) -> int:
     return min(90, mins - 15)
 
 
-def format_minute(minute: int | None, status: str) -> str:
+def format_minute(
+    minute: int | None,
+    status: str,
+    injury_minute: int | None = None,
+) -> str:
     if status == "halftime":
         return "HT"
     if status == "finished":
         return "FT"
     if minute is None or minute <= 0:
         return "LIVE"
+    injury = normalize_stored_minute(injury_minute)
     if minute >= 90:
-        return f"90+{minute - 90}'"
+        if injury:
+            return f"90+{injury}'"
+        if minute > 90:
+            return f"90+{minute - 90}'"
     return f"{minute}'"
 
 

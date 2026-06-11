@@ -28,7 +28,7 @@
     <thead>
       <tr><th>#</th><th>Player</th><th>Team</th><th>Goals</th></tr>
     </thead>
-    <tbody>
+    <tbody id="scorers-leaderboard-body">
       {% for row in leaderboard %}
       <tr class="{% if user_vote and row.player_name|lower == user_vote.top_scorer|lower %}rank-1{% endif %}">
         <td>{{ loop.index }}</td>
@@ -52,7 +52,7 @@
     <thead>
       <tr><th>Player</th><th>Team</th><th>Min</th><th>Match</th><th>Date</th></tr>
     </thead>
-    <tbody>
+    <tbody id="scorers-events-body">
       {% for e in events %}
       <tr>
         <td><strong>{{ e.player_name }}</strong></td>
@@ -67,4 +67,41 @@
     </tbody>
   </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const feedUrl = "{{ url_for('scorers_feed', invite_code=pool.invite_code) }}";
+  const boardBody = document.getElementById('scorers-leaderboard-body');
+  const eventsBody = document.getElementById('scorers-events-body');
+  const userPick = {{ (user_vote.top_scorer | tojson) if user_vote else 'null' }};
+  if (!feedUrl || !boardBody || !eventsBody) return;
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  async function refreshScorers() {
+    const res = await fetch(feedUrl);
+    if (!res.ok) return;
+    const data = await res.json();
+    const pickName = (data.user_top_scorer || userPick || '').toLowerCase();
+    boardBody.innerHTML = (data.leaderboard || []).map((row, i) => {
+      const yours = pickName && row.player_name.toLowerCase() === pickName ? ' (your pick)' : '';
+      const hl = yours ? ' rank-1' : '';
+      return `<tr class="${hl}"><td>${i + 1}</td><td>${esc(row.player_name)}${yours}</td><td>${esc(row.team)}</td><td><strong>${row.goals}</strong></td></tr>`;
+    }).join('') || '<tr><td colspan="4" style="color:var(--muted)">No goals recorded yet</td></tr>';
+
+    eventsBody.innerHTML = (data.events || []).map(e =>
+      `<tr><td><strong>${esc(e.player_name)}</strong></td><td>${esc(e.team)}</td><td>${esc(e.minute_label)}</td><td>${esc(e.match_label)}</td><td style="color:var(--muted)">${esc(e.match_date)}</td></tr>`
+    ).join('') || '<tr><td colspan="5" style="color:var(--muted)">Goals appear here as matches are played</td></tr>';
+  }
+
+  refreshScorers();
+  setInterval(refreshScorers, 30000);
+})();
+</script>
 {% endblock %}

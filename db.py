@@ -166,6 +166,7 @@ def init_db() -> None:
             for col, typedef in [
                 ("status", "TEXT DEFAULT 'scheduled'"),
                 ("live_minute", "INTEGER"),
+                ("live_injury_minute", "INTEGER"),
                 ("live_home", "INTEGER"),
                 ("live_away", "INTEGER"),
                 ("match_number", "INTEGER"),
@@ -639,7 +640,11 @@ def get_match_cards(match_id: int) -> list[dict]:
         result = []
         for r in rows:
             d = dict(r)
-            d["minute_label"] = format_goal_minute(r["minute"] or 0, None) if r["minute"] is not None else ""
+            d["minute_label"] = (
+                format_goal_minute(r["minute"], r.get("injury_minute"))
+                if r["minute"] is not None and r["minute"] > 0
+                else "—"
+            )
             result.append(d)
         return result
 
@@ -993,16 +998,26 @@ def update_match_live(
     live_away: int,
     live_minute: int | None,
     status: str = "live",
+    live_injury_minute: int | None = None,
 ) -> None:
     with db() as conn:
         if live_minute is not None and live_minute > 0:
             conn.execute(
                 """
                 UPDATE matches SET live_home = ?, live_away = ?, live_minute = ?,
+                       live_injury_minute = ?,
                        status = CASE WHEN ? = 'scheduled' THEN 'scheduled' ELSE ? END
                 WHERE id = ? AND actual_home IS NULL
                 """,
-                (live_home, live_away, live_minute, status, status, match_id),
+                (
+                    live_home,
+                    live_away,
+                    live_minute,
+                    live_injury_minute,
+                    status,
+                    status,
+                    match_id,
+                ),
             )
         else:
             conn.execute(

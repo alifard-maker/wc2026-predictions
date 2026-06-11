@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_goal_scorers.html" import render_goals %}
+{% from "_match_cards.html" import render_cards %}
 {% from "_team_flag.html" import team_with_flag with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
@@ -37,6 +38,7 @@
   <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label | live_minute }}</p>
 
   <div id="match-goals-wrap">{{ render_goals(goals, match.home_team, match.away_team) }}</div>
+  <div id="match-cards-wrap">{{ render_cards(cards) }}</div>
 
   {% if match.prediction %}
   <p style="text-align: center; color: var(--muted)">
@@ -169,7 +171,7 @@
 <script>
 (function() {
   const feedUrl = "{{ url_for('match_watch_feed', invite_code=pool.invite_code, match_id=match.id) }}";
-  const isLive = {{ 'true' if match.is_live or not match.is_finished else 'false' }};
+  const trackMatch = {{ 'true' if match.is_live or match.is_finished else 'false' }};
 
   function esc(s) {
     const d = document.createElement('div');
@@ -195,6 +197,18 @@
     if (badge && m.is_live) {
       badge.className = 'badge badge-live';
       badge.textContent = `LIVE ${sanitizeMinuteLabel(m.minute_label)}`;
+    } else if (badge && m.is_finished) {
+      badge.className = 'badge badge-done';
+      badge.textContent = 'Full time';
+    }
+
+    const goalsWrap = document.getElementById('match-goals-wrap');
+    if (goalsWrap && (m.is_live || m.is_finished)) {
+      goalsWrap.innerHTML = renderGoalsHtml(data.goals || [], false);
+    }
+    const cardsWrap = document.getElementById('match-cards-wrap');
+    if (cardsWrap && (m.is_live || m.is_finished)) {
+      cardsWrap.innerHTML = renderCardsHtml(data.cards || [], false);
     }
 
     const tbody = document.querySelector('#picks-table tbody');
@@ -222,7 +236,7 @@
     }
   }
 
-  if (isLive) {
+  if (trackMatch) {
     refresh();
     setInterval(refresh, 20000);
   }

@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.1"
+APP_VERSION = "Beta 1.2"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -203,6 +203,31 @@ def admin_required(f):
     return decorated
 
 
+def goals_for_json(goals: list[dict]) -> list[dict]:
+    return [
+        {
+            "team_side": g["team_side"],
+            "scorer_name": g["scorer_name"],
+            "minute_label": sanitize_goal_minute_label(g["minute_label"]),
+            "team_name": g["team_name"],
+            "is_penalty": bool(g.get("is_penalty")),
+        }
+        for g in goals
+    ]
+
+
+def cards_for_json(cards: list[dict]) -> list[dict]:
+    return [
+        {
+            "player_name": c["player_name"],
+            "team": c["team"],
+            "card_type": c["card_type"],
+            "minute_label": sanitize_goal_minute_label(c.get("minute_label")),
+        }
+        for c in cards
+    ]
+
+
 def enrich_matches(matches, user_predictions=None):
     now = datetime.now(TIMEZONE)
     enriched = []
@@ -303,7 +328,11 @@ def health():
     payload = {
         "status": "ok",
         "version": APP_VERSION,
-        "features": {"commentary_banner": True, "minute_fix": True},
+        "features": {
+            "commentary_banner": True,
+            "minute_fix": True,
+            "api_live_clock": True,
+        },
     }
     try:
         payload["live_sync"] = live_score_sync.get_sync_status()
@@ -869,15 +898,8 @@ def matches_live_feed(invite_code):
                 "status": m["status"],
                 "is_live": m["is_live"],
                 "is_finished": m["is_finished"],
-                "goals": [
-                    {
-                        "team_side": g["team_side"],
-                        "scorer_name": g["scorer_name"],
-                        "minute_label": sanitize_goal_minute_label(g["minute_label"]),
-                        "team_name": g["team_name"],
-                    }
-                    for g in m.get("goals", [])
-                ],
+                "goals": goals_for_json(m.get("goals", [])),
+                "cards": cards_for_json(m.get("cards", [])),
             }
             for m in matches
         ],
@@ -1059,6 +1081,57 @@ def scorers_page(invite_code):
     )
 
 
+@app.route("/pool/<invite_code>/cards/feed")
+@login_required
+def cards_feed(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        return jsonify({"error": "unauthorized"}), 403
+
+    live_score_sync.sync_live_scores()
+    data = db.get_player_cards_table()
+    return jsonify(
+        {
+            "summary": data["summary"],
+            "events": [
+                {
+                    "player_name": e["player_name"],
+                    "team": e["team"],
+                    "card_type": e["card_type"],
+                    "minute": e.get("minute"),
+                    "match_label": e["match_label"],
+                    "match_date": e["match_date"],
+                }
+                for e in data["events"]
+            ],
+        }
+    )
+
+
+@app.route("/pool/<invite_code>/scorers/feed")
+@login_required
+def scorers_feed(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        return jsonify({"error": "unauthorized"}), 403
+
+    live_score_sync.sync_live_scores()
+    board = db.get_tournament_scorer_leaderboard()
+    events = db.get_tournament_scorer_events()
+    user_vote = db.get_tournament_vote(session["user_id"])
+    user_pick = None
+    if user_vote:
+        user_pick = get_scorer_status(user_vote["top_scorer"], board)
+    return jsonify(
+        {
+            "leaderboard": board,
+            "events": events,
+            "user_pick": user_pick,
+            "user_top_scorer": user_vote["top_scorer"] if user_vote else None,
+        }
+    )
+
+
 @app.route("/pool/<invite_code>/cards")
 @login_required
 def cards_page(invite_code):
@@ -1103,6 +1176,7 @@ def match_detail(invite_code, match_id):
     consensus = build_match_consensus(pool["id"], match_id)
     context = get_match_context(match["home_team"], match["away_team"])
     goals = db.get_match_goals(match_id)
+    cards = db.get_match_cards(match_id)
     match_comments = db.get_pool_comments(pool["id"], match_id)
     picks_open = not picks_revealed(dict(match))
     leaderboard = db.get_leaderboard(pool["id"])
@@ -1112,6 +1186,7 @@ def match_detail(invite_code, match_id):
         pool=pool,
         match=enriched,
         goals=goals,
+        cards=cards,
         all_predictions=all_preds,
         match_context=context,
         consensus=consensus,
@@ -1145,11 +1220,13 @@ def match_watch_feed(invite_code, match_id):
             "id": enriched["id"],
             "display_home": enriched["display_home"],
             "display_away": enriched["display_away"],
-            "minute_label": enriched["minute_label"],
+            "minute_label": sanitize_minute_label(enriched["minute_label"]),
             "is_live": enriched["is_live"],
             "is_finished": enriched["is_finished"],
             "status": enriched["status"],
         },
+        "goals": goals_for_json(db.get_match_goals(match_id)),
+        "cards": cards_for_json(db.get_match_cards(match_id)),
         "consensus": build_match_consensus(pool["id"], match_id),
         "predictions": preds,
         "picks_revealed": picks_revealed(dict(match)),

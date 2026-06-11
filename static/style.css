@@ -1608,6 +1608,37 @@ textarea:focus {
   margin-left: 0.35rem;
 }
 
+.match-card-events {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.match-card-events-compact {
+  font-size: 0.8rem;
+}
+
+.card-event {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.card-minute {
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+.card-team {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .goal-player {
   color: var(--text);
 }
