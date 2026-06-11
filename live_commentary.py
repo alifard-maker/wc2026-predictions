@@ -203,7 +203,10 @@ def _active_live_matches(enriched_matches: list[dict], now: datetime | None = No
         if m["id"] in seen or m.get("actual_home") is not None:
             continue
         kickoff = m.get("kickoff")
-        if kickoff and is_match_in_progress(kickoff, now):
+        if kickoff and (
+            (m.get("status") or "") in ("live", "halftime")
+            or is_match_in_progress(kickoff, now, m)
+        ):
             row = dict(m)
             row["display_home"] = row.get("display_home")
             if row.get("display_home") is None:

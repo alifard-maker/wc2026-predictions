@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 
 from scoring import OPENING_MATCH_DATE, OPENING_MATCH_TIME, TIMEZONE, parse_match_datetime
 
-MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45
+MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45 (scheduled estimate)
+LIVE_SYNC_MAX = timedelta(hours=3)  # trust ESPN/DB live past delayed kickoff + stoppage
 FIRST_HALF_MINUTES = 45
 HALFTIME_BREAK = timedelta(minutes=15)
 
@@ -39,8 +40,21 @@ def sanitize_goal_minute_label(label: str | None) -> str:
     return cleaned
 
 
-def is_match_in_progress(kickoff: datetime, now: datetime) -> bool:
-    """True only while the match is actually being played."""
+def is_synced_live(match: dict) -> bool:
+    """True when the live sync feed still has this match in play."""
+    if match.get("actual_home") is not None:
+        return False
+    return (match.get("status") or "") in ("live", "halftime")
+
+
+def is_match_in_progress(
+    kickoff: datetime,
+    now: datetime,
+    match: dict | None = None,
+) -> bool:
+    """True while the match is playing (scheduled window or synced live state)."""
+    if match and is_synced_live(match):
+        return kickoff <= now < kickoff + LIVE_SYNC_MAX
     return kickoff <= now < kickoff + MATCH_DURATION
 
 
@@ -49,9 +63,9 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     now = now or datetime.now(TIMEZONE)
     m = dict(match)
     kickoff = parse_match_datetime(m["match_date"], m["match_time"])
-    in_progress = is_match_in_progress(kickoff, now)
-
     db_status = m.get("status") or "scheduled"
+    synced_live = is_synced_live(m)
+    in_progress = is_match_in_progress(kickoff, now, m)
     live_home = m.get("live_home")
     live_away = m.get("live_away")
     live_minute = normalize_stored_minute(m.get("live_minute"))
@@ -70,24 +84,25 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
         status = "finished"
         display_home, display_away = actual_home, actual_away
         minute_label = "FT"
-    elif in_progress and actual_home is None:
-        if is_halftime_break(kickoff, now, db_status):
+    elif actual_home is None and (synced_live or in_progress):
+        display_home = 0 if live_home is None else live_home
+        display_away = 0 if live_away is None else live_away
+        if db_status == "halftime" or (
+            not synced_live and is_halftime_break(kickoff, now, db_status)
+        ):
             status = "halftime"
-            display_home = 0 if live_home is None else live_home
-            display_away = 0 if live_away is None else live_away
             minute_label = format_halftime_label(kickoff, now)
         else:
             status = "live"
-            display_home = 0 if live_home is None else live_home
-            display_away = 0 if live_away is None else live_away
-            second_half_start = _second_half_start_for_match(m.get("id"))
-            live_minute, live_injury_minute = effective_live_minute(
-                kickoff,
-                now,
-                live_minute,
-                live_injury_minute,
-                second_half_start,
-            )
+            if live_minute is None:
+                second_half_start = _second_half_start_for_match(m.get("id"))
+                live_minute, live_injury_minute = effective_live_minute(
+                    kickoff,
+                    now,
+                    live_minute,
+                    live_injury_minute,
+                    second_half_start,
+                )
             minute_label = sanitize_minute_label(
                 format_minute(
                     live_minute,

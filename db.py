@@ -728,7 +728,7 @@ def _bump_live_score(conn, match, team_side: str, delta: int = 1) -> None:
     from scoring import TIMEZONE, parse_match_datetime
 
     kickoff = parse_match_datetime(match["match_date"], match["match_time"])
-    in_progress = is_match_in_progress(kickoff, datetime.now(TIMEZONE))
+    in_progress = is_match_in_progress(kickoff, datetime.now(TIMEZONE), dict(match))
     col = "live_home" if team_side == "home" else "live_away"
     current = match[col] if match[col] is not None else 0
     other_col = "live_away" if team_side == "home" else "live_home"

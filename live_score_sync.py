@@ -22,6 +22,7 @@ from live_scores import (
 from scoring import TIMEZONE, parse_match_datetime
 
 MATCH_WINDOW = timedelta(minutes=105)
+LIVE_SYNC_MAX = timedelta(hours=3)
 
 logger = logging.getLogger(__name__)
 
@@ -197,10 +198,15 @@ def _extract_score(
     return None, None
 
 
-def _kickoff_in_play_window(kickoff_et: datetime | None) -> bool:
+def _kickoff_in_play_window(kickoff_et: datetime | None, db_match: dict | None = None) -> bool:
     if not kickoff_et:
         return False
     now = datetime.now(TIMEZONE)
+    if db_match and db_match.get("actual_home") is None:
+        if (db_match.get("status") or "") in ("live", "halftime"):
+            return kickoff_et <= now < kickoff_et + LIVE_SYNC_MAX
+        if db.get_sync_meta(f"espn_live_source_{db_match['id']}"):
+            return kickoff_et <= now < kickoff_et + LIVE_SYNC_MAX
     return kickoff_et <= now < kickoff_et + MATCH_WINDOW
 
 
@@ -596,7 +602,7 @@ def _process_api_match(
 
     match_id = db_match["id"]
     kickoff = _match_kickoff_et(api_match, db_match)
-    in_window = _kickoff_in_play_window(kickoff)
+    in_window = _kickoff_in_play_window(kickoff, db_match)
     home_score, away_score = _extract_score(api_match, our_teams, db_match)
     if home_score is None or away_score is None:
         if not in_window:
