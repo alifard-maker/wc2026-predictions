@@ -37,6 +37,7 @@ from scoring import (
     calculate_tournament_points,
     is_prediction_open,
     is_tournament_vote_open,
+    parse_match_datetime,
     prediction_deadline,
     tournament_vote_deadline,
 )
@@ -71,7 +72,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.4"
+APP_VERSION = "Beta 2.5"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")

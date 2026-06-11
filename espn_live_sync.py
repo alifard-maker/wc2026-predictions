@@ -326,7 +326,8 @@ def sync_from_espn(
         for key in totals:
             if key == "matched_match_ids":
                 continue
-            totals[key] += row.get(key, 0)
+            value = row.get(key)
+            totals[key] += value if isinstance(value, (int, float)) else 0
         if row.get("updated_live") and row.get("match_id"):
             totals["matched_match_ids"].append(row["match_id"])
         if row.get("espn_minute") is not None and row["espn_minute"] > 0:
