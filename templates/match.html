@@ -205,7 +205,13 @@
 
     const eventsEl = document.getElementById('match-events-wrap');
     if (eventsEl && (m.is_live || m.is_finished)) {
-      eventsEl.innerHTML = renderMatchEventsHtml(data.goals, data.cards, false);
+      eventsEl.innerHTML = renderMatchEventsHtml(
+        data.goals,
+        data.cards,
+        false,
+        {{ match.home_team | tojson }},
+        {{ match.away_team | tojson }}
+      );
     }
 
     const tbody = document.querySelector('#picks-table tbody');

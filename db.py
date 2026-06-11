@@ -744,8 +744,45 @@ def get_match_cards(match_id: int) -> list[dict]:
         for r in rows:
             d = dict(r)
             d["minute_label"] = format_goal_minute(r["minute"] or 0, None) if r["minute"] is not None else ""
+            if r["team"] == r["home_team"]:
+                d["team_side"] = "home"
+            elif r["team"] == r["away_team"]:
+                d["team_side"] = "away"
+            else:
+                d["team_side"] = None
             result.append(d)
         return result
+
+
+def get_tournament_cards_by_team() -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT team,
+                   SUM(CASE WHEN card_type = 'yellow' THEN 1 ELSE 0 END) AS yellow_count,
+                   SUM(CASE WHEN card_type = 'red' THEN 1 ELSE 0 END) AS red_count,
+                   COUNT(*) AS total_cards
+            FROM player_cards
+            GROUP BY team
+            ORDER BY total_cards DESC, team ASC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_tournament_goals_by_team() -> list[dict]:
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
+                   COUNT(*) AS goals
+            FROM match_goals g
+            JOIN matches m ON m.id = g.match_id
+            GROUP BY team
+            ORDER BY goals DESC, team ASC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_match_goals(match_id: int) -> list[dict]:

@@ -5,13 +5,26 @@
 {% endif %}
 {% if cards %}
 <div class="match-cards{% if compact %} match-cards-compact{% endif %}" data-match-cards>
-  {% for c in cards %}
-  <div class="card-event card-{{ c.card_type }}">
-    <span class="card-icon">{% if c.card_type == 'yellow' %}🟨{% else %}🟥{% endif %}</span>
-    <span class="goal-minute">{{ c.minute_label | goal_minute }}</span>
-    <span class="card-player">{{ c.player_name }}</span>
+  <div class="card-column card-home">
+    <div class="card-column-title">{{ home_team }}</div>
+    {% for c in cards if c.team_side == 'home' or c.team == home_team %}
+    <div class="card-event card-{{ c.card_type }}">
+      <span class="card-icon">{% if c.card_type == 'yellow' %}🟨{% else %}🟥{% endif %}</span>
+      <span class="goal-minute">{{ c.minute_label | goal_minute }}</span>
+      <span class="card-player">{{ c.player_name }}</span>
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
+  <div class="card-column card-away">
+    <div class="card-column-title">{{ away_team }}</div>
+    {% for c in cards if c.team_side == 'away' or c.team == away_team %}
+    <div class="card-event card-{{ c.card_type }}">
+      <span class="card-icon">{% if c.card_type == 'yellow' %}🟨{% else %}🟥{% endif %}</span>
+      <span class="goal-minute">{{ c.minute_label | goal_minute }}</span>
+      <span class="card-player">{{ c.player_name }}</span>
+    </div>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 {% endmacro %}

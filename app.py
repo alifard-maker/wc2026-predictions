@@ -72,7 +72,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.5"
+APP_VERSION = "Beta 2.6"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -222,6 +222,7 @@ def cards_for_json(cards: list[dict]) -> list[dict]:
         {
             "player_name": c["player_name"],
             "team": c.get("team") or c.get("team_name"),
+            "team_side": c.get("team_side"),
             "card_type": c["card_type"],
             "minute_label": sanitize_goal_minute_label(c.get("minute_label")),
         }
@@ -1216,6 +1217,7 @@ def scorers_page(invite_code):
         "scorers.html",
         pool=pool,
         leaderboard=board,
+        team_summary=db.get_tournament_goals_by_team(),
         events=events,
         user_pick=user_pick,
         user_vote=dict(user_vote) if user_vote else None,
@@ -1239,6 +1241,7 @@ def scorers_feed(invite_code):
 
     return jsonify({
         "leaderboard": board,
+        "team_summary": db.get_tournament_goals_by_team(),
         "events": events,
         "user_pick": user_pick,
         "user_vote": dict(user_vote) if user_vote else None,
@@ -1260,6 +1263,7 @@ def cards_page(invite_code):
         "cards.html",
         pool=pool,
         card_summary=data["summary"],
+        team_summary=db.get_tournament_cards_by_team(),
         card_events=data["events"],
         matches=matches,
     )
@@ -1274,6 +1278,7 @@ def cards_feed(invite_code):
 
     live_score_sync.sync_live_scores()
     data = db.get_player_cards_table()
+    data["team_summary"] = db.get_tournament_cards_by_team()
     return jsonify(data)
 
 

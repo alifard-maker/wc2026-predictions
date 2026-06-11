@@ -13,6 +13,32 @@
   </p>
 </div>
 
+<h2 class="section-title">Cards by nation</h2>
+<div class="card" style="margin-bottom: 2rem">
+  <table class="leaderboard-table">
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>🟨 Yellow</th>
+        <th>🟥 Red</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody id="cards-team-summary-body">
+      {% for t in team_summary %}
+      <tr>
+        <td><strong>{{ t.team }}</strong></td>
+        <td>{{ t.yellow_count }}</td>
+        <td>{{ t.red_count }}</td>
+        <td><strong>{{ t.total_cards }}</strong></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="color: var(--muted)">No cards recorded yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 <h2 class="section-title">Player discipline summary</h2>
 <div class="card">
   <table class="leaderboard-table">
@@ -73,6 +99,7 @@
 <script>
 (function() {
   const feedUrl = "{{ url_for('cards_feed', invite_code=pool.invite_code) }}";
+  const teamBody = document.getElementById('cards-team-summary-body');
   const summaryBody = document.getElementById('cards-summary-body');
   const eventsBody = document.getElementById('cards-events-body');
   if (!feedUrl || !summaryBody || !eventsBody) return;
@@ -87,6 +114,12 @@
     const res = await fetch(feedUrl);
     if (!res.ok) return;
     const data = await res.json();
+    if (teamBody) {
+      teamBody.innerHTML = (data.team_summary || []).map(t =>
+        `<tr><td><strong>${esc(t.team)}</strong></td><td>${t.yellow_count}</td><td>${t.red_count}</td><td><strong>${t.total_cards}</strong></td></tr>`
+      ).join('') || '<tr><td colspan="4" style="color: var(--muted)">No cards recorded yet</td></tr>';
+    }
+
     summaryBody.innerHTML = (data.summary || []).map(p => {
       const badge = p.status
         ? `<span class="badge ${p.status.includes('Suspended') ? 'badge-closed' : 'badge-open'}">${esc(p.status)}</span>`

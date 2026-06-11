@@ -93,17 +93,28 @@
     return `<div class="goal-scorers${compactClass}"><div class="goal-column goal-home">${home}</div><div class="goal-column goal-away">${away}</div></div>`;
   };
 
-  global.renderCardsHtml = function (cards, compact) {
+  function cardSide(c, homeTeam, awayTeam) {
+    if (c.team_side === 'home' || c.team === homeTeam) return 'home';
+    if (c.team_side === 'away' || c.team === awayTeam) return 'away';
+    return null;
+  }
+
+  global.renderCardsHtml = function (cards, compact, homeTeam, awayTeam) {
     if (!cards || !cards.length) return '';
     const compactClass = compact ? ' match-cards-compact' : '';
-    const items = cards.map(c => {
-      const icon = c.card_type === 'red' ? '🟥' : '🟨';
-      return `<div class="card-event card-${c.card_type}"><span class="card-icon">${icon}</span><span class="goal-minute">${sanitizeGoalMinute(c.minute_label)}</span><span class="card-player">${c.player_name}</span></div>`;
-    }).join('');
-    return `<div class="match-cards${compactClass}" data-match-cards>${items}</div>`;
+    const renderCol = (side) => cards
+      .filter(c => cardSide(c, homeTeam, awayTeam) === side)
+      .map(c => {
+        const icon = c.card_type === 'red' ? '🟥' : '🟨';
+        return `<div class="card-event card-${c.card_type}"><span class="card-icon">${icon}</span><span class="goal-minute">${sanitizeGoalMinute(c.minute_label)}</span><span class="card-player">${c.player_name}</span></div>`;
+      })
+      .join('');
+    const homeTitle = homeTeam ? `<div class="card-column-title">${homeTeam}</div>` : '';
+    const awayTitle = awayTeam ? `<div class="card-column-title">${awayTeam}</div>` : '';
+    return `<div class="match-cards${compactClass}" data-match-cards><div class="card-column card-home">${homeTitle}${renderCol('home')}</div><div class="card-column card-away">${awayTitle}${renderCol('away')}</div></div>`;
   };
 
-  global.renderMatchEventsHtml = function (goals, cards, compact) {
-    return `${renderGoalsHtml(goals, compact)}${renderCardsHtml(cards, compact)}`;
+  global.renderMatchEventsHtml = function (goals, cards, compact, homeTeam, awayTeam) {
+    return `${renderGoalsHtml(goals, compact)}${renderCardsHtml(cards, compact, homeTeam, awayTeam)}`;
   };
 })(window);

@@ -22,6 +22,25 @@
 </div>
 {% endif %}
 
+<h2 class="section-title">Goals by nation</h2>
+<div class="card" style="margin-bottom: 2rem">
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>Team</th><th>Goals</th></tr>
+    </thead>
+    <tbody id="scorers-team-summary-body">
+      {% for t in team_summary %}
+      <tr>
+        <td><strong>{{ t.team }}</strong></td>
+        <td><strong>{{ t.goals }}</strong></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" style="color: var(--muted)">No goals recorded yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 <h2 class="section-title">Goal standings</h2>
 <div class="card">
   <table class="leaderboard-table">
@@ -71,6 +90,7 @@
 <script>
 (function() {
   const feedUrl = "{{ url_for('scorers_feed', invite_code=pool.invite_code) }}";
+  const teamBody = document.getElementById('scorers-team-summary-body');
   const lbBody = document.getElementById('scorers-leaderboard-body');
   const evBody = document.getElementById('scorers-events-body');
   if (!feedUrl || !lbBody || !evBody) return;
@@ -85,6 +105,12 @@
     const res = await fetch(feedUrl);
     if (!res.ok) return;
     const data = await res.json();
+    if (teamBody) {
+      teamBody.innerHTML = (data.team_summary || []).map(t =>
+        `<tr><td><strong>${esc(t.team)}</strong></td><td><strong>${t.goals}</strong></td></tr>`
+      ).join('') || '<tr><td colspan="2" style="color: var(--muted)">No goals recorded yet</td></tr>';
+    }
+
     const pickName = (data.user_vote && data.user_vote.top_scorer || '').toLowerCase();
     lbBody.innerHTML = (data.leaderboard || []).map((row, i) => {
       const yours = pickName && row.player_name.toLowerCase() === pickName ? ' (your pick)' : '';

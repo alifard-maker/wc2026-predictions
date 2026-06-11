@@ -308,7 +308,7 @@
   const liveUrl = "{{ url_for('matches_live_feed', invite_code=pool.invite_code) }}";
 
   function renderFixtureResultInnerHtml(m) {
-    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
+    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
     const actualLabel = m.is_live ? 'Live' : 'Result';
     let predHtml = '';
     if (m.prediction) {
@@ -338,7 +338,7 @@
     const events = scoreEl.querySelector(`[data-live-events="${m.id}"]`);
     const actualLabel = scoreEl.querySelector('.fixture-actual-row .fixture-result-label');
     if (actualScore) actualScore.textContent = `${m.display_home} – ${m.display_away}`;
-    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true);
+    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
     if (actualLabel) actualLabel.textContent = m.is_live ? 'Live' : 'Result';
     const ptsEl = scoreEl.querySelector(`[data-prediction-points="${m.id}"]`);
     if (ptsEl && m.prediction && m.prediction.points != null) {
