@@ -71,7 +71,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 1.7"
+APP_VERSION = "Beta 1.8"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -299,6 +299,22 @@ def find_next_prediction_needed(enriched_matches: list[dict]) -> dict | None:
     }
 
 
+def _start_espn_sync_background() -> None:
+    if os.environ.get("ESPN_SYNC_ENABLED", "1").strip().lower() in ("0", "false", "no"):
+        return
+
+    def _loop() -> None:
+        time.sleep(2)
+        while True:
+            try:
+                live_score_sync._run_espn_sync()
+            except Exception:
+                pass
+            time.sleep(int(os.environ.get("ESPN_SYNC_INTERVAL", "20")))
+
+    threading.Thread(target=_loop, daemon=True, name="espn-live-sync").start()
+
+
 def _start_live_sync_background() -> None:
     if os.environ.get("LIVE_SYNC_ENABLED", "1").strip().lower() in ("0", "false", "no"):
         return
@@ -346,8 +362,10 @@ def health():
 
         espn_raw = db.get_sync_meta("espn_sync_summary")
         payload["espn_sync"] = json.loads(espn_raw) if espn_raw else None
+        payload["espn_sync_error"] = db.get_sync_meta("espn_sync_error") or None
     except Exception:
         payload["espn_sync"] = None
+        payload["espn_sync_error"] = None
     try:
         from datetime import datetime
 
@@ -375,6 +393,7 @@ def health():
 
 
 ensure_db()
+_start_espn_sync_background()
 _start_live_sync_background()
 
 

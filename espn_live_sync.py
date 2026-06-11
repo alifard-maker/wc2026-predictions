@@ -5,9 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+import ssl
 import urllib.error
 import urllib.request
 from datetime import datetime
+
+try:
+    import certifi
+except ImportError:
+    certifi = None
 
 import db
 from live_score_sync import canonical_team_name
@@ -45,11 +51,16 @@ def _fetch_scoreboard() -> dict | None:
         ESPN_SCOREBOARD,
         headers={"User-Agent": "wc2026-predictions/1.0"},
     )
+    if certifi is not None:
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    else:
+        ctx = ssl.create_default_context()
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=20, context=ctx) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
         logger.warning("ESPN scoreboard request failed: %s", exc)
+        db.set_sync_meta("espn_sync_error", str(exc)[:200])
         return None
 
 
@@ -77,13 +88,20 @@ def _espn_status(comp_status: dict | None) -> str | None:
     if completed or name in {"STATUS_FULL_TIME", "STATUS_FINAL"}:
         return "finished"
     if state == "in" or name in {
+        "STATUS_IN_PROGRESS",
         "STATUS_FIRST_HALF",
         "STATUS_SECOND_HALF",
         "STATUS_EXTRA_TIME",
         "STATUS_PENALTY_SHOOTOUT",
     }:
         return "live"
+    if (comp_status or {}).get("displayClock"):
+        return "live"
     return None
+
+
+def _is_goal_event(type_text: str) -> bool:
+    return type_text == "Goal" or type_text.startswith("Goal ")
 
 
 def _find_db_match(
@@ -152,6 +170,7 @@ def _sync_espn_event(
 
     match_id = db_match["id"]
     result["matched"] = 1
+    result["match_id"] = match_id
 
     home_score = away_score = 0
     for competitor in competition.get("competitors") or []:
@@ -167,8 +186,6 @@ def _sync_espn_event(
 
     comp_status = competition.get("status") or event.get("status") or {}
     db_status = _espn_status(comp_status)
-    if not db_status:
-        return result
 
     display_clock = (
         comp_status.get("displayClock")
@@ -181,7 +198,7 @@ def _sync_espn_event(
     if db_status == "finished" and db_match.get("actual_home") is None:
         db.update_match_result(match_id, home_score, away_score)
         result["finished"] = 1
-    elif db_match.get("actual_home") is None:
+    elif db_match.get("actual_home") is None and db_status:
         if db_status == "halftime":
             live_minute = 45
             live_injury = None
@@ -194,6 +211,7 @@ def _sync_espn_event(
             live_injury,
         )
         result["updated_live"] = 1
+        db.set_sync_meta(f"espn_live_source_{match_id}", datetime.now(TIMEZONE).isoformat())
 
     for detail in competition.get("details") or []:
         type_text = ((detail.get("type") or {}).get("text") or "").strip()
@@ -210,7 +228,7 @@ def _sync_espn_event(
             continue
 
         minute, injury = _parse_espn_minute((detail.get("clock") or {}).get("displayValue"))
-        if type_text == "Goal":
+        if _is_goal_event(type_text):
             if minute is None:
                 continue
             if team_name == db_match["home_team"]:
@@ -242,7 +260,13 @@ def sync_from_espn(
 
     payload = _fetch_scoreboard()
     if not payload:
-        return {"ok": False, "error": "espn_request_failed"}
+        summary = {
+            "ok": False,
+            "error": "espn_request_failed",
+            "synced_at": datetime.now(TIMEZONE).isoformat(),
+        }
+        db.set_sync_meta("espn_sync_summary", json.dumps(summary))
+        return summary
 
     our_teams = our_teams or set(db.get_distinct_teams())
     db_matches = db_matches or [dict(m) for m in db.get_all_matches()]
@@ -254,12 +278,17 @@ def sync_from_espn(
         "goals_added": 0,
         "cards_added": 0,
         "espn_events": len(payload.get("events") or []),
+        "matched_match_ids": [],
     }
 
     for event in payload.get("events") or []:
         row = _sync_espn_event(event, db_matches, our_teams)
         for key in totals:
+            if key == "matched_match_ids":
+                continue
             totals[key] += row.get(key, 0)
+        if row.get("match_id"):
+            totals["matched_match_ids"].append(row["match_id"])
         if row.get("espn_minute") is not None:
             totals["espn_minute"] = row["espn_minute"]
 
@@ -269,4 +298,5 @@ def sync_from_espn(
         "synced_at": datetime.now(TIMEZONE).isoformat(),
     }
     db.set_sync_meta("espn_sync_summary", json.dumps(summary))
+    db.set_sync_meta("espn_sync_error", "")
     return summary

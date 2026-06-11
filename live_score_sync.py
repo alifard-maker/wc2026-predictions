@@ -13,8 +13,11 @@ from datetime import datetime, timedelta
 import db
 from live_scores import (
     effective_live_minute,
+    elapsed_wall_minutes,
     minute_from_kickoff,
+    minute_from_second_half_start,
     normalize_stored_minute,
+    FIRST_HALF_MINUTES,
 )
 from scoring import TIMEZONE, parse_match_datetime
 
@@ -322,13 +325,26 @@ def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, in
     best_minute = api_minute if api_minute is not None else stored
     second_half_start = _second_half_start(match_id)
     if kickoff:
-        return effective_live_minute(
+        minute, injury = effective_live_minute(
             kickoff,
             now,
             best_minute,
             api_injury or stored_injury,
             second_half_start,
         )
+        elapsed = elapsed_wall_minutes(kickoff, now)
+        if (
+            api_minute is not None
+            and api_minute <= FIRST_HALF_MINUTES
+            and elapsed > 60
+        ):
+            if second_half_start:
+                minute = minute_from_second_half_start(second_half_start, now)
+            elif stored and stored > FIRST_HALF_MINUTES:
+                minute = stored
+            else:
+                minute = None
+        return minute, injury
     return best_minute, api_injury or stored_injury
 
 
@@ -556,6 +572,8 @@ def _process_api_match(
     api_match: dict,
     db_matches: list[dict],
     our_teams: set[str],
+    *,
+    skip_live_update: bool = False,
 ) -> dict:
     status = api_match.get("status") or "SCHEDULED"
     if not _should_sync_match(api_match):
@@ -592,7 +610,7 @@ def _process_api_match(
         if db_match["actual_home"] is None:
             db.update_match_result(match_id, home_score, away_score)
             result["finished"] = 1
-    elif in_window and db_match.get("actual_home") is None:
+    elif in_window and db_match.get("actual_home") is None and not skip_live_update:
         _track_second_half_start(match_id, status)
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
         db_status = _db_status(status)
@@ -601,16 +619,17 @@ def _process_api_match(
 
             if not is_halftime_break(kickoff, datetime.now(TIMEZONE), db_status):
                 db_status = "live"
-        db.update_match_live(
-            match_id,
-            home_score,
-            away_score,
-            live_minute,
-            db_status,
-            live_injury,
-        )
-        result["updated_live"] = 1
-        result["stored_minute"] = live_minute
+        if live_minute is not None:
+            db.update_match_live(
+                match_id,
+                home_score,
+                away_score,
+                live_minute,
+                db_status,
+                live_injury,
+            )
+            result["updated_live"] = 1
+            result["stored_minute"] = live_minute
 
     result["goals_added"] = _sync_goals(match_id, db_match, api_match, our_teams)
     result["cards_added"] = _sync_bookings(match_id, api_match, our_teams)
@@ -620,23 +639,38 @@ def _process_api_match(
     return result
 
 
+def _run_espn_sync(
+    db_matches: list[dict] | None = None,
+    our_teams: set[str] | None = None,
+) -> dict:
+    try:
+        import espn_live_sync
+
+        return espn_live_sync.sync_from_espn(db_matches, our_teams)
+    except Exception as exc:
+        logger.warning("ESPN live sync failed: %s", exc)
+        return {"ok": False, "error": str(exc)[:200]}
+
+
 def sync_live_scores(force: bool = False) -> dict:
-    """Pull World Cup scores from football-data.org and update the database."""
+    """Pull live scores from ESPN + football-data.org and update the database."""
+    our_teams = set(db.get_distinct_teams())
+    db_matches = [dict(m) for m in db.get_all_matches()]
+    espn = _run_espn_sync(db_matches, our_teams)
+    espn_skip_live = set(espn.get("matched_match_ids") or [])
+
     if not is_enabled():
-        return {"ok": False, "skipped": True, "reason": "no_api_token"}
+        return {"ok": True, "skipped": True, "reason": "no_api_token", "espn": espn}
 
     cooldown = SYNC_COOLDOWN_SECONDS
     if db.get_sync_meta("live_sync_error") == "HTTP 429":
         cooldown = max(cooldown, 120)
     if not force and not db.try_begin_live_sync(cooldown):
-        return {"ok": True, "skipped": True, "reason": "cooldown"}
+        return {"ok": True, "skipped": True, "reason": "cooldown", "espn": espn}
 
     api_matches = _collect_api_matches()
     if not api_matches:
-        return {"ok": False, "error": "api_request_failed"}
-
-    our_teams = set(db.get_distinct_teams())
-    db_matches = [dict(m) for m in db.get_all_matches()]
+        return {"ok": False, "error": "api_request_failed", "espn": espn}
 
     detail_ids = list(
         {
@@ -665,20 +699,20 @@ def sync_live_scores(force: bool = False) -> dict:
     for api_match in api_matches:
         api_match = _richest_match(api_match, details)
 
-        row = _process_api_match(api_match, db_matches, our_teams)
+        db_match = _find_db_match(api_match, db_matches, our_teams)
+        skip_live = bool(db_match and db_match["id"] in espn_skip_live)
+        row = _process_api_match(
+            api_match,
+            db_matches,
+            our_teams,
+            skip_live_update=skip_live,
+        )
         for key in totals:
             totals[key] += row.get(key, 0)
 
-    try:
-        import espn_live_sync
-
-        espn = espn_live_sync.sync_from_espn(db_matches, our_teams)
-        for key in ("matched", "updated_live", "finished", "goals_added", "cards_added"):
-            totals[key] += espn.get(key, 0)
-        totals["espn"] = espn
-    except Exception as exc:
-        logger.warning("ESPN live sync failed: %s", exc)
-        totals["espn"] = {"ok": False, "error": str(exc)[:200]}
+    for key in ("matched", "updated_live", "finished", "goals_added", "cards_added"):
+        totals[key] += espn.get(key, 0)
+    totals["espn"] = espn
 
     knockout = db.sync_knockout_stage()
 
