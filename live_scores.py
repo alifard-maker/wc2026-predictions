@@ -53,7 +53,14 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     live_home = m.get("live_home")
     live_away = m.get("live_away")
     live_minute = normalize_stored_minute(m.get("live_minute"))
-    live_injury_minute = normalize_stored_minute(m.get("live_injury_minute"))
+    live_injury_minute = m.get("live_injury_minute")
+    if live_injury_minute is not None:
+        try:
+            live_injury_minute = int(live_injury_minute)
+            if live_injury_minute <= 0:
+                live_injury_minute = None
+        except (TypeError, ValueError):
+            live_injury_minute = None
     actual_home = m.get("actual_home")
     actual_away = m.get("actual_away")
 
@@ -111,12 +118,8 @@ def format_minute(
         return "FT"
     if minute is None or minute <= 0:
         return "LIVE"
-    injury = normalize_stored_minute(injury_minute)
-    if minute >= 90:
-        if injury:
-            return f"90+{injury}'"
-        if minute > 90:
-            return f"90+{minute - 90}'"
+    if injury_minute and injury_minute > 0:
+        return f"{minute}+{injury_minute}'"
     return f"{minute}'"
 
 

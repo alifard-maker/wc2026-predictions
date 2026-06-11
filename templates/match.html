@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{% from "_goal_scorers.html" import render_goals %}
-{% from "_match_cards.html" import render_cards %}
+{% from "_match_events.html" import render_match_events %}
 {% from "_team_flag.html" import team_with_flag with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
@@ -37,8 +36,7 @@
 
   <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label | live_minute }}</p>
 
-  <div id="match-goals-wrap">{{ render_goals(goals, match.home_team, match.away_team) }}</div>
-  <div id="match-cards-wrap">{{ render_cards(cards) }}</div>
+  <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team) }}</div>
 
   {% if match.prediction %}
   <p style="text-align: center; color: var(--muted)">
@@ -171,7 +169,7 @@
 <script>
 (function() {
   const feedUrl = "{{ url_for('match_watch_feed', invite_code=pool.invite_code, match_id=match.id) }}";
-  const trackMatch = {{ 'true' if match.is_live or match.is_finished else 'false' }};
+  const isLive = {{ 'true' if match.is_live or not match.is_finished else 'false' }};
 
   function esc(s) {
     const d = document.createElement('div');
@@ -192,6 +190,8 @@
     if (minEl && m.is_live) {
       minEl.style.display = '';
       minEl.textContent = sanitizeMinuteLabel(m.minute_label);
+    } else if (minEl) {
+      minEl.style.display = 'none';
     }
     const badge = document.getElementById('match-status-badge');
     if (badge && m.is_live) {
@@ -202,13 +202,9 @@
       badge.textContent = 'Full time';
     }
 
-    const goalsWrap = document.getElementById('match-goals-wrap');
-    if (goalsWrap && (m.is_live || m.is_finished)) {
-      goalsWrap.innerHTML = renderGoalsHtml(data.goals || [], false);
-    }
-    const cardsWrap = document.getElementById('match-cards-wrap');
-    if (cardsWrap && (m.is_live || m.is_finished)) {
-      cardsWrap.innerHTML = renderCardsHtml(data.cards || [], false);
+    const eventsEl = document.getElementById('match-events-wrap');
+    if (eventsEl && (m.is_live || m.is_finished)) {
+      eventsEl.innerHTML = renderMatchEventsHtml(data.goals, data.cards, false);
     }
 
     const tbody = document.querySelector('#picks-table tbody');
@@ -236,9 +232,9 @@
     }
   }
 
-  if (trackMatch) {
+  if (isLive) {
     refresh();
-    setInterval(refresh, 20000);
+    setInterval(refresh, 15000);
   }
 })();
 </script>

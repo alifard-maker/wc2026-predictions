@@ -237,17 +237,20 @@ def _parse_goal_minute(goal: dict) -> tuple[int, int | None] | None:
 
 
 def _resolve_live_clock(api_match: dict, db_match: dict) -> tuple[int | None, int | None]:
-    """Return actual match clock from API, or keep the last synced value."""
+    """Use the API match clock only — never estimate from scheduled kickoff."""
     raw = api_match.get("minute")
+    injury = _injury_minute(api_match)
     if raw is not None:
         parsed = int(raw)
         if parsed > 0:
-            return parsed, _injury_minute(api_match)
+            return parsed, injury
 
     existing = db_match.get("live_minute")
     if existing is not None and int(existing) > 0:
-        injury = db_match.get("live_injury_minute")
-        return int(existing), int(injury) if injury else None
+        existing_injury = db_match.get("live_injury_minute")
+        return int(existing), (
+            int(existing_injury) if existing_injury is not None else None
+        )
     return None, None
 
 
@@ -325,9 +328,9 @@ def _fetch_match_details(api_ids: list[int]) -> dict[int, dict]:
 def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> int:
     added = 0
     for goal in api_match.get("goals") or []:
-        scorer = (goal.get("scorer") or {}).get("name") or "Unknown"
+        scorer = (goal.get("scorer") or {}).get("name")
         parsed = _parse_goal_minute(goal)
-        if parsed is None:
+        if not scorer or parsed is None:
             continue
         minute, injury = parsed
         team_name = canonical_team_name((goal.get("team") or {}).get("name", ""), our_teams)
@@ -349,12 +352,13 @@ def _sync_bookings(match_id: int, api_match: dict, our_teams: set[str]) -> int:
     added = 0
     for booking in api_match.get("bookings") or []:
         player = (booking.get("player") or {}).get("name")
-        minute = booking.get("minute")
+        parsed = _parse_goal_minute(booking)
         card = _card_type(booking.get("card", ""))
         team_name = canonical_team_name((booking.get("team") or {}).get("name", ""), our_teams)
-        if not player or not card or not team_name:
+        if not player or not card or not team_name or parsed is None:
             continue
-        if db.import_player_card(match_id, player, team_name, card, int(minute) if minute is not None else None):
+        minute, _injury = parsed
+        if db.import_player_card(match_id, player, team_name, card, minute):
             added += 1
     return added
 
@@ -400,14 +404,8 @@ def _process_api_match(
 
     match_id = db_match["id"]
     home_score, away_score = _extract_score(api_match, our_teams)
-    if home_score is None:
-        home_score = db_match.get("live_home")
-        if home_score is None:
-            home_score = db_match.get("actual_home") or 0
-    if away_score is None:
-        away_score = db_match.get("live_away")
-        if away_score is None:
-            away_score = db_match.get("actual_away") or 0
+    if home_score is None or away_score is None:
+        return {"matched": 1}
 
     result = {
         "matched": 1,
@@ -480,16 +478,9 @@ def sync_live_scores(force: bool = False) -> dict:
     }
 
     for api_match in api_matches:
-        enriched = details.get(api_match.get("id"), api_match)
-        if enriched is not api_match:
-            merged = dict(api_match)
-            for field in ("minute", "injuryTime", "status", "score"):
-                if enriched.get(field) is not None:
-                    merged[field] = enriched[field]
-            merged["goals"] = enriched.get("goals") or api_match.get("goals")
-            merged["bookings"] = enriched.get("bookings") or api_match.get("bookings")
-            merged["penalties"] = enriched.get("penalties") or api_match.get("penalties")
-            api_match = merged
+        enriched = details.get(api_match.get("id"))
+        if enriched:
+            api_match = enriched
 
         row = _process_api_match(api_match, db_matches, our_teams)
         for key in totals:

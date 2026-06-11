@@ -640,11 +640,7 @@ def get_match_cards(match_id: int) -> list[dict]:
         result = []
         for r in rows:
             d = dict(r)
-            d["minute_label"] = (
-                format_goal_minute(r["minute"], r.get("injury_minute"))
-                if r["minute"] is not None and r["minute"] > 0
-                else "—"
-            )
+            d["minute_label"] = format_goal_minute(r["minute"] or 0, None) if r["minute"] is not None else ""
             result.append(d)
         return result
 

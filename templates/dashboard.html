@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{% from "_goal_scorers.html" import render_goals %}
-{% from "_match_cards.html" import render_cards %}
+{% from "_match_events.html" import render_match_events %}
 {% from "_team_flag.html" import team_with_flag with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
 {% block title %}{{ pool.name }} — Matches{% endblock %}
@@ -169,9 +168,7 @@
       {% if m.is_live or m.is_finished %}
       <div class="live-score-display" data-live-score="{{ m.id }}">
         {{ m.display_home }} – {{ m.display_away }}
-        <div style="font-size:0.75rem;color:var(--muted)">{{ m.minute_label | live_minute }}</div>
-        <div data-live-goals="{{ m.id }}">{{ render_goals(m.goals, m.home_team, m.away_team, compact=true) }}</div>
-        <div data-live-cards="{{ m.id }}">{{ render_cards(m.cards, compact=true) }}</div>
+        <div data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
         {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
         <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
           <span class="fixture-winners-label">Called it:</span>
@@ -331,21 +328,12 @@
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
       }
       if ((m.is_live || m.is_finished) && score) {
-        const goalsHtml = renderGoalsHtml(m.goals, true);
-        const cardsHtml = renderCardsHtml(m.cards, true);
-        score.innerHTML = `${m.display_home} – ${m.display_away}<div style="font-size:0.75rem;color:var(--muted)">${sanitizeMinuteLabel(m.minute_label)}</div>${goalsHtml}${cardsHtml}`;
-      }
-      const cardsEl = document.querySelector(`[data-live-cards="${m.id}"]`);
-      if (cardsEl && (m.is_live || m.is_finished)) {
-        cardsEl.innerHTML = renderCardsHtml(m.cards, true);
-      }
-      const goalsEl = document.querySelector(`[data-live-goals="${m.id}"]`);
-      if (goalsEl && (m.is_live || m.is_finished)) {
-        goalsEl.innerHTML = renderGoalsHtml(m.goals, true);
+        const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true);
+        score.innerHTML = `${m.display_home} – ${m.display_away}${eventsHtml}`;
       }
     });
   }
-  setInterval(refreshLiveScores, 30000);
+  setInterval(refreshLiveScores, 15000);
   refreshLiveScores();
 
   (function() {

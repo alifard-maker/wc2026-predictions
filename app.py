@@ -209,7 +209,7 @@ def goals_for_json(goals: list[dict]) -> list[dict]:
             "team_side": g["team_side"],
             "scorer_name": g["scorer_name"],
             "minute_label": sanitize_goal_minute_label(g["minute_label"]),
-            "team_name": g["team_name"],
+            "team_name": g.get("team_name"),
             "is_penalty": bool(g.get("is_penalty")),
         }
         for g in goals
@@ -220,7 +220,7 @@ def cards_for_json(cards: list[dict]) -> list[dict]:
     return [
         {
             "player_name": c["player_name"],
-            "team": c["team"],
+            "team": c.get("team") or c.get("team_name"),
             "card_type": c["card_type"],
             "minute_label": sanitize_goal_minute_label(c.get("minute_label")),
         }
@@ -1081,33 +1081,6 @@ def scorers_page(invite_code):
     )
 
 
-@app.route("/pool/<invite_code>/cards/feed")
-@login_required
-def cards_feed(invite_code):
-    pool = db.get_pool_by_code(invite_code)
-    if not pool or pool["id"] != session.get("pool_id"):
-        return jsonify({"error": "unauthorized"}), 403
-
-    live_score_sync.sync_live_scores()
-    data = db.get_player_cards_table()
-    return jsonify(
-        {
-            "summary": data["summary"],
-            "events": [
-                {
-                    "player_name": e["player_name"],
-                    "team": e["team"],
-                    "card_type": e["card_type"],
-                    "minute": e.get("minute"),
-                    "match_label": e["match_label"],
-                    "match_date": e["match_date"],
-                }
-                for e in data["events"]
-            ],
-        }
-    )
-
-
 @app.route("/pool/<invite_code>/scorers/feed")
 @login_required
 def scorers_feed(invite_code):
@@ -1122,14 +1095,13 @@ def scorers_feed(invite_code):
     user_pick = None
     if user_vote:
         user_pick = get_scorer_status(user_vote["top_scorer"], board)
-    return jsonify(
-        {
-            "leaderboard": board,
-            "events": events,
-            "user_pick": user_pick,
-            "user_top_scorer": user_vote["top_scorer"] if user_vote else None,
-        }
-    )
+
+    return jsonify({
+        "leaderboard": board,
+        "events": events,
+        "user_pick": user_pick,
+        "user_vote": dict(user_vote) if user_vote else None,
+    })
 
 
 @app.route("/pool/<invite_code>/cards")
@@ -1150,6 +1122,18 @@ def cards_page(invite_code):
         card_events=data["events"],
         matches=matches,
     )
+
+
+@app.route("/pool/<invite_code>/cards/feed")
+@login_required
+def cards_feed(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        return jsonify({"error": "unauthorized"}), 403
+
+    live_score_sync.sync_live_scores()
+    data = db.get_player_cards_table()
+    return jsonify(data)
 
 
 @app.route("/pool/<invite_code>/match/<int:match_id>")
@@ -1176,7 +1160,6 @@ def match_detail(invite_code, match_id):
     consensus = build_match_consensus(pool["id"], match_id)
     context = get_match_context(match["home_team"], match["away_team"])
     goals = db.get_match_goals(match_id)
-    cards = db.get_match_cards(match_id)
     match_comments = db.get_pool_comments(pool["id"], match_id)
     picks_open = not picks_revealed(dict(match))
     leaderboard = db.get_leaderboard(pool["id"])
@@ -1186,7 +1169,6 @@ def match_detail(invite_code, match_id):
         pool=pool,
         match=enriched,
         goals=goals,
-        cards=cards,
         all_predictions=all_preds,
         match_context=context,
         consensus=consensus,
@@ -1225,8 +1207,8 @@ def match_watch_feed(invite_code, match_id):
             "is_finished": enriched["is_finished"],
             "status": enriched["status"],
         },
-        "goals": goals_for_json(db.get_match_goals(match_id)),
-        "cards": cards_for_json(db.get_match_cards(match_id)),
+        "goals": goals_for_json(enriched.get("goals", [])),
+        "cards": cards_for_json(enriched.get("cards", [])),
         "consensus": build_match_consensus(pool["id"], match_id),
         "predictions": preds,
         "picks_revealed": picks_revealed(dict(match)),
