@@ -45,46 +45,6 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def _news_ticker_items(limit: int = 2) -> list[str]:
-    try:
-        from wc_news import get_wc_news
-
-        items: list[str] = []
-        for article in get_wc_news()[:limit]:
-            title = _truncate(article.get("title", ""), 88)
-            if title:
-                items.append(f"📰 {title}")
-        return items
-    except Exception:
-        return []
-
-
-def _scorer_ticker_items(match: dict) -> list[str]:
-    from db import get_tournament_scorer_leaderboard
-
-    board = get_tournament_scorer_leaderboard()
-    if not board:
-        return []
-    goals_by_player = {row["player_name"]: row["goals"] for row in board}
-    seen: set[str] = set()
-    items: list[str] = []
-    for goal in match.get("goals") or []:
-        name = goal.get("scorer_name")
-        if not name or name in seen:
-            continue
-        total = goals_by_player.get(name)
-        if total:
-            seen.add(name)
-            word = "goal" if total == 1 else "goals"
-            items.append(f"⭐ {name} now on {total} tournament {word}")
-    if not items and board:
-        top = board[0]
-        if top["goals"] > 0:
-            word = "goal" if top["goals"] == 1 else "goals"
-            items.append(f"⚽ Top scorer: {top['player_name']} ({top['goals']} {word})")
-    return items
-
-
 def _pool_comment_ticker_items(pool_id: int, match_id: int, limit: int = 2) -> list[str]:
     from db import get_pool_comments
 
@@ -193,16 +153,11 @@ def _pool_extras_for_live(
 
     extras.extend(_pool_consensus_ticker_items(pool_id, match))
     extras.extend(_pool_pick_ticker_items(pool_id, match))
-    extras.extend(_scorer_ticker_items(match))
     extras.extend(_pool_comment_ticker_items(pool_id, match["id"]))
 
     next_line = _next_kickoff_ticker_item(raw_matches, now, exclude_match_id=match["id"])
     if next_line:
         extras.append(next_line)
-
-    for line in _news_ticker_items(2):
-        if line not in extras:
-            extras.append(line)
 
     return extras
 
@@ -213,7 +168,7 @@ def build_idle_ticker(
     raw_matches,
     now: datetime | None = None,
 ) -> list[str]:
-    """Ticker lines when no match is live — news, pool, schedule."""
+    """Ticker lines when no match is live — pool and schedule."""
     now = now or datetime.now(TIMEZONE)
     items: list[str] = []
 
@@ -234,24 +189,12 @@ def build_idle_ticker(
             f"🏁 Latest: {latest['home_team']} {latest['display_home']}–{latest['display_away']} {latest['away_team']}"
         )
 
-    from db import get_tournament_scorer_leaderboard
-
-    board = get_tournament_scorer_leaderboard()
-    if board and board[0]["goals"] > 0:
-        top = board[0]
-        word = "goal" if top["goals"] == 1 else "goals"
-        items.append(f"⚽ Top scorer: {top['player_name']} ({top['goals']} {word})")
-
     from db import get_leaderboard
 
     lb = get_leaderboard(pool_id)
     if lb and lb[0].get("total_points", 0) > 0:
         leader = lb[0]
         items.append(f"🏆 Pool leader: {leader['display_name']} ({leader['total_points']} pts)")
-
-    for line in _news_ticker_items(3):
-        if line not in items:
-            items.append(line)
 
     return items
 
