@@ -48,7 +48,7 @@ def is_synced_live(match: dict, now: datetime | None = None) -> bool:
     if (match.get("status") or "") not in ("live", "halftime"):
         return False
     kickoff = parse_match_datetime(match["match_date"], match["match_time"])
-    return now >= kickoff
+    return kickoff <= now < kickoff + LIVE_SYNC_MAX
 
 
 def is_match_in_progress(
@@ -273,3 +273,30 @@ def format_minute(
 def opening_kickoff_iso() -> str:
     kickoff = parse_match_datetime(OPENING_MATCH_DATE, OPENING_MATCH_TIME)
     return kickoff.isoformat()
+
+
+def next_scheduled_kickoff(matches: list[dict], now: datetime | None = None) -> dict | None:
+    """Soonest fixture that has not kicked off yet."""
+    now = now or datetime.now(TIMEZONE)
+    best: tuple[datetime, dict] | None = None
+    for row in matches:
+        if row.get("actual_home") is not None:
+            continue
+        kickoff = parse_match_datetime(row["match_date"], row["match_time"])
+        if kickoff <= now:
+            continue
+        if best is None or kickoff < best[0]:
+            best = (kickoff, row)
+    if not best:
+        return None
+    kickoff, match = best
+    return {
+        "match_id": match["id"],
+        "home_team": match["home_team"],
+        "away_team": match["away_team"],
+        "iso": kickoff.isoformat(),
+        "display": (
+            f"{match['home_team']} vs {match['away_team']} · "
+            f"{kickoff.strftime('%d %b %Y, %H:%M')} ET"
+        ),
+    }

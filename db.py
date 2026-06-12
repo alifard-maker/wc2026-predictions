@@ -263,15 +263,17 @@ def repair_live_display_data() -> None:
             WHERE actual_home IS NULL AND status IN ('live', 'halftime')
             """
         ).fetchall()
+        from live_scores import LIVE_SYNC_MAX
+
         for row in rows:
             kickoff = parse_match_datetime(row["match_date"], row["match_time"])
-            if now < kickoff:
+            if now < kickoff or now >= kickoff + LIVE_SYNC_MAX:
                 conn.execute(
                     """
                     UPDATE matches
                     SET status = 'scheduled', live_home = NULL, live_away = NULL,
                         live_minute = NULL, live_injury_minute = NULL
-                    WHERE id = ?
+                    WHERE id = ? AND actual_home IS NULL
                     """,
                     (row["id"],),
                 )

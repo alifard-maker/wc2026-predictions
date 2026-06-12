@@ -171,6 +171,7 @@ def commentary_for_match(match: dict) -> dict:
     ticker_items = _ticker_items(match, events)
     latest = events[-1]["text"] if events else ticker_items[0]
 
+    kickoff = match.get("kickoff")
     return {
         "match_id": match["id"],
         "home_team": match["home_team"],
@@ -180,6 +181,7 @@ def commentary_for_match(match: dict) -> dict:
         "minute_label": _minute_badge(match),
         "status": match.get("status"),
         "venue": match.get("venue"),
+        "kickoff_iso": kickoff.isoformat() if kickoff else None,
         "scoreline": _scoreline(match),
         "headline": f"{_scoreline(match)} · {_minute_badge(match)}",
         "latest": latest,
@@ -191,34 +193,15 @@ def commentary_for_match(match: dict) -> dict:
 def _active_live_matches(enriched_matches: list[dict], now: datetime | None = None) -> list[dict]:
     now = now or datetime.now(TIMEZONE)
     live: list[dict] = []
-    seen: set[int] = set()
     for m in enriched_matches:
-        if m.get("is_live") and m["id"] not in seen:
-            live.append(m)
-            seen.add(m["id"])
-    if live:
-        return live
-
-    for m in enriched_matches:
-        if m["id"] in seen or m.get("actual_home") is not None:
+        if not m.get("is_live") or m.get("actual_home") is not None:
             continue
         kickoff = m.get("kickoff")
-        if kickoff and (
-            (m.get("status") or "") in ("live", "halftime")
-            or is_match_in_progress(kickoff, now, m)
-        ):
-            row = dict(m)
-            row["display_home"] = row.get("display_home")
-            if row.get("display_home") is None:
-                row["display_home"] = row.get("live_home") if row.get("live_home") is not None else 0
-            if row.get("display_away") is None:
-                row["display_away"] = row.get("live_away") if row.get("live_away") is not None else 0
-            if not row.get("minute_label"):
-                row["minute_label"] = "LIVE"
-            row["is_live"] = True
-            row["status"] = row.get("status") or "live"
-            live.append(row)
-            seen.add(m["id"])
+        if not kickoff or now < kickoff:
+            continue
+        if not is_match_in_progress(kickoff, now, m):
+            continue
+        live.append(m)
     return live
 
 
@@ -250,6 +233,7 @@ def commentary_for_json(commentary: dict | None) -> dict | None:
         "display_away": commentary["display_away"],
         "minute_label": sanitize_minute_label(commentary["minute_label"]),
         "status": commentary["status"],
+        "kickoff_iso": commentary.get("kickoff_iso"),
         "scoreline": commentary["scoreline"],
         "headline": commentary["headline"],
         "latest": commentary["latest"],

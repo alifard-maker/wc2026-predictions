@@ -23,6 +23,7 @@ from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_badge, is_ai_agent
 import live_score_sync
 from live_scores import (
     apply_live_state,
+    next_scheduled_kickoff,
     opening_kickoff_iso,
     sanitize_goal_minute_label,
     sanitize_minute_label,
@@ -72,7 +73,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.9"
+APP_VERSION = "Beta 3.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -140,6 +141,10 @@ def inject_public_url():
         "public_base_url": lambda: get_public_base_url(),
         "invite_url_for": invite_url_for,
         "opening_kickoff_iso": opening_kickoff_iso(),
+        "next_kickoff": None,
+        "banner_kickoff_iso": opening_kickoff_iso(),
+        "banner_kickoff_label": "Mexico vs South Africa · 11 Jun 2026, 15:00 ET",
+        "banner_countdown_title": "Opening match",
         "ai_display_name": AI_DISPLAY_NAME,
         "ai_agents": AI_AGENTS,
         "is_ai_agent": is_ai_agent,
@@ -156,12 +161,24 @@ def inject_public_url():
     }
     pool_id = session.get("pool_id")
     if pool_id and session.get("user_id"):
-        matches = enrich_matches(db.get_all_matches())
+        now = datetime.now(TIMEZONE)
+        raw_matches = db.get_all_matches()
+        matches = enrich_matches(raw_matches)
         ctx["match_spotlight"] = build_pool_spotlight(pool_id, matches)
         ctx["live_commentary"] = build_live_commentary(matches)
         lb = db.get_leaderboard(pool_id)
         ctx["top_leaderboard"] = lb[:5]
         ctx["leader_message"] = db.get_leader_message(lb)
+        next_k = next_scheduled_kickoff(raw_matches, now)
+        ctx["next_kickoff"] = next_k
+        if ctx["live_commentary"] and ctx["live_commentary"].get("kickoff_iso"):
+            ctx["banner_kickoff_iso"] = ctx["live_commentary"]["kickoff_iso"]
+        elif next_k:
+            ctx["banner_kickoff_iso"] = next_k["iso"]
+            ctx["banner_kickoff_label"] = next_k["display"]
+            ctx["banner_countdown_title"] = "Next match"
+        else:
+            ctx["banner_kickoff_iso"] = opening_kickoff_iso()
     return ctx
 
 
@@ -1044,9 +1061,11 @@ def matches_live_feed(invite_code):
     live = [m for m in matches if m["is_live"]]
     spotlight = build_pool_spotlight(pool["id"], matches)
     commentary = build_live_commentary(matches)
+    next_k = next_scheduled_kickoff(db.get_all_matches(), datetime.now(TIMEZONE))
     return jsonify({
         "live_count": len(live),
         "commentary": commentary_for_json(commentary),
+        "next_kickoff": next_k,
         "spotlight": spotlight_for_json(spotlight, session.get("user_id")),
         "matches": [
             {

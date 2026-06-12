@@ -36,18 +36,25 @@
     const kickoff = new Date(kickoffIso);
     if (Number.isNaN(kickoff.getTime())) return null;
     const elapsedMins = Math.floor((Date.now() - kickoff.getTime()) / 60000);
-    if (elapsedMins <= 45) return `${Math.max(1, elapsedMins)}'`;
+    if (elapsedMins <= 0) return null;
+    if (elapsedMins <= 45) return `${elapsedMins}'`;
     if (elapsedMins <= 60) return 'HT';
     return `${Math.min(90, 45 + elapsedMins - 60)}'`;
   };
 
   global.resolveLiveMinuteLabel = function (minuteLabel, kickoffIso, status) {
     const cleaned = sanitizeMinuteLabel(minuteLabel);
+    if (kickoffIso) {
+      const kickoff = new Date(kickoffIso);
+      if (!Number.isNaN(kickoff.getTime()) && Date.now() < kickoff.getTime()) {
+        return 'Soon';
+      }
+    }
     if (status === 'halftime' || cleaned.startsWith('HT')) {
       return cleaned.startsWith('HT') ? cleaned : 'HT';
     }
     // Trust server-synced minute from ESPN/API polling.
-    if (cleaned && cleaned !== 'LIVE' && cleaned.endsWith("'")) {
+    if (cleaned && cleaned !== 'LIVE' && cleaned !== 'Soon' && cleaned.endsWith("'")) {
       return cleaned;
     }
     const derived = deriveLiveMinuteFromKickoff(kickoffIso);
