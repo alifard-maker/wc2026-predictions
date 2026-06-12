@@ -25,6 +25,16 @@
       <span class="countdown-label" id="countdown-label">⏱ {{ banner_countdown_title }}</span>
       <span id="countdown-timer" class="countdown-timer">Loading…</span>
       <span class="countdown-match" id="countdown-match">{{ banner_kickoff_label }}</span>
+      <div class="idle-ticker-wrap{% if not idle_ticker %} hidden{% endif %}" id="idle-ticker-wrap">
+        <div class="idle-ticker-track" id="idle-ticker-track">
+          <div class="idle-ticker-content" id="idle-ticker-content">
+            {% for item in idle_ticker %}
+            <span class="commentary-item">{{ item }}</span>
+            {% endfor %}
+          </div>
+          <div class="idle-ticker-content" id="idle-ticker-content-dup" aria-hidden="true"></div>
+        </div>
+      </div>
     </div>
     {% if session.get('invite_code') and session.get('user_id') %}
     <a href="{% if live_commentary %}{{ url_for('match_detail', invite_code=session.invite_code, match_id=live_commentary.match_id) }}{% else %}#{% endif %}"
@@ -303,6 +313,7 @@
           return;
         }
         countdownPanel?.classList.add('hidden');
+        document.getElementById('idle-ticker-wrap')?.classList.add('hidden');
         liveTopBar?.classList.remove('hidden');
         liveTopBar?.classList.add('live-top-bar--match');
         commentaryPanel.classList.remove('hidden');
@@ -346,6 +357,28 @@
         if (typeof updateBannerOffset === 'function') updateBannerOffset();
       }
 
+      function renderIdleTicker(items) {
+        const wrap = document.getElementById('idle-ticker-wrap');
+        const content = document.getElementById('idle-ticker-content');
+        const dup = document.getElementById('idle-ticker-content-dup');
+        if (!wrap || !content) return;
+        const rows = items || [];
+        if (!rows.length) {
+          wrap.classList.add('hidden');
+          content.innerHTML = '';
+          if (dup) dup.innerHTML = '';
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          return;
+        }
+        wrap.classList.remove('hidden');
+        const html = rows.map(item =>
+          `<span class="commentary-item">${escapeHtml(item)}</span>`
+        ).join('');
+        content.innerHTML = html;
+        if (dup) dup.innerHTML = html;
+        if (typeof updateBannerOffset === 'function') updateBannerOffset();
+      }
+
       function renderNextKickoff(nextKickoff) {
         if (!liveTopBar || !countdownPanel) return;
         const labelEl = document.getElementById('countdown-label');
@@ -366,6 +399,9 @@
         renderSpotlight(data.spotlight);
         if (!data.commentary) {
           renderNextKickoff(data.next_kickoff);
+          renderIdleTicker(data.idle_ticker);
+        } else {
+          renderIdleTicker([]);
         }
       }
 

@@ -299,6 +299,8 @@ def next_scheduled_kickoff(matches, now: datetime | None = None) -> dict | None:
         "match_id": match["id"],
         "home_team": match["home_team"],
         "away_team": match["away_team"],
+        "match_date": match["match_date"],
+        "match_time": match["match_time"],
         "iso": kickoff.isoformat(),
         "display": (
             f"{match['home_team']} vs {match['away_team']} · "

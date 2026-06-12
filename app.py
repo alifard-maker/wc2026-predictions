@@ -47,7 +47,7 @@ from team_data import get_match_context
 from team_flags import get_flag_codes_for_js, get_flag_url
 from prediction_simulation import build_predicted_tournament_view
 from tournament_standings import build_tournament_view, tournament_view_for_json
-from live_commentary import build_live_commentary, commentary_for_json
+from live_commentary import build_idle_ticker, build_live_commentary, commentary_for_json
 from match_spotlight import build_pool_spotlight, spotlight_for_json
 from team_groups import get_group_preview
 from team_history import get_coach_wc_record, get_team_history_bundle
@@ -73,7 +73,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.2"
+APP_VERSION = "Beta 3.3"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -154,6 +154,7 @@ def inject_public_url():
         "wc_titles": get_wc_titles,
         "match_spotlight": None,
         "live_commentary": None,
+        "idle_ticker": [],
         "match_detail_url": match_detail_url,
         "team_page_url": team_page_url,
         "player_page_url": player_page_url,
@@ -165,7 +166,9 @@ def inject_public_url():
         raw_matches = db.get_all_matches()
         matches = enrich_matches(raw_matches)
         ctx["match_spotlight"] = build_pool_spotlight(pool_id, matches)
-        ctx["live_commentary"] = build_live_commentary(matches)
+        ctx["live_commentary"] = build_live_commentary(matches, pool_id, raw_matches)
+        if not ctx["live_commentary"]:
+            ctx["idle_ticker"] = build_idle_ticker(pool_id, matches, raw_matches, now)
         lb = db.get_leaderboard(pool_id)
         ctx["top_leaderboard"] = lb[:5]
         ctx["leader_message"] = db.get_leader_message(lb)
@@ -1060,11 +1063,19 @@ def matches_live_feed(invite_code):
     matches = enrich_matches(db.get_all_matches(), predictions)
     live = [m for m in matches if m["is_live"]]
     spotlight = build_pool_spotlight(pool["id"], matches)
-    commentary = build_live_commentary(matches)
-    next_k = next_scheduled_kickoff(db.get_all_matches(), datetime.now(TIMEZONE))
+    raw_matches = db.get_all_matches()
+    now = datetime.now(TIMEZONE)
+    commentary = build_live_commentary(matches, pool["id"], raw_matches)
+    idle_ticker = (
+        build_idle_ticker(pool["id"], matches, raw_matches, now)
+        if not commentary
+        else []
+    )
+    next_k = next_scheduled_kickoff(raw_matches, now)
     return jsonify({
         "live_count": len(live),
         "commentary": commentary_for_json(commentary),
+        "idle_ticker": idle_ticker,
         "next_kickoff": next_k,
         "spotlight": spotlight_for_json(spotlight, session.get("user_id")),
         "matches": [
