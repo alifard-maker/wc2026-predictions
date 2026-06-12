@@ -275,11 +275,16 @@ def opening_kickoff_iso() -> str:
     return kickoff.isoformat()
 
 
-def next_scheduled_kickoff(matches: list[dict], now: datetime | None = None) -> dict | None:
+def _match_row_dict(row) -> dict:
+    return dict(row) if not isinstance(row, dict) else row
+
+
+def next_scheduled_kickoff(matches, now: datetime | None = None) -> dict | None:
     """Soonest fixture that has not kicked off yet."""
     now = now or datetime.now(TIMEZONE)
     best: tuple[datetime, dict] | None = None
-    for row in matches:
+    for raw in matches:
+        row = _match_row_dict(raw)
         if row.get("actual_home") is not None:
             continue
         kickoff = parse_match_datetime(row["match_date"], row["match_time"])
