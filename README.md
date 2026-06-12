@@ -8,7 +8,7 @@ A private online prediction league for FIFA World Cup 2026. Create a pool, share
 - **Shareable invite link** — `/join/<code>`
 - **Tagged predictions** — every pick is tied to your display name
 - **Automatic scoring** — exact score = 5 pts, correct result = 2 pts, wrong = 0
-- **Deadline enforcement** — predictions lock **24 hours** before kickoff
+- **Deadline enforcement** — predictions lock **1 hour** before kickoff
 - **Live leaderboard** — updates when the admin enters results
 - **Knockout rounds** — add matches later as teams are confirmed
 

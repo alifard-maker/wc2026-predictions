@@ -150,11 +150,11 @@ def compute_achievements(user_id: int, pool_id: int, preds: list[dict] | None = 
             submitted = datetime.strptime(p["submitted_at"][:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=TIMEZONE)
         except ValueError:
             continue
-        if deadline - submitted <= timedelta(hours=1):
+        if deadline - submitted <= timedelta(minutes=15):
             clutch = True
             break
     if clutch:
-        badges.append({"key": "clutch", "emoji": "⏱️", "title": "Clutch", "desc": "Submitted within 1 hour of deadline"})
+        badges.append({"key": "clutch", "emoji": "⏱️", "title": "Clutch", "desc": "Submitted within 15 minutes of deadline"})
 
     if any(p.get("is_bold") and p["points"] and p["points"] >= 10 for p in finished):
         badges.append({"key": "bold_hero", "emoji": "🎰", "title": "Bold Hero", "desc": "Nailed a 2× bold exact score"})

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 TIMEZONE = ZoneInfo("America/New_York")
-PREDICTION_DEADLINE_BEFORE_KICKOFF = timedelta(hours=24)
+PREDICTION_DEADLINE_BEFORE_KICKOFF = timedelta(hours=1)
 
 
 def parse_match_datetime(date_str: str, time_str: str) -> datetime:
@@ -10,7 +10,7 @@ def parse_match_datetime(date_str: str, time_str: str) -> datetime:
 
 
 def prediction_deadline(date_str: str, time_str: str) -> datetime:
-    """Predictions close 24 hours before kickoff (ET)."""
+    """Predictions close 1 hour before kickoff (ET)."""
     kickoff = parse_match_datetime(date_str, time_str)
     return kickoff - PREDICTION_DEADLINE_BEFORE_KICKOFF
 

@@ -72,7 +72,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 2.7"
+APP_VERSION = "Beta 2.8"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -314,7 +314,7 @@ def enrich_matches(matches, user_predictions=None):
         d["deadline"] = prediction_deadline(m["match_date"], m["match_time"])
         d["open"] = is_prediction_open(m["match_date"], m["match_time"], now)
         d["deadline_urgent"] = (
-            d["open"] and timedelta(0) < (d["deadline"] - now) <= timedelta(hours=1)
+            d["open"] and timedelta(0) < (d["deadline"] - now) <= timedelta(minutes=15)
         )
         if user_predictions and m["id"] in user_predictions:
             pred = user_predictions[m["id"]]
@@ -669,7 +669,7 @@ def submit_predictions(invite_code):
     if saved:
         flash(f"Saved {saved} prediction(s).", "success")
     if blocked:
-        flash(f"{blocked} prediction(s) were past the deadline (24 hours before kickoff).", "error")
+        flash(f"{blocked} prediction(s) were past the deadline (1 hour before kickoff).", "error")
     if not saved and not blocked:
         flash("No predictions to save.", "error")
 
