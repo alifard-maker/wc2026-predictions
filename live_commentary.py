@@ -8,7 +8,6 @@ from engagement import build_match_consensus, picks_revealed
 from live_scores import (
     format_halftime_label,
     is_match_in_progress,
-    next_scheduled_kickoff,
     sanitize_goal_minute_label,
     sanitize_minute_label,
 )
@@ -20,22 +19,6 @@ def _sort_key(minute: int | None, injury: int | None = None, fallback: int = 0) 
     if injury:
         base += injury
     return base or fallback
-
-
-def _kickoff_countdown_label(kickoff: datetime, now: datetime) -> str:
-    diff = kickoff - now
-    secs = int(diff.total_seconds())
-    if secs <= 0:
-        return "starting soon"
-    mins = secs // 60
-    if mins < 60:
-        return f"in {mins} min"
-    hours = mins // 60
-    rem = mins % 60
-    if hours < 24:
-        return f"in {hours}h {rem}m" if rem else f"in {hours}h"
-    days = hours // 24
-    return f"in {days}d {hours % 24}h"
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -122,81 +105,12 @@ def _pool_consensus_ticker_items(pool_id: int, match: dict) -> list[str]:
     return items
 
 
-def _next_kickoff_ticker_item(
-    raw_matches,
-    now: datetime,
-    exclude_match_id: int | None = None,
-) -> str | None:
-    next_k = next_scheduled_kickoff(raw_matches, now)
-    if not next_k:
-        return None
-    if exclude_match_id and next_k["match_id"] == exclude_match_id:
-        return None
-    try:
-        kickoff = datetime.fromisoformat(next_k["iso"])
-    except (TypeError, ValueError, KeyError):
-        kickoff = None
-    countdown = _kickoff_countdown_label(kickoff, now) if kickoff else "soon"
-    return (
-        f"⏱ {next_k['home_team']} vs {next_k['away_team']} kicks off {countdown}"
-    )
-
-
-def _pool_extras_for_live(
-    pool_id: int,
-    match: dict,
-    enriched_matches: list[dict],
-    raw_matches,
-    now: datetime,
-) -> list[str]:
+def _pool_extras_for_live(pool_id: int, match: dict) -> list[str]:
     extras: list[str] = []
-
     extras.extend(_pool_consensus_ticker_items(pool_id, match))
     extras.extend(_pool_pick_ticker_items(pool_id, match))
     extras.extend(_pool_comment_ticker_items(pool_id, match["id"]))
-
-    next_line = _next_kickoff_ticker_item(raw_matches, now, exclude_match_id=match["id"])
-    if next_line:
-        extras.append(next_line)
-
     return extras
-
-
-def build_idle_ticker(
-    pool_id: int,
-    enriched_matches: list[dict],
-    raw_matches,
-    now: datetime | None = None,
-) -> list[str]:
-    """Ticker lines when no match is live — pool and schedule."""
-    now = now or datetime.now(TIMEZONE)
-    items: list[str] = []
-
-    next_line = _next_kickoff_ticker_item(raw_matches, now)
-    if next_line:
-        items.append(next_line)
-
-    open_matches = [m for m in enriched_matches if m.get("open")]
-    if open_matches:
-        items.append(
-            f"✏️ {len(open_matches)} match{'es' if len(open_matches) != 1 else ''} still open for picks"
-        )
-
-    finished = [m for m in enriched_matches if m.get("is_finished")]
-    if finished:
-        latest = max(finished, key=lambda m: m.get("kickoff") or datetime.min.replace(tzinfo=TIMEZONE))
-        items.append(
-            f"🏁 Latest: {latest['home_team']} {latest['display_home']}–{latest['display_away']} {latest['away_team']}"
-        )
-
-    from db import get_leaderboard
-
-    lb = get_leaderboard(pool_id)
-    if lb and lb[0].get("total_points", 0) > 0:
-        leader = lb[0]
-        items.append(f"🏆 Pool leader: {leader['display_name']} ({leader['total_points']} pts)")
-
-    return items
 
 
 def _events_for_match(match: dict) -> list[dict]:
@@ -390,16 +304,9 @@ def _active_live_matches(enriched_matches: list[dict], now: datetime | None = No
     return live
 
 
-def _raw_matches_list(raw_matches) -> list[dict]:
-    from live_scores import _match_row_dict
-
-    return [_match_row_dict(m) for m in raw_matches]
-
-
 def build_live_commentary(
     enriched_matches: list[dict],
     pool_id: int | None = None,
-    raw_matches=None,
 ) -> dict | None:
     """Primary live match commentary for the top banner."""
     now = datetime.now(TIMEZONE)
@@ -407,22 +314,11 @@ def build_live_commentary(
     if not live:
         return None
 
-    raw = _raw_matches_list(raw_matches) if raw_matches is not None else []
     live.sort(key=lambda m: m.get("kickoff") or datetime.min.replace(tzinfo=TIMEZONE))
     primary = live[0]
 
-    extras: list[str] = []
-    if pool_id:
-        extras = _pool_extras_for_live(pool_id, primary, enriched_matches, raw, now)
-
-    result = commentary_for_match(primary, extras)
-    if len(live) > 1:
-        others = [f"{m['home_team']} v {m['away_team']}" for m in live[1:]]
-        result["also_live"] = others
-        result["ticker_items"] = result["ticker_items"] + [
-            f"📺 Also live: {name}" for name in others
-        ]
-    return result
+    extras = _pool_extras_for_live(pool_id, primary) if pool_id else []
+    return commentary_for_match(primary, extras)
 
 
 def commentary_for_json(commentary: dict | None) -> dict | None:
