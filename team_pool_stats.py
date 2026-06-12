@@ -9,6 +9,10 @@ from db import get_all_matches, get_pool_predictions_summary
 from scoring import calculate_points
 
 
+def _rows_to_dicts(rows) -> list[dict]:
+    return [dict(r) for r in rows]
+
+
 def _team_matches(team_name: str) -> list[dict]:
     return [
         dict(m)
@@ -115,6 +119,7 @@ def get_team_live_tournament_stats(team_name: str) -> dict:
             """,
             (team_name, team_name),
         ).fetchall()
+        goals = _rows_to_dicts(goals)
 
         cards = conn.execute(
             """
@@ -127,6 +132,7 @@ def get_team_live_tournament_stats(team_name: str) -> dict:
             """,
             (team_name,),
         ).fetchall()
+        cards = _rows_to_dicts(cards)
 
         results = conn.execute(
             """
@@ -149,6 +155,7 @@ def get_team_live_tournament_stats(team_name: str) -> dict:
             """,
             (team_name, team_name),
         ).fetchall()
+        penalties = _rows_to_dicts(penalties)
 
     scorer_counts: Counter = Counter()
     goal_list = []
