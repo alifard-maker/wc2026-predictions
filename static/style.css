@@ -2430,12 +2430,46 @@ a.bracket-match:hover {
   border-bottom: 1px solid var(--border);
 }
 
-.live-top-bar.live-top-bar--match {
+.live-top-bar.hidden {
+  display: none;
+}
+
+.live-banners-stack {
+  display: flex;
+  flex-direction: column;
   border-bottom: 2px solid rgba(255, 214, 0, 0.55);
 }
 
-.live-top-bar.hidden {
+.live-banners-stack.hidden {
   display: none;
+}
+
+.live-banners-stack .commentary-banner {
+  border-bottom: 1px solid rgba(255, 214, 0, 0.28);
+}
+
+.live-banners-stack .commentary-banner:last-child {
+  border-bottom: none;
+}
+
+.live-banners-stack--multi .commentary-banner {
+  min-height: 2.35rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.live-banners-stack--multi .commentary-label {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-banners-stack--multi .commentary-content {
+  font-size: 0.8rem;
+  gap: 1.5rem;
+}
+
+.live-banners-stack--multi .commentary-track {
+  animation-duration: 38s;
 }
 
 .countdown-panel {
@@ -3146,11 +3180,16 @@ a.bracket-match:hover {
     line-height: 1.3;
   }
 
-  .live-top-bar .commentary-banner {
+  .live-banners-stack .commentary-banner {
     flex-wrap: wrap;
     padding: 0.4rem 0.65rem;
     gap: 0.35rem 0.5rem;
     min-height: auto;
+  }
+
+  .live-banners-stack--multi .commentary-label {
+    max-width: 7rem;
+    font-size: 0.68rem;
   }
 
   .commentary-scoreline {

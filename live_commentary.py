@@ -304,21 +304,42 @@ def _active_live_matches(enriched_matches: list[dict], now: datetime | None = No
     return live
 
 
+def build_live_commentaries(
+    enriched_matches: list[dict],
+    pool_id: int | None = None,
+) -> list[dict]:
+    """One commentary banner per match that is live in parallel."""
+    now = datetime.now(TIMEZONE)
+    live = _active_live_matches(enriched_matches, now)
+    if not live:
+        return []
+
+    live.sort(
+        key=lambda m: (
+            m.get("kickoff") or datetime.min.replace(tzinfo=TIMEZONE),
+            m.get("id") or 0,
+        ),
+    )
+    commentaries: list[dict] = []
+    for match in live:
+        extras = _pool_extras_for_live(pool_id, match) if pool_id else []
+        row = commentary_for_match(match, extras)
+        row["match_label"] = f"{match['home_team']} vs {match['away_team']}"
+        commentaries.append(row)
+    return commentaries
+
+
 def build_live_commentary(
     enriched_matches: list[dict],
     pool_id: int | None = None,
 ) -> dict | None:
-    """Primary live match commentary for the top banner."""
-    now = datetime.now(TIMEZONE)
-    live = _active_live_matches(enriched_matches, now)
-    if not live:
-        return None
+    """First live match commentary (compat)."""
+    commentaries = build_live_commentaries(enriched_matches, pool_id)
+    return commentaries[0] if commentaries else None
 
-    live.sort(key=lambda m: m.get("kickoff") or datetime.min.replace(tzinfo=TIMEZONE))
-    primary = live[0]
 
-    extras = _pool_extras_for_live(pool_id, primary) if pool_id else []
-    return commentary_for_match(primary, extras)
+def commentaries_for_json(commentaries: list[dict]) -> list[dict]:
+    return [row for row in (commentary_for_json(c) for c in commentaries) if row]
 
 
 def commentary_for_json(commentary: dict | None) -> dict | None:
@@ -337,6 +358,6 @@ def commentary_for_json(commentary: dict | None) -> dict | None:
         "headline": commentary["headline"],
         "latest": commentary["latest"],
         "ticker_items": commentary["ticker_items"],
-        "also_live": commentary.get("also_live") or [],
+        "match_label": commentary.get("match_label"),
         "mode": commentary.get("mode", "live"),
     }
