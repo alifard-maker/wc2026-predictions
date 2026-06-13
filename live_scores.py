@@ -119,15 +119,14 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             minute_label = format_halftime_label(kickoff, now)
         else:
             status = "live"
-            if live_minute is None:
-                second_half_start = _second_half_start_for_match(m.get("id"))
-                live_minute, live_injury_minute = effective_live_minute(
-                    kickoff,
-                    now,
-                    live_minute,
-                    live_injury_minute,
-                    second_half_start,
-                )
+            second_half_start = _second_half_start_for_match(m.get("id"))
+            live_minute, live_injury_minute = effective_live_minute(
+                kickoff,
+                now,
+                live_minute,
+                live_injury_minute,
+                second_half_start,
+            )
             minute_label = sanitize_minute_label(
                 format_minute(
                     live_minute,
@@ -235,7 +234,13 @@ def effective_live_minute(
         return stored_minute, stored_injury
 
     if stored_minute is not None and elapsed <= FIRST_HALF_MINUTES:
-        return stored_minute, None
+        kickoff_minute = minute_from_kickoff(kickoff, now)
+        if kickoff_minute is None:
+            # Sub-minute: API clocks often jump ahead right at kickoff.
+            return min(stored_minute, 1), stored_injury
+        if stored_minute > kickoff_minute:
+            return kickoff_minute, stored_injury
+        return stored_minute, stored_injury
 
     kickoff_minute = minute_from_kickoff(kickoff, now)
     if elapsed <= 60:

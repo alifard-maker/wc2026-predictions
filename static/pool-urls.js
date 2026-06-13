@@ -35,8 +35,10 @@
     if (!kickoffIso) return null;
     const kickoff = new Date(kickoffIso);
     if (Number.isNaN(kickoff.getTime())) return null;
-    const elapsedMins = Math.floor((Date.now() - kickoff.getTime()) / 60000);
-    if (elapsedMins <= 0) return null;
+    const elapsedMs = Date.now() - kickoff.getTime();
+    if (elapsedMs <= 0) return null;
+    const elapsedMins = Math.floor(elapsedMs / 60000);
+    if (elapsedMins <= 0) return "1'";
     if (elapsedMins <= 45) return `${elapsedMins}'`;
     if (elapsedMins <= 60) return 'HT';
     return `${Math.min(90, 45 + elapsedMins - 60)}'`;
@@ -53,8 +55,16 @@
     if (status === 'halftime' || cleaned.startsWith('HT')) {
       return cleaned.startsWith('HT') ? cleaned : 'HT';
     }
-    // Trust server-synced minute from ESPN/API polling.
+    // Trust server-synced minute from ESPN/API polling, but never ahead of kickoff wall clock.
     if (cleaned && cleaned !== 'LIVE' && cleaned !== 'Soon' && cleaned.endsWith("'")) {
+      const derived = deriveLiveMinuteFromKickoff(kickoffIso);
+      if (derived && derived !== 'HT') {
+        const shown = parseInt(cleaned, 10);
+        const wall = parseInt(derived, 10);
+        if (!Number.isNaN(shown) && !Number.isNaN(wall) && shown > wall) {
+          return derived;
+        }
+      }
       return cleaned;
     }
     const derived = deriveLiveMinuteFromKickoff(kickoffIso);
