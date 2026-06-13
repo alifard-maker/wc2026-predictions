@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.16"
+APP_VERSION = "Beta 3.17"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -332,10 +332,12 @@ def match_show_result(match: dict, raw: dict | None = None, now: datetime | None
 
 
 def match_is_finished_display(match: dict) -> bool:
-    """True only when kickoff has passed and a final result is recorded."""
+    """True only when kickoff has passed and the match has a final result."""
     if match.get("is_live"):
         return False
-    if match.get("actual_home") is None or match.get("actual_away") is None:
+    if not match.get("is_finished"):
+        return False
+    if match.get("display_home") is None or match.get("display_away") is None:
         return False
     kickoff = match.get("kickoff")
     if kickoff is None:
@@ -396,6 +398,9 @@ def enrich_matches(matches, user_predictions=None):
         d["penalties"] = db.get_match_penalties(m["id"])
         _fill_result_display(d, raw, now)
         d["show_result"] = match_show_result(d, raw, now)
+        if datetime.now(TIMEZONE) < d["kickoff"] and (raw.get("actual_home") is not None or d.get("is_finished")):
+            d["is_finished"] = False
+            d["show_result"] = match_show_result(d, raw, now)
         d["collapsible_finished"] = match_is_finished_display(d)
         enriched.append(d)
     return enriched
@@ -633,13 +638,16 @@ def pool_dashboard(invite_code):
 
     db.sync_ai_predictions(pool["id"])
     db.sync_ai_tournament_vote(pool["id"])
+    db.repair_fixture_schedules()
     db.repair_premature_results()
     user_id = session["user_id"]
     matches = db.get_all_matches()
     predictions = db.get_user_predictions(user_id)
     enriched = enrich_matches(matches, predictions)
     enriched = sort_matches_for_dashboard(enriched)
-    finished_count = sum(1 for m in enriched if match_is_finished_display(m))
+    active_matches = [m for m in enriched if not m["collapsible_finished"]]
+    finished_matches = [m for m in enriched if m["collapsible_finished"]]
+    finished_count = len(finished_matches)
     leaderboard = db.get_leaderboard(pool["id"])
 
     open_count = sum(1 for m in enriched if m["open"])
@@ -652,6 +660,8 @@ def pool_dashboard(invite_code):
         "dashboard.html",
         pool=pool,
         matches=enriched,
+        active_matches=active_matches,
+        finished_matches=finished_matches,
         finished_count=finished_count,
         leaderboard=leaderboard,
         leader_message=db.get_leader_message(leaderboard),

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>{% block title %}WC 2026 Predictions{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version | replace(' ', '-') }}">
   <script src="{{ url_for('static', filename='pool-urls.js') }}"></script>
 </head>
 <body{% if session.get('invite_code') %} data-pool-code="{{ session.invite_code }}"{% endif %} data-team-slugs='{{ team_slugs_json | e }}'>

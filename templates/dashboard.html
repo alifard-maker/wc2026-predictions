@@ -20,6 +20,8 @@
   <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
   {% elif m.open %}
   <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+  {% elif not is_finished_row %}
+  <span class="badge badge-awaiting">Picks locked · kicks off {{ m.kickoff.strftime('%a %d %b, %H:%M') }} ET</span>
   {% else %}
   <span class="badge badge-closed">Closed</span>
   {% endif %}
@@ -226,45 +228,12 @@
   <button type="button" data-filter="group">By Group</button>
 </div>
 
-{% if finished_count > 0 %}
-<div class="fixture-finished-toolbar" id="finished-toolbar">
-  <span class="fixture-finished-toolbar-label">{{ finished_count }} finished match{{ 'es' if finished_count != 1 else '' }} — tap ▸ to expand</span>
-  <button type="button" class="btn btn-secondary btn-sm" id="expand-all-finished">Expand all</button>
-  <button type="button" class="btn btn-secondary btn-sm" id="collapse-all-finished">Collapse all</button>
-</div>
-{% endif %}
-
 <form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
-  <div class="fixture-list">
-    {% for m in matches %}
-    {% set is_finished_row = m.collapsible_finished %}
-    {% if is_finished_row %}
-    <details class="fixture-details-card locked fixture-finished{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-finished="1">
-      <summary class="fixture-summary">
-        <span class="fixture-summary-arrow" aria-hidden="true">▸</span>
-        <span class="fixture-summary-teams">
-          <span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
-          <span class="fixture-summary-vs">vs</span>
-          <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
-        </span>
-        <span class="fixture-summary-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
-        {% if m.prediction and m.prediction.points is not none %}
-        <span class="fixture-summary-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
-        {% elif m.prediction %}
-        <span class="fixture-summary-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
-        {% else %}
-        <span class="fixture-summary-pts"></span>
-        {% endif %}
-      </summary>
-      <div class="fixture fixture-details-body">
-        {{ render_fixture_content(m, is_finished_row) }}
-      </div>
-    </details>
-    {% else %}
-    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open and not is_finished_row %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
-      {{ render_fixture_content(m, is_finished_row) }}
+  <div class="fixture-list fixture-list-active" id="active-fixtures">
+    {% for m in active_matches %}
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
+      {{ render_fixture_content(m, false) }}
     </div>
-    {% endif %}
     {% endfor %}
   </div>
 
@@ -279,6 +248,41 @@
   </div>
   {% endif %}
 </form>
+
+{% if finished_count > 0 %}
+<div class="fixture-finished-toolbar" id="finished-toolbar">
+  <span class="fixture-finished-toolbar-label">{{ finished_count }} finished — tap ▸ on any row to see goals, cards &amp; picks</span>
+  <button type="button" class="btn btn-secondary btn-sm" id="expand-all-finished">Expand all</button>
+  <button type="button" class="btn btn-secondary btn-sm" id="collapse-all-finished">Collapse all</button>
+</div>
+<div class="fixture-list fixture-list-finished" id="finished-fixtures">
+  {% for m in finished_matches %}
+  <div class="finished-match-card locked fixture-finished{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-collapsed="1">
+    <button type="button" class="finished-match-toggle" aria-expanded="false" aria-controls="finished-panel-{{ m.id }}">
+      <span class="finished-match-arrow" aria-hidden="true">▸</span>
+      <span class="finished-match-teams">
+        <span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
+        <span class="finished-match-vs">vs</span>
+        <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+      </span>
+      <span class="finished-match-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
+      {% if m.prediction and m.prediction.points is not none %}
+      <span class="finished-match-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
+      {% elif m.prediction %}
+      <span class="finished-match-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
+      {% else %}
+      <span class="finished-match-pts"></span>
+      {% endif %}
+    </button>
+    <div class="finished-match-panel" id="finished-panel-{{ m.id }}" hidden>
+      <div class="fixture fixture-finished-expanded">
+        {{ render_fixture_content(m, true) }}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -302,7 +306,7 @@
         tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const f = btn.dataset.filter;
-        document.querySelectorAll('.fixture-list [data-match-id]').forEach(el => {
+        document.querySelectorAll('#active-fixtures [data-match-id], #finished-fixtures [data-match-id]').forEach(el => {
           if (f === 'all') { el.style.display = ''; return; }
           if (f === 'group') { el.style.display = el.dataset.stage === 'group' ? '' : 'none'; return; }
           el.style.display = el.dataset.matchday === f ? '' : 'none';
@@ -311,14 +315,32 @@
     });
   }
 
+  function setFinishedCollapsed(card, collapsed) {
+    if (!card) return;
+    card.dataset.collapsed = collapsed ? '1' : '0';
+    const panel = card.querySelector('.finished-match-panel');
+    const btn = card.querySelector('.finished-match-toggle');
+    if (panel) panel.hidden = collapsed;
+    if (btn) btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  }
+
+  document.getElementById('finished-fixtures')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.finished-match-toggle');
+    if (!btn) return;
+    e.preventDefault();
+    const card = btn.closest('.finished-match-card');
+    if (!card) return;
+    setFinishedCollapsed(card, card.dataset.collapsed === '1' ? false : true);
+  });
+
   document.getElementById('expand-all-finished')?.addEventListener('click', (e) => {
     e.preventDefault();
-    document.querySelectorAll('details.fixture-details-card').forEach(d => { d.open = true; });
+    document.querySelectorAll('.finished-match-card').forEach(card => setFinishedCollapsed(card, false));
   });
 
   document.getElementById('collapse-all-finished')?.addEventListener('click', (e) => {
     e.preventDefault();
-    document.querySelectorAll('details.fixture-details-card').forEach(d => { d.open = false; });
+    document.querySelectorAll('.finished-match-card').forEach(card => setFinishedCollapsed(card, true));
   });
 
   function updateFinishedSummary(m) {
@@ -413,7 +435,7 @@
   }
 
   function applySpotlight(spotlight) {
-    document.querySelectorAll('.fixture-list [data-match-id]').forEach(el => {
+    document.querySelectorAll('#active-fixtures [data-match-id], #finished-fixtures [data-match-id]').forEach(el => {
       el.classList.remove('fixture-spotlight');
     });
     document.querySelectorAll('[data-fixture-winners]').forEach(el => el.remove());

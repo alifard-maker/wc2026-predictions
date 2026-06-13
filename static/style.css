@@ -463,51 +463,45 @@ select:focus {
   display: contents;
 }
 
-.fixture-details-card {
-  display: block;
+.finished-match-card {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  position: relative;
 }
 
-.fixture-details-card.locked {
-  opacity: 0.85;
-}
-
-.fixture-summary {
+.finished-match-toggle {
+  width: 100%;
   display: grid;
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 0.5rem 1rem;
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  list-style: none;
+  padding: 0.85rem 1rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.fixture-summary::-webkit-details-marker {
-  display: none;
+.finished-match-toggle:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.fixture-summary::marker {
-  display: none;
-  content: '';
-}
-
-.fixture-summary-arrow {
-  font-size: 0.95rem;
+.finished-match-arrow {
+  font-size: 1rem;
   color: var(--accent);
   transition: transform 0.15s ease;
   line-height: 1;
 }
 
-.fixture-details-card[open] .fixture-summary-arrow {
+.finished-match-card[data-collapsed="0"] .finished-match-arrow {
   transform: rotate(90deg);
 }
 
-.fixture-summary-teams {
+.finished-match-teams {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -516,36 +510,36 @@ select:focus {
   min-width: 0;
 }
 
-.fixture-summary-vs {
+.finished-match-vs {
   color: var(--muted);
   font-size: 0.85rem;
 }
 
-.fixture-summary-score {
+.finished-match-score {
   font-weight: 700;
   font-size: 1.05rem;
   white-space: nowrap;
 }
 
-.fixture-summary-pts {
+.finished-match-pts {
   font-size: 0.85rem;
   white-space: nowrap;
   min-width: 4rem;
   text-align: right;
 }
 
-.fixture-details-body {
+.finished-match-panel {
   border-top: 1px solid var(--border);
+}
+
+.fixture-finished-expanded {
+  border: none;
   border-radius: 0;
   margin: 0;
 }
 
-.fixture-details-card .fixture-hit-area {
-  pointer-events: none;
-}
-
-.fixture-details-card .fixture-match-link {
-  pointer-events: auto;
+.fixture-list-finished {
+  margin-bottom: 2rem;
 }
 
 .fixture-finished-toolbar {
@@ -553,11 +547,17 @@ select:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  margin: 0.75rem 0 1rem;
+  margin: 2rem 0 1rem;
   padding: 0.65rem 1rem;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+.badge-awaiting {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.35);
 }
 
 .fixture-finished-toolbar-label {
@@ -3217,18 +3217,18 @@ a.bracket-match:hover {
     justify-content: center;
   }
 
-  .fixture-summary {
+  .finished-match-toggle {
     grid-template-columns: auto 1fr;
     gap: 0.5rem 0.75rem;
   }
 
-  .fixture-summary-score,
-  .fixture-summary-pts {
+  .finished-match-score,
+  .finished-match-pts {
     grid-column: 2;
     text-align: center;
   }
 
-  .fixture-summary-pts {
+  .finished-match-pts {
     min-width: 0;
   }
 
