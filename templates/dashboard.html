@@ -305,7 +305,11 @@
 
   function setFixtureCollapsed(fixture, collapsed) {
     if (!fixture || fixture.dataset.finished !== '1') return;
-    fixture.classList.toggle('fixture-is-collapsed', Boolean(collapsed));
+    if (collapsed) {
+      fixture.classList.add('fixture-is-collapsed');
+    } else {
+      fixture.classList.remove('fixture-is-collapsed');
+    }
     fixture.querySelectorAll('.fixture-collapse-btn').forEach(btn => {
       btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       btn.title = collapsed ? 'Show match details' : 'Hide match details';
@@ -313,7 +317,7 @@
   }
 
   document.querySelector('.fixture-list')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('.fixture-collapse-btn');
+    const btn = e.target.closest?.('.fixture-collapse-btn');
     if (!btn) return;
     e.preventDefault();
     e.stopPropagation();
@@ -322,17 +326,23 @@
     setFixtureCollapsed(fixture, !fixture.classList.contains('fixture-is-collapsed'));
   });
 
-  document.getElementById('finished-toolbar')?.addEventListener('click', (e) => {
-    if (e.target.closest('#expand-all-finished')) {
+  const expandAllBtn = document.getElementById('expand-all-finished');
+  if (expandAllBtn) {
+    expandAllBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, false));
-      return;
-    }
-    if (e.target.closest('#collapse-all-finished')) {
+    });
+  }
+
+  const collapseAllBtn = document.getElementById('collapse-all-finished');
+  if (collapseAllBtn) {
+    collapseAllBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, true));
-    }
-  });
+    });
+  }
 
   function markFixtureFinished(fixture) {
     if (!fixture || fixture.dataset.finished === '1') return;
