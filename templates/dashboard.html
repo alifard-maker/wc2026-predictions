@@ -139,7 +139,7 @@
 
 {% if finished_count > 0 %}
 <div class="fixture-finished-toolbar" id="finished-toolbar">
-  <span class="fixture-finished-toolbar-label">{{ finished_count }} finished — collapsed by default</span>
+  <span class="fixture-finished-toolbar-label">{{ finished_count }} finished match{{ 'es' if finished_count != 1 else '' }} — tap ▸ to expand</span>
   <button type="button" class="btn btn-secondary btn-sm" id="expand-all-finished">Expand all</button>
   <button type="button" class="btn btn-secondary btn-sm" id="collapse-all-finished">Collapse all</button>
 </div>
@@ -148,7 +148,7 @@
 <form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
   <div class="fixture-list">
     {% for m in matches %}
-    {% set is_finished_row = (m.is_finished or m.show_result) and not m.is_live %}
+    {% set is_finished_row = m.collapsible_finished %}
     <div class="fixture {% if not m.open %}locked{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}{% if is_finished_row %} fixture-finished fixture-is-collapsed{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}"{% if is_finished_row %} data-finished="1"{% endif %}>
       {% if is_finished_row %}
       <div class="fixture-compact" aria-hidden="false">
@@ -182,7 +182,7 @@
         <span>{{ m.venue }}</span>
         {% if m.is_live %}
         <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
-        {% elif m.is_finished or m.show_result %}
+        {% elif is_finished_row %}
         <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
         {% elif m.open %}
         <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
@@ -288,49 +288,59 @@
   });
 
   const tabs = document.getElementById('matchday-tabs');
-  tabs.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const f = btn.dataset.filter;
-      document.querySelectorAll('.fixture').forEach(el => {
-        if (f === 'all') { el.style.display = ''; return; }
-        if (f === 'group') { el.style.display = el.dataset.stage === 'group' ? '' : 'none'; return; }
-        el.style.display = el.dataset.matchday === f ? '' : 'none';
+  if (tabs) {
+    tabs.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const f = btn.dataset.filter;
+        document.querySelectorAll('.fixture').forEach(el => {
+          if (f === 'all') { el.style.display = ''; return; }
+          if (f === 'group') { el.style.display = el.dataset.stage === 'group' ? '' : 'none'; return; }
+          el.style.display = el.dataset.matchday === f ? '' : 'none';
+        });
       });
     });
-  });
+  }
 
   function setFixtureCollapsed(fixture, collapsed) {
-    if (!fixture || !fixture.dataset.finished) return;
-    fixture.classList.toggle('fixture-is-collapsed', collapsed);
+    if (!fixture || fixture.dataset.finished !== '1') return;
+    fixture.classList.toggle('fixture-is-collapsed', Boolean(collapsed));
     fixture.querySelectorAll('.fixture-collapse-btn').forEach(btn => {
       btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       btn.title = collapsed ? 'Show match details' : 'Hide match details';
     });
   }
 
-  document.querySelectorAll('.fixture-collapse-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  document.querySelector('.fixture-list')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.fixture-collapse-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const fixture = btn.closest('.fixture');
+    if (!fixture) return;
+    setFixtureCollapsed(fixture, !fixture.classList.contains('fixture-is-collapsed'));
+  });
+
+  document.getElementById('finished-toolbar')?.addEventListener('click', (e) => {
+    if (e.target.closest('#expand-all-finished')) {
       e.preventDefault();
-      e.stopPropagation();
-      const fixture = btn.closest('.fixture');
-      setFixtureCollapsed(fixture, !fixture.classList.contains('fixture-is-collapsed'));
-    });
-  });
-
-  document.getElementById('expand-all-finished')?.addEventListener('click', () => {
-    document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, false));
-  });
-
-  document.getElementById('collapse-all-finished')?.addEventListener('click', () => {
-    document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, true));
+      document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, false));
+      return;
+    }
+    if (e.target.closest('#collapse-all-finished')) {
+      e.preventDefault();
+      document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, true));
+    }
   });
 
   function markFixtureFinished(fixture) {
-    if (!fixture || fixture.dataset.finished) return;
+    if (!fixture || fixture.dataset.finished === '1') return;
     fixture.dataset.finished = '1';
     fixture.classList.add('fixture-finished', 'fixture-is-collapsed');
+    if (!fixture.querySelector('.fixture-compact')) {
+      return;
+    }
     const toolbar = document.getElementById('finished-toolbar');
     if (toolbar) {
       const count = document.querySelectorAll('.fixture[data-finished="1"]').length;
@@ -451,11 +461,11 @@
         const minute = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
         const clock = m.status === 'halftime' ? minute : `LIVE ${minute}`;
         badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
-      } else if ((m.is_finished || m.show_result) && badge) {
+      } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
         const fixture = document.getElementById(`match-${m.id}`);
-        if (fixture && !m.is_live) markFixtureFinished(fixture);
+        if (fixture && !m.is_live && m.actual_home != null) markFixtureFinished(fixture);
       }
       if ((m.is_live || m.is_finished || m.show_result) && score) {
         updateFixtureResult(score, m);

@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.12"
+APP_VERSION = "Beta 3.13"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -332,8 +332,10 @@ def match_show_result(match: dict, raw: dict | None = None, now: datetime | None
 
 
 def match_is_finished_display(match: dict) -> bool:
-    """True when the match has a final result (not live)."""
-    return bool((match.get("is_finished") or match.get("show_result")) and not match.get("is_live"))
+    """True only when the match has a final result entered (not merely closed for picks)."""
+    if match.get("is_live"):
+        return False
+    return match.get("actual_home") is not None and match.get("actual_away") is not None
 
 
 def sort_matches_for_dashboard(matches: list[dict]) -> list[dict]:
@@ -380,6 +382,7 @@ def enrich_matches(matches, user_predictions=None):
         d["penalties"] = db.get_match_penalties(m["id"])
         _fill_result_display(d, raw, now)
         d["show_result"] = match_show_result(d, raw, now)
+        d["collapsible_finished"] = match_is_finished_display(d)
         enriched.append(d)
     return enriched
 

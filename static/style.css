@@ -530,6 +530,15 @@ select:focus {
   white-space: nowrap;
 }
 
+.fixture-finished .fixture-hit-area {
+  pointer-events: none;
+}
+
+.fixture-finished .fixture-match-link,
+.fixture-finished .fixture-collapse-btn {
+  pointer-events: auto;
+}
+
 .fixture-collapse-btn {
   flex-shrink: 0;
   display: inline-flex;
@@ -546,7 +555,7 @@ select:focus {
   font-size: 0.85rem;
   line-height: 1;
   position: relative;
-  z-index: 3;
+  z-index: 10;
 }
 
 .fixture-collapse-btn:hover {
