@@ -296,6 +296,13 @@ def _second_half_start(match_id: int) -> datetime | None:
         return None
 
 
+def _espn_authoritative_for_cards(match_id: int, db_match: dict) -> bool:
+    """Finished matches synced live from ESPN keep ESPN as the card source of truth."""
+    if db_match.get("actual_home") is None:
+        return False
+    return bool(db.get_sync_meta(f"espn_live_source_{match_id}"))
+
+
 def _espn_controls_match(match_id: int) -> bool:
     raw = db.get_sync_meta(f"espn_live_source_{match_id}")
     if not raw:
@@ -569,7 +576,11 @@ def _sync_bookings(
     match_id: int,
     api_match: dict,
     our_teams: set[str],
+    *,
+    espn_authoritative: bool = False,
 ) -> int:
+    if espn_authoritative:
+        return 0
     added = 0
     expected: list[tuple[str, str, str]] = []
     bookings = api_match.get("bookings") or []
@@ -694,7 +705,12 @@ def _process_api_match(
             result["stored_minute"] = live_minute
 
     result["goals_added"] = _sync_goals(match_id, db_match, api_match, our_teams)
-    result["cards_added"] = _sync_bookings(match_id, api_match, our_teams)
+    result["cards_added"] = _sync_bookings(
+        match_id,
+        api_match,
+        our_teams,
+        espn_authoritative=_espn_authoritative_for_cards(match_id, db_match),
+    )
     result["api_bookings"] = len(api_match.get("bookings") or [])
     result["api_goals"] = len(api_match.get("goals") or [])
     result["penalties_added"] = _sync_penalties(match_id, db_match, api_match, our_teams)
@@ -715,14 +731,15 @@ def _run_espn_sync(
 
 
 def reconcile_recorded_match_cards() -> dict:
-    """Re-fetch past match feeds so rescinded cards (e.g. VAR) are dropped from the DB."""
+    """Re-fetch ESPN for past match dates so rescinded cards (e.g. VAR) are dropped."""
+    db.repair_rescinded_var_cards()
     dates = db.match_dates_with_synced_cards()
     if not dates:
         return {"ok": True, "dates": 0}
 
     our_teams = set(db.get_distinct_teams())
     db_matches = [dict(m) for m in db.get_all_matches()]
-    result: dict = {"ok": True, "dates": len(dates), "football_data_matches": 0}
+    result: dict = {"ok": True, "dates": len(dates)}
 
     try:
         import espn_live_sync
@@ -731,18 +748,6 @@ def reconcile_recorded_match_cards() -> dict:
     except Exception as exc:
         logger.warning("Historical ESPN card sync failed: %s", exc)
         result["espn_error"] = str(exc)[:200]
-
-    if is_enabled():
-        for date in dates:
-            payload = _api_request(
-                f"/competitions/{WC_COMPETITION}/matches?dateFrom={date}&dateTo={date}",
-                unfold=UNFOLD_HEADERS,
-            )
-            for api_match in (payload or {}).get("matches") or []:
-                db_match = _find_db_match(api_match, db_matches, our_teams)
-                if db_match:
-                    _sync_bookings(db_match["id"], api_match, our_teams)
-                    result["football_data_matches"] += 1
 
     return result
 

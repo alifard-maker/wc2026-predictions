@@ -224,6 +224,7 @@ def init_db() -> None:
     merge_users_named("QueenOfPredictions")
     merge_duplicate_users()
     repair_canonical_player_scores()
+    repair_rescinded_var_cards()
 
 
 def repair_canonical_player_scores() -> None:
@@ -663,8 +664,10 @@ def align_match_schedule(match_id: int, kickoff_et) -> bool:
 def reconcile_synced_cards(
     match_id: int,
     expected: list[tuple[str, str, str]],
+    *,
+    authoritative: bool = False,
 ) -> int:
-    """Drop live-synced cards removed by the feed (e.g. VAR overturn). Returns deletions."""
+    """Drop cards removed by the feed (e.g. VAR overturn). Returns deletions."""
     normalized = {
         (player.strip(), team.strip(), card_type)
         for player, team, card_type in expected
@@ -672,14 +675,24 @@ def reconcile_synced_cards(
     }
     removed = 0
     with db() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, player_name, team, card_type
-            FROM player_cards
-            WHERE match_id = ? AND card_source = 'sync'
-            """,
-            (match_id,),
-        ).fetchall()
+        if authoritative:
+            rows = conn.execute(
+                """
+                SELECT id, player_name, team, card_type
+                FROM player_cards
+                WHERE match_id = ?
+                """,
+                (match_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, player_name, team, card_type
+                FROM player_cards
+                WHERE match_id = ? AND card_source = 'sync'
+                """,
+                (match_id,),
+            ).fetchall()
         for row in rows:
             key = (row["player_name"], row["team"], row["card_type"])
             if key not in normalized:
@@ -689,18 +702,50 @@ def reconcile_synced_cards(
 
 
 def match_dates_with_synced_cards() -> list[str]:
-    """Distinct kickoff dates that still have API-synced cards (for VAR reconciliation)."""
+    """Distinct kickoff dates that still have cards on the board (for VAR reconciliation)."""
     with db() as conn:
         rows = conn.execute(
             """
             SELECT DISTINCT m.match_date
             FROM player_cards c
             JOIN matches m ON m.id = c.match_id
-            WHERE c.card_source = 'sync'
             ORDER BY m.match_date DESC
             """
         ).fetchall()
     return [row["match_date"] for row in rows]
+
+
+# Cards overturned by VAR after being briefly shown in a live feed.
+RESCINDED_VAR_CARDS = (
+    {"player": "Tim Ream", "team": "USA", "card_type": "yellow", "home": "USA", "away": "Paraguay"},
+)
+
+
+def repair_rescinded_var_cards() -> int:
+    """Remove known VAR-rescinded bookings that stale feeds left in the database."""
+    removed = 0
+    with db() as conn:
+        for item in RESCINDED_VAR_CARDS:
+            row = conn.execute(
+                """
+                SELECT c.id
+                FROM player_cards c
+                JOIN matches m ON m.id = c.match_id
+                WHERE c.player_name = ? AND c.team = ? AND c.card_type = ?
+                  AND m.home_team = ? AND m.away_team = ?
+                """,
+                (
+                    item["player"],
+                    item["team"],
+                    item["card_type"],
+                    item["home"],
+                    item["away"],
+                ),
+            ).fetchone()
+            if row:
+                conn.execute("DELETE FROM player_cards WHERE id = ?", (row["id"],))
+                removed += 1
+    return removed
 
 
 def clear_match_live_state(match_id: int) -> None:

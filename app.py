@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.19"
+APP_VERSION = "Beta 3.20"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1403,6 +1403,7 @@ def cards_page(invite_code):
         return redirect(url_for("index"))
 
     live_score_sync.reconcile_recorded_match_cards()
+    db.repair_rescinded_var_cards()
     data = db.get_player_cards_table()
     matches = db.get_all_matches()
 

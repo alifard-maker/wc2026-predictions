@@ -217,6 +217,7 @@ def _sync_espn_event(
         "finished": 0,
         "goals_added": 0,
         "cards_added": 0,
+        "cards_removed": 0,
         "espn_minute": None,
     }
     competitions = event.get("competitions") or []
@@ -330,7 +331,14 @@ def _sync_espn_event(
                 result["cards_added"] += 1
 
     if result["matched"]:
-        db.reconcile_synced_cards(match_id, expected_cards)
+        finished = db_match.get("actual_home") is not None
+        removed = db.reconcile_synced_cards(
+            match_id,
+            expected_cards,
+            authoritative=finished,
+        )
+        if removed:
+            result["cards_removed"] = removed
 
     return result
 
@@ -346,7 +354,7 @@ def sync_historical_cards(
 
     our_teams = our_teams or set(db.get_distinct_teams())
     db_matches = db_matches or [dict(m) for m in db.get_all_matches()]
-    totals = {"ok": True, "dates": 0, "matched": 0, "cards_removed": 0}
+    totals = {"ok": True, "dates": 0, "matched": 0, "cards_removed": 0, "matched_match_ids": []}
 
     for date_str in match_dates:
         espn_date = (date_str or "").replace("-", "")
@@ -360,6 +368,9 @@ def sync_historical_cards(
             row = _sync_espn_event(event, db_matches, our_teams)
             if row.get("matched"):
                 totals["matched"] += 1
+                if row.get("match_id") is not None:
+                    totals["matched_match_ids"].append(row["match_id"])
+                totals["cards_removed"] += row.get("cards_removed") or 0
 
     return totals
 
