@@ -88,6 +88,17 @@
             <button type="submit" class="btn btn-secondary btn-sm">Rename</button>
           </form>
           <a href="{{ url_for('admin_page', invite_code=pool.invite_code, user_id=m.id) }}#edit-picks" class="btn btn-secondary btn-sm">Edit picks</a>
+          <form method="post" class="admin-merge-form" onsubmit="return confirm('Merge {{ m.display_name }} into the selected account? Predictions are combined; clashes keep the keeper\\'s pick.')">
+            <input type="hidden" name="action" value="merge_user">
+            <input type="hidden" name="dup_user_id" value="{{ m.id }}">
+            <select name="keeper_user_id" required aria-label="Merge {{ m.display_name }} into">
+              <option value="">Merge into…</option>
+              {% for other in members if other.id != m.id and not is_ai_agent(other.display_name) %}
+              <option value="{{ other.id }}">{{ other.display_name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">Merge</button>
+          </form>
           {% if m.comment_count > 0 %}
           <form method="post" style="display:inline" onsubmit="return confirm('Delete all {{ m.comment_count }} comment(s) by {{ m.display_name }}?')">
             <input type="hidden" name="action" value="delete_user_comments">

@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.9"
+APP_VERSION = "Beta 3.10"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1596,6 +1596,26 @@ def admin_page(invite_code):
                         session.pop("user_id", None)
                         session.pop("display_name", None)
                     flash("User deleted — their predictions, comments, and tournament picks were removed.", "success")
+        elif action == "merge_user" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                keeper_id = int(request.form.get("keeper_user_id", 0))
+                dup_id = int(request.form.get("dup_user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                canonical = request.form.get("canonical_name", "").strip() or None
+                result = db.merge_user_ids(
+                    keeper_id,
+                    dup_id,
+                    pool["id"],
+                    canonical_name=canonical,
+                )
+                if isinstance(result, str) and result.startswith("One or both"):
+                    flash(result, "error")
+                elif result:
+                    flash(f"Merged accounts: {result}", "success")
+                else:
+                    flash("Nothing to merge (same account or not found).", "error")
         elif action == "rename_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 user_id = int(request.form.get("user_id", 0))

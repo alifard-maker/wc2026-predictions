@@ -34,8 +34,10 @@ def main() -> int:
     db.init_db()
     if args.all:
         merged = db.merge_duplicate_users(pool_id)
+        merged.extend(db.merge_canonical_player_accounts(pool_id))
     else:
         merged = db.merge_users_named(args.display_name, pool_id=pool_id)
+        merged.extend(db.merge_canonical_player_accounts(pool_id))
 
     if not merged:
         print("No duplicate accounts found to merge.")
