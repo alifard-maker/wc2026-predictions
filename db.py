@@ -220,6 +220,7 @@ def init_db() -> None:
     repair_fixture_schedules()
     repair_premature_results()
     repair_live_display_data()
+    merge_users_named("QueenOfPredictions")
     merge_duplicate_users()
 
 
@@ -302,6 +303,89 @@ def _user_match_points(conn, user_id: int) -> int:
         (user_id,),
     ).fetchone()
     return int(row["pts"] or 0)
+
+
+def merge_users_named(display_name: str, pool_id: int | None = None) -> list[str]:
+    """Merge every duplicate account matching this display name (normalized)."""
+    key = normalize_display_name(display_name)
+    if not key:
+        return []
+    merged: list[str] = []
+    with db() as conn:
+        pool_ids = (
+            [pool_id]
+            if pool_id is not None
+            else [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        )
+        for pid in pool_ids:
+            users = conn.execute(
+                "SELECT id, display_name FROM users WHERE pool_id = ? ORDER BY id",
+                (pid,),
+            ).fetchall()
+            group = [
+                user
+                for user in users
+                if normalize_display_name(user["display_name"]) == key
+            ]
+            if len(group) < 2:
+                continue
+            keeper = max(group, key=lambda u: (_user_match_points(conn, u["id"]), -u["id"]))
+            keeper_id = keeper["id"]
+            for dup in group:
+                if dup["id"] == keeper_id:
+                    continue
+                dup_id = dup["id"]
+                preds = conn.execute(
+                    "SELECT id, match_id FROM predictions WHERE user_id = ?",
+                    (dup_id,),
+                ).fetchall()
+                for pred in preds:
+                    clash = conn.execute(
+                        "SELECT id FROM predictions WHERE user_id = ? AND match_id = ?",
+                        (keeper_id, pred["match_id"]),
+                    ).fetchone()
+                    if clash:
+                        conn.execute("DELETE FROM predictions WHERE id = ?", (pred["id"],))
+                    else:
+                        conn.execute(
+                            "UPDATE predictions SET user_id = ? WHERE id = ?",
+                            (keeper_id, pred["id"]),
+                        )
+
+                dup_vote = conn.execute(
+                    "SELECT id FROM tournament_votes WHERE user_id = ?",
+                    (dup_id,),
+                ).fetchone()
+                if dup_vote:
+                    keeper_vote = conn.execute(
+                        "SELECT id FROM tournament_votes WHERE user_id = ?",
+                        (keeper_id,),
+                    ).fetchone()
+                    if keeper_vote:
+                        conn.execute(
+                            "DELETE FROM tournament_votes WHERE user_id = ?",
+                            (dup_id,),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE tournament_votes SET user_id = ? WHERE user_id = ?",
+                            (keeper_id, dup_id),
+                        )
+
+                conn.execute(
+                    "UPDATE comments SET user_id = ? WHERE user_id = ?",
+                    (keeper_id, dup_id),
+                )
+                conn.execute("DELETE FROM users WHERE id = ?", (dup_id,))
+                merged.append(
+                    f'{dup["display_name"]} (id {dup_id}) → {keeper["display_name"]} (id {keeper_id}, pool {pid})'
+                )
+
+            conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?",
+                (display_name.strip(), keeper_id),
+            )
+    return merged
 
 
 def merge_duplicate_users(pool_id: int | None = None) -> list[str]:
