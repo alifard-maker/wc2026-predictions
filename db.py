@@ -1,6 +1,8 @@
 import os
 import secrets
 import sqlite3
+import unicodedata
+from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -178,6 +180,12 @@ def init_db() -> None:
         if goal_cols and "is_penalty" not in goal_cols:
             conn.execute("ALTER TABLE match_goals ADD COLUMN is_penalty INTEGER NOT NULL DEFAULT 0")
 
+        card_cols = {row[1] for row in conn.execute("PRAGMA table_info(player_cards)").fetchall()}
+        if card_cols and "card_source" not in card_cols:
+            conn.execute(
+                "ALTER TABLE player_cards ADD COLUMN card_source TEXT NOT NULL DEFAULT 'admin'"
+            )
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sync_meta (
@@ -209,7 +217,221 @@ def init_db() -> None:
                 )
 
     sync_knockout_stage()
+    repair_fixture_schedules()
+    repair_premature_results()
     repair_live_display_data()
+    merge_duplicate_users()
+
+
+def normalize_display_name(name: str) -> str:
+    """Case/whitespace/unicode-normalized key for matching pool members."""
+    text = unicodedata.normalize("NFKC", name or "")
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return " ".join(text.strip().split()).casefold()
+
+
+def repair_fixture_schedules() -> int:
+    """Align stored group-stage kickoffs with fixtures.py (fixes late-night date drift)."""
+    updated = 0
+    with db() as conn:
+        for f in GROUP_FIXTURES:
+            cur = conn.execute(
+                """
+                UPDATE matches
+                SET match_date = ?, match_time = ?
+                WHERE stage = 'group'
+                  AND home_team = ?
+                  AND away_team = ?
+                  AND (match_date != ? OR match_time != ?)
+                """,
+                (f["date"], f["time"], f["home"], f["away"], f["date"], f["time"]),
+            )
+            updated += cur.rowcount
+    return updated
+
+
+def repair_premature_results() -> int:
+    """Clear results recorded before the scheduled kickoff (bad sync / wrong dates)."""
+    from datetime import datetime
+
+    from scoring import TIMEZONE, parse_match_datetime
+
+    now = datetime.now(TIMEZONE)
+    cleared = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, match_date, match_time
+            FROM matches
+            WHERE actual_home IS NOT NULL
+            """
+        ).fetchall()
+        for row in rows:
+            kickoff = parse_match_datetime(row["match_date"], row["match_time"])
+            if now >= kickoff:
+                continue
+            clear_match_result(row["id"], conn=conn)
+            cleared += 1
+    return cleared
+
+
+def clear_match_result(match_id: int, *, conn=None) -> None:
+    """Reset a finished match back to scheduled and clear prediction points."""
+    if conn is None:
+        with db() as owned:
+            clear_match_result(match_id, conn=owned)
+        return
+    conn.execute(
+        """
+        UPDATE matches
+        SET actual_home = NULL, actual_away = NULL, status = 'scheduled',
+            live_home = NULL, live_away = NULL, live_minute = NULL, live_injury_minute = NULL
+        WHERE id = ?
+        """,
+        (match_id,),
+    )
+    conn.execute(
+        "UPDATE predictions SET points = NULL WHERE match_id = ?",
+        (match_id,),
+    )
+
+
+def _user_match_points(conn, user_id: int) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(points), 0) AS pts FROM predictions WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    return int(row["pts"] or 0)
+
+
+def merge_duplicate_users(pool_id: int | None = None) -> list[str]:
+    """Merge pool members that share the same normalized display name."""
+    from ai_predictor import is_ai_agent
+
+    merged: list[str] = []
+    with db() as conn:
+        if pool_id is None:
+            pool_ids = [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        else:
+            pool_ids = [pool_id]
+
+        for pid in pool_ids:
+            users = conn.execute(
+                "SELECT id, display_name FROM users WHERE pool_id = ? ORDER BY id",
+                (pid,),
+            ).fetchall()
+            groups: dict[str, list] = defaultdict(list)
+            for user in users:
+                if is_ai_agent(user["display_name"]):
+                    continue
+                groups[normalize_display_name(user["display_name"])].append(user)
+
+            for group in groups.values():
+                if len(group) < 2:
+                    continue
+                keeper = max(group, key=lambda u: (_user_match_points(conn, u["id"]), -u["id"]))
+                keeper_id = keeper["id"]
+                keeper_name = keeper["display_name"]
+                for dup in group:
+                    if dup["id"] == keeper_id:
+                        continue
+                    dup_id = dup["id"]
+                    preds = conn.execute(
+                        "SELECT id, match_id FROM predictions WHERE user_id = ?",
+                        (dup_id,),
+                    ).fetchall()
+                    for pred in preds:
+                        clash = conn.execute(
+                            "SELECT id FROM predictions WHERE user_id = ? AND match_id = ?",
+                            (keeper_id, pred["match_id"]),
+                        ).fetchone()
+                        if clash:
+                            conn.execute("DELETE FROM predictions WHERE id = ?", (pred["id"],))
+                        else:
+                            conn.execute(
+                                "UPDATE predictions SET user_id = ? WHERE id = ?",
+                                (keeper_id, pred["id"]),
+                            )
+
+                    dup_vote = conn.execute(
+                        "SELECT id FROM tournament_votes WHERE user_id = ?",
+                        (dup_id,),
+                    ).fetchone()
+                    if dup_vote:
+                        keeper_vote = conn.execute(
+                            "SELECT id FROM tournament_votes WHERE user_id = ?",
+                            (keeper_id,),
+                        ).fetchone()
+                        if keeper_vote:
+                            conn.execute(
+                                "DELETE FROM tournament_votes WHERE user_id = ?",
+                                (dup_id,),
+                            )
+                        else:
+                            conn.execute(
+                                "UPDATE tournament_votes SET user_id = ? WHERE user_id = ?",
+                                (keeper_id, dup_id),
+                            )
+
+                    conn.execute(
+                        "UPDATE comments SET user_id = ? WHERE user_id = ?",
+                        (keeper_id, dup_id),
+                    )
+                    conn.execute("DELETE FROM users WHERE id = ?", (dup_id,))
+                    merged.append(f'{dup["display_name"]} → {keeper_name} (pool {pid})')
+
+    return merged
+
+
+def align_match_schedule(match_id: int, kickoff_et) -> bool:
+    """Update stored kickoff when the live feed disagrees by more than a few hours."""
+    from scoring import parse_match_datetime
+
+    new_date = kickoff_et.strftime("%Y-%m-%d")
+    new_time = kickoff_et.strftime("%H:%M")
+    with db() as conn:
+        row = conn.execute(
+            "SELECT match_date, match_time FROM matches WHERE id = ?",
+            (match_id,),
+        ).fetchone()
+        if not row:
+            return False
+        current = parse_match_datetime(row["match_date"], row["match_time"])
+        if abs((kickoff_et - current).total_seconds()) <= 6 * 3600:
+            return False
+        conn.execute(
+            "UPDATE matches SET match_date = ?, match_time = ? WHERE id = ?",
+            (new_date, new_time, match_id),
+        )
+    return True
+
+
+def reconcile_synced_cards(
+    match_id: int,
+    expected: list[tuple[str, str, str]],
+) -> int:
+    """Drop live-synced cards removed by the feed (e.g. VAR overturn). Returns deletions."""
+    normalized = {
+        (player.strip(), team.strip(), card_type)
+        for player, team, card_type in expected
+        if player.strip() and team.strip() and card_type in ("yellow", "red")
+    }
+    removed = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, player_name, team, card_type
+            FROM player_cards
+            WHERE match_id = ? AND card_source = 'sync'
+            """,
+            (match_id,),
+        ).fetchall()
+        for row in rows:
+            key = (row["player_name"], row["team"], row["card_type"])
+            if key not in normalized:
+                conn.execute("DELETE FROM player_cards WHERE id = ?", (row["id"],))
+                removed += 1
+    return removed
 
 
 def clear_match_live_state(match_id: int) -> None:
@@ -315,6 +537,27 @@ def get_pool_by_id(pool_id: int) -> sqlite3.Row | None:
         return conn.execute("SELECT * FROM pools WHERE id = ?", (pool_id,)).fetchone()
 
 
+def update_admin_secret(new_secret: str, invite_code: str | None = None) -> list[str]:
+    """Update admin_secret for one pool (by invite code) or all pools. Returns updated pool names."""
+    secret = new_secret.strip()
+    if not secret:
+        raise ValueError("Admin secret cannot be empty.")
+    with db() as conn:
+        if invite_code:
+            row = conn.execute(
+                "SELECT id, name FROM pools WHERE invite_code = ?", (invite_code.strip(),)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"No pool found for invite code {invite_code!r}.")
+            conn.execute(
+                "UPDATE pools SET admin_secret = ? WHERE id = ?", (secret, row["id"])
+            )
+            return [row["name"]]
+        rows = conn.execute("SELECT id, name FROM pools").fetchall()
+        conn.execute("UPDATE pools SET admin_secret = ?", (secret,))
+        return [row["name"] for row in rows]
+
+
 def count_pool_users(pool_id: int) -> int:
     with db() as conn:
         return conn.execute("SELECT COUNT(*) FROM users WHERE pool_id = ?", (pool_id,)).fetchone()[0]
@@ -327,18 +570,20 @@ def add_user(pool_id: int, display_name: str) -> dict | str:
     if len(name) > 40:
         return "Display name must be 40 characters or fewer."
 
+    name_key = normalize_display_name(name)
     with db() as conn:
-        existing = conn.execute(
-            "SELECT id, display_name FROM users WHERE pool_id = ? AND lower(display_name) = lower(?)",
-            (pool_id, name),
-        ).fetchone()
-        if existing:
-            return {
-                "id": existing["id"],
-                "pool_id": pool_id,
-                "display_name": existing["display_name"],
-                "resumed": True,
-            }
+        rows = conn.execute(
+            "SELECT id, display_name FROM users WHERE pool_id = ?",
+            (pool_id,),
+        ).fetchall()
+        for existing in rows:
+            if normalize_display_name(existing["display_name"]) == name_key:
+                return {
+                    "id": existing["id"],
+                    "pool_id": pool_id,
+                    "display_name": existing["display_name"],
+                    "resumed": True,
+                }
 
         user_count = conn.execute("SELECT COUNT(*) FROM users WHERE pool_id = ?", (pool_id,)).fetchone()[0]
         if user_count >= MAX_USERS_PER_POOL:
@@ -433,15 +678,15 @@ def upsert_player_card(
         if existing:
             if minute is not None and existing["minute"] is None:
                 conn.execute(
-                    "UPDATE player_cards SET minute = ? WHERE id = ?",
+                    "UPDATE player_cards SET minute = ?, card_source = 'sync' WHERE id = ?",
                     (minute, existing["id"]),
                 )
                 return True
             return False
         conn.execute(
             """
-            INSERT INTO player_cards (match_id, player_name, team, card_type, minute)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO player_cards (match_id, player_name, team, card_type, minute, card_source)
+            VALUES (?, ?, ?, ?, ?, 'sync')
             """,
             (match_id, name, team_name, card_type, minute),
         )
@@ -693,8 +938,22 @@ def get_user_bold_by_day(user_id: int) -> dict[str, int]:
     return {bold_day_key(dict(r)): r["match_id"] for r in rows}
 
 
-def update_match_result(match_id: int, actual_home: int, actual_away: int) -> None:
+def update_match_result(match_id: int, actual_home: int, actual_away: int) -> bool:
+    from datetime import datetime
+
+    from scoring import TIMEZONE, parse_match_datetime
+
     with db() as conn:
+        match = conn.execute(
+            "SELECT match_date, match_time FROM matches WHERE id = ?",
+            (match_id,),
+        ).fetchone()
+        if not match:
+            return False
+        kickoff = parse_match_datetime(match["match_date"], match["match_time"])
+        if datetime.now(TIMEZONE) < kickoff:
+            return False
+
         conn.execute(
             """
             UPDATE matches SET actual_home = ?, actual_away = ?, status = 'finished',
@@ -720,6 +979,7 @@ def update_match_result(match_id: int, actual_home: int, actual_away: int) -> No
                 bool(row["is_bold"]) if row else False,
             )
             conn.execute("UPDATE predictions SET points = ? WHERE id = ?", (points, pred["id"]))
+    return True
 
 
 def format_goal_minute(minute: int, injury_minute: int | None = None) -> str:
@@ -950,8 +1210,8 @@ def add_player_card(
     with db() as conn:
         cur = conn.execute(
             """
-            INSERT INTO player_cards (match_id, player_name, team, card_type, minute)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO player_cards (match_id, player_name, team, card_type, minute, card_source)
+            VALUES (?, ?, ?, ?, ?, 'admin')
             """,
             (match_id, name, team_name, card_type, minute),
         )
@@ -1468,14 +1728,13 @@ def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str
             return "Cannot rename AI pool members."
 
         conflict = conn.execute(
-            """
-            SELECT id FROM users
-            WHERE pool_id = ? AND lower(display_name) = lower(?) AND id != ?
-            """,
-            (pool_id, name, user_id),
-        ).fetchone()
-        if conflict:
-            return f'Another member already uses the name "{name}".'
+            "SELECT id, display_name FROM users WHERE pool_id = ? AND id != ?",
+            (pool_id, user_id),
+        ).fetchall()
+        name_key = normalize_display_name(name)
+        for row in conflict:
+            if normalize_display_name(row["display_name"]) == name_key:
+                return f'Another member already uses the name "{row["display_name"]}".'
 
         conn.execute(
             "UPDATE users SET display_name = ? WHERE id = ?",

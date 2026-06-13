@@ -389,6 +389,22 @@ def _card_type(api_card: str) -> str | None:
     return None
 
 
+def _db_kickoff_et(db_match: dict) -> datetime:
+    return parse_match_datetime(db_match["match_date"], db_match["match_time"])
+
+
+def _kickoffs_align(api_kickoff: datetime | None, db_match: dict, *, max_hours: int = 30) -> bool:
+    if not api_kickoff:
+        return True
+    delta = abs((api_kickoff - _db_kickoff_et(db_match)).total_seconds())
+    return delta <= max_hours * 3600
+
+
+def _match_started(db_match: dict, now: datetime | None = None) -> bool:
+    now = now or datetime.now(TIMEZONE)
+    return now >= _db_kickoff_et(db_match)
+
+
 def _find_db_match(api_match: dict, db_matches: list[dict], our_teams: set[str]) -> dict | None:
     home_raw = (api_match.get("homeTeam") or {}).get("name") or ""
     away_raw = (api_match.get("awayTeam") or {}).get("name") or ""
@@ -404,12 +420,29 @@ def _find_db_match(api_match: dict, db_matches: list[dict], our_teams: set[str])
     if not candidates:
         return None
     if len(candidates) == 1:
-        return candidates[0]
+        only = candidates[0]
+        if kickoff_et and not _kickoffs_align(kickoff_et, only):
+            db.align_match_schedule(only["id"], kickoff_et)
+            only = dict(only)
+            only["match_date"] = kickoff_et.strftime("%Y-%m-%d")
+            only["match_time"] = kickoff_et.strftime("%H:%M")
+        return only
+    if kickoff_et:
+        for m in candidates:
+            if m["match_date"] == kickoff_et.strftime("%Y-%m-%d"):
+                return m
+        best = min(
+            candidates,
+            key=lambda m: abs((kickoff_et - _db_kickoff_et(m)).total_seconds()),
+        )
+        if _kickoffs_align(kickoff_et, best):
+            return best
+        return None
     if api_date:
         for m in candidates:
             if m["match_date"] == api_date:
                 return m
-    return candidates[0]
+    return None
 
 
 def _needs_penalty_detail(api_match: dict) -> bool:
@@ -538,6 +571,7 @@ def _sync_bookings(
     our_teams: set[str],
 ) -> int:
     added = 0
+    expected: list[tuple[str, str, str]] = []
     bookings = api_match.get("bookings") or []
     for booking in bookings:
         player = _booking_player_name(booking)
@@ -554,8 +588,10 @@ def _sync_bookings(
                     minute = minute_val
             except (TypeError, ValueError):
                 minute = None
+        expected.append((player, team_name, card))
         if db.upsert_player_card(match_id, player, team_name, card, minute):
             added += 1
+    db.reconcile_synced_cards(match_id, expected)
     return added
 
 
@@ -624,8 +660,12 @@ def _process_api_match(
     }
 
     if status == FINISHED_API_STATUS:
-        if db_match["actual_home"] is None:
-            db.update_match_result(match_id, home_score, away_score)
+        if (
+            db_match["actual_home"] is None
+            and _match_started(db_match)
+            and _kickoffs_align(kickoff, db_match)
+            and db.update_match_result(match_id, home_score, away_score)
+        ):
             result["finished"] = 1
     elif (
         in_window

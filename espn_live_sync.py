@@ -16,7 +16,7 @@ except ImportError:
     certifi = None
 
 import db
-from live_score_sync import canonical_team_name
+from live_score_sync import canonical_team_name, _db_kickoff_et, _kickoffs_align, _match_started
 from scoring import TIMEZONE
 
 logger = logging.getLogger(__name__)
@@ -132,11 +132,22 @@ def _is_goal_event(type_text: str) -> bool:
     return type_text == "Goal" or type_text.startswith("Goal ")
 
 
+def _espn_event_kickoff(event: dict) -> datetime | None:
+    raw = event.get("date")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(TIMEZONE)
+    except ValueError:
+        return None
+
+
 def _find_db_match(
     home_name: str | None,
     away_name: str | None,
     db_matches: list[dict],
     our_teams: set[str],
+    kickoff_et: datetime | None = None,
 ) -> dict | None:
     if not home_name or not away_name:
         return None
@@ -147,7 +158,26 @@ def _find_db_match(
     ]
     if not candidates:
         return None
-    return candidates[0] if len(candidates) == 1 else candidates[0]
+    if len(candidates) == 1:
+        only = candidates[0]
+        if kickoff_et and not _kickoffs_align(kickoff_et, only):
+            db.align_match_schedule(only["id"], kickoff_et)
+            only = dict(only)
+            only["match_date"] = kickoff_et.strftime("%Y-%m-%d")
+            only["match_time"] = kickoff_et.strftime("%H:%M")
+        return only
+    if kickoff_et:
+        for m in candidates:
+            if m["match_date"] == kickoff_et.strftime("%Y-%m-%d"):
+                return m
+        best = min(
+            candidates,
+            key=lambda m: abs((kickoff_et - _db_kickoff_et(m)).total_seconds()),
+        )
+        if _kickoffs_align(kickoff_et, best):
+            return best
+        return None
+    return candidates[0]
 
 
 def _competitor_teams(
@@ -192,7 +222,8 @@ def _sync_espn_event(
 
     competition = competitions[0]
     home_name, away_name, team_by_id = _competitor_teams(competition, our_teams)
-    db_match = _find_db_match(home_name, away_name, db_matches, our_teams)
+    kickoff_et = _espn_event_kickoff(event)
+    db_match = _find_db_match(home_name, away_name, db_matches, our_teams, kickoff_et)
     if not db_match:
         return result
 
@@ -231,8 +262,13 @@ def _sync_espn_event(
     live_minute, live_injury = _parse_espn_minute(display_clock)
     result["espn_minute"] = live_minute
 
-    if db_status == "finished" and db_match.get("actual_home") is None:
-        db.update_match_result(match_id, home_score, away_score)
+    if (
+        db_status == "finished"
+        and db_match.get("actual_home") is None
+        and _match_started(db_match)
+        and _kickoffs_align(kickoff_et, db_match)
+        and db.update_match_result(match_id, home_score, away_score)
+    ):
         result["finished"] = 1
     elif db_match.get("actual_home") is None and db_status:
         if db_status == "halftime":
@@ -253,6 +289,7 @@ def _sync_espn_event(
         result["live_away"] = away_score
         db.set_sync_meta(f"espn_live_source_{match_id}", datetime.now(TIMEZONE).isoformat())
 
+    expected_cards: list[tuple[str, str, str]] = []
     for detail in competition.get("details") or []:
         type_text = ((detail.get("type") or {}).get("text") or "").strip()
         player = None
@@ -281,11 +318,16 @@ def _sync_espn_event(
             if db.upsert_match_goal(match_id, side, player, minute, injury, is_pen):
                 result["goals_added"] += 1
         elif type_text == "Yellow Card":
+            expected_cards.append((player, team_name, "yellow"))
             if db.upsert_player_card(match_id, player, team_name, "yellow", minute):
                 result["cards_added"] += 1
         elif type_text == "Red Card":
+            expected_cards.append((player, team_name, "red"))
             if db.upsert_player_card(match_id, player, team_name, "red", minute):
                 result["cards_added"] += 1
+
+    if expected_cards or (db_match.get("actual_home") is None and db_status in ("live", "halftime", "finished")):
+        db.reconcile_synced_cards(match_id, expected_cards)
 
     return result
 
