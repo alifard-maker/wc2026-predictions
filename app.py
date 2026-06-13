@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.17"
+APP_VERSION = "Beta 3.18"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -345,6 +345,38 @@ def match_is_finished_display(match: dict) -> bool:
     if datetime.now(TIMEZONE) < kickoff:
         return False
     return True
+
+
+def sort_finished_matches(matches: list[dict]) -> list[dict]:
+    """Most recent final whistle first for the results strip."""
+
+    def sort_key(m: dict) -> datetime:
+        kickoff = m.get("kickoff")
+        if kickoff is None:
+            kickoff = parse_match_datetime(m["match_date"], m["match_time"])
+        return kickoff
+
+    return sorted(matches, key=sort_key, reverse=True)
+
+
+def sort_active_matches(matches: list[dict]) -> list[dict]:
+    """Live first, then picks-locked awaiting kickoff, then open fixtures by soonest kickoff."""
+
+    def sort_key(m: dict) -> tuple:
+        kickoff = m.get("kickoff")
+        if kickoff is None:
+            kickoff = parse_match_datetime(m["match_date"], m["match_time"])
+        if m.get("is_live"):
+            bucket = 0
+        elif not m.get("open") and not match_is_finished_display(m):
+            bucket = 1
+        elif m.get("open"):
+            bucket = 2
+        else:
+            bucket = 3
+        return (bucket, kickoff, m.get("sort_order") or 0)
+
+    return sorted(matches, key=sort_key)
 
 
 def sort_matches_for_dashboard(matches: list[dict]) -> list[dict]:
@@ -644,9 +676,8 @@ def pool_dashboard(invite_code):
     matches = db.get_all_matches()
     predictions = db.get_user_predictions(user_id)
     enriched = enrich_matches(matches, predictions)
-    enriched = sort_matches_for_dashboard(enriched)
-    active_matches = [m for m in enriched if not m["collapsible_finished"]]
-    finished_matches = [m for m in enriched if m["collapsible_finished"]]
+    active_matches = sort_active_matches([m for m in enriched if not m["collapsible_finished"]])
+    finished_matches = sort_finished_matches([m for m in enriched if m["collapsible_finished"]])
     finished_count = len(finished_matches)
     leaderboard = db.get_leaderboard(pool["id"])
 
