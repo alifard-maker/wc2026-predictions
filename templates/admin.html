@@ -99,6 +99,11 @@
             </select>
             <button type="submit" class="btn btn-secondary btn-sm">Merge</button>
           </form>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="recalculate_user">
+            <input type="hidden" name="user_id" value="{{ m.id }}">
+            <button type="submit" class="btn btn-secondary btn-sm">Recalc pts</button>
+          </form>
           {% if m.comment_count > 0 %}
           <form method="post" style="display:inline" onsubmit="return confirm('Delete all {{ m.comment_count }} comment(s) by {{ m.display_name }}?')">
             <input type="hidden" name="action" value="delete_user_comments">

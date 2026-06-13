@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.10"
+APP_VERSION = "Beta 3.11"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1596,6 +1596,18 @@ def admin_page(invite_code):
                         session.pop("user_id", None)
                         session.pop("display_name", None)
                     flash("User deleted — their predictions, comments, and tournament picks were removed.", "success")
+        elif action == "recalculate_user" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                member = db.get_user(user_id)
+                if not member or member["pool_id"] != pool["id"]:
+                    flash("User not found in this pool.", "error")
+                else:
+                    db.recalculate_user_match_points(user_id)
+                    flash(f"Recalculated match points for {member['display_name']}.", "success")
         elif action == "merge_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 keeper_id = int(request.form.get("keeper_user_id", 0))

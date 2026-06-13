@@ -223,6 +223,19 @@ def init_db() -> None:
     merge_canonical_player_accounts()
     merge_users_named("QueenOfPredictions")
     merge_duplicate_users()
+    repair_canonical_player_scores()
+
+
+def repair_canonical_player_scores() -> None:
+    """Recalculate match points for merged canonical players (fixes stale totals)."""
+    with db() as conn:
+        for canonical in PLAYER_ACCOUNT_ALIASES:
+            rows = conn.execute(
+                "SELECT id FROM users WHERE display_name = ?",
+                (canonical,),
+            ).fetchall()
+            for row in rows:
+                recalculate_user_match_points(row["id"], conn=conn)
 
 
 def normalize_display_name(name: str) -> str:
@@ -329,6 +342,65 @@ def _user_matches_alias(display_name: str, aliases: frozenset[str]) -> bool:
     return normalize_display_name(name) in alias_keys or name in aliases
 
 
+def _prediction_points(conn, pred_id: int) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(points, 0) AS pts FROM predictions WHERE id = ?",
+        (pred_id,),
+    ).fetchone()
+    return int(row["pts"] if row else 0)
+
+
+def _resolve_prediction_clash(
+    conn,
+    keeper_id: int,
+    keeper_pred_id: int,
+    dup_pred_id: int,
+) -> None:
+    """Keep the better pick when both accounts predicted the same match."""
+    keeper_pts = _prediction_points(conn, keeper_pred_id)
+    dup_pts = _prediction_points(conn, dup_pred_id)
+    if dup_pts > keeper_pts:
+        conn.execute("DELETE FROM predictions WHERE id = ?", (keeper_pred_id,))
+        conn.execute(
+            "UPDATE predictions SET user_id = ? WHERE id = ?",
+            (keeper_id, dup_pred_id),
+        )
+    else:
+        conn.execute("DELETE FROM predictions WHERE id = ?", (dup_pred_id,))
+
+
+def recalculate_user_match_points(user_id: int, *, conn=None) -> None:
+    """Refresh stored points from current picks and entered results."""
+    if conn is None:
+        with db() as owned:
+            recalculate_user_match_points(user_id, conn=owned)
+        return
+    preds = conn.execute(
+        """
+        SELECT p.id, p.home_score, p.away_score, p.is_bold,
+               m.actual_home, m.actual_away
+        FROM predictions p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.user_id = ?
+        """,
+        (user_id,),
+    ).fetchall()
+    for pred in preds:
+        if pred["actual_home"] is None or pred["actual_away"] is None:
+            continue
+        points = calculate_points(
+            pred["home_score"],
+            pred["away_score"],
+            pred["actual_home"],
+            pred["actual_away"],
+            bool(pred["is_bold"]),
+        )
+        conn.execute(
+            "UPDATE predictions SET points = ? WHERE id = ?",
+            (points, pred["id"]),
+        )
+
+
 def _merge_user_records(
     conn,
     keeper_id: int,
@@ -350,7 +422,7 @@ def _merge_user_records(
             (keeper_id, pred["match_id"]),
         ).fetchone()
         if clash:
-            conn.execute("DELETE FROM predictions WHERE id = ?", (pred["id"],))
+            _resolve_prediction_clash(conn, keeper_id, clash["id"], pred["id"])
         else:
             conn.execute(
                 "UPDATE predictions SET user_id = ? WHERE id = ?",
@@ -379,6 +451,7 @@ def _merge_user_records(
         (keeper_id, dup_id),
     )
     conn.execute("DELETE FROM users WHERE id = ?", (dup_id,))
+    recalculate_user_match_points(keeper_id, conn=conn)
     return f"{dup_label} (id {dup_id}) → {keeper_label} (id {keeper_id}, pool {pool_id})"
 
 
@@ -407,7 +480,15 @@ def merge_canonical_player_accounts(pool_id: int | None = None) -> list[str]:
                 ]
                 if len(group) < 2:
                     continue
-                keeper = max(group, key=lambda u: (_user_match_points(conn, u["id"]), -u["id"]))
+                keeper = max(
+                    group,
+                    key=lambda u: (
+                        normalize_display_name(u["display_name"])
+                        == normalize_display_name(canonical),
+                        _user_match_points(conn, u["id"]),
+                        -u["id"],
+                    ),
+                )
                 keeper_id = keeper["id"]
                 for dup in group:
                     if dup["id"] == keeper_id:
