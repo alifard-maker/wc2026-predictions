@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.21"
+APP_VERSION = "Beta 3.23"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -660,6 +660,29 @@ def pool_join(invite_code):
     )
 
 
+def compute_bold_locked_days(bold_by_day: dict) -> set[str]:
+    """Calendar days (ET) where the user's bold pick can no longer be moved."""
+    locked: set[str] = set()
+    if not bold_by_day:
+        return locked
+    with db.db() as conn:
+        for day_key, match_id in bold_by_day.items():
+            row = conn.execute(
+                "SELECT match_date, match_time FROM matches WHERE id = ?",
+                (match_id,),
+            ).fetchone()
+            if row and not is_prediction_open(row["match_date"], row["match_time"]):
+                locked.add(day_key)
+    return locked
+
+
+def user_can_edit_bold(match: dict, bold_locked_days: set[str]) -> bool:
+    if not match.get("open") or not match.get("prediction"):
+        return False
+    day_key = f"day_{match['match_date']}"
+    return day_key not in bold_locked_days
+
+
 @app.route("/pool/<invite_code>")
 @login_required
 def pool_dashboard(invite_code):
@@ -685,6 +708,7 @@ def pool_dashboard(invite_code):
     predicted_open = sum(1 for m in enriched if m["open"] and m["prediction"])
     next_prediction = find_next_prediction_needed(enriched)
     bold_by_day = db.get_user_bold_by_day(user_id)
+    bold_locked_days = compute_bold_locked_days(bold_by_day)
     recaps = list_matchday_recaps(pool["id"])[:3]
 
     return render_template(
@@ -692,7 +716,6 @@ def pool_dashboard(invite_code):
         pool=pool,
         matches=enriched,
         active_matches=active_matches,
-        finished_matches=finished_matches,
         finished_count=finished_count,
         leaderboard=leaderboard,
         leader_message=db.get_leader_message(leaderboard),
@@ -701,10 +724,33 @@ def pool_dashboard(invite_code):
         next_prediction=next_prediction,
         tournament_vote=get_tournament_vote_status(user_id),
         bold_by_day=bold_by_day,
+        bold_locked_days=bold_locked_days,
         recaps=recaps,
         wc_news=get_wc_news(),
         is_admin=session.get("admin_secret") == pool["admin_secret"],
         invite_url=invite_url_for(invite_code),
+    )
+
+
+@app.route("/pool/<invite_code>/finished")
+@login_required
+def finished_matches_page(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        flash("You are not in this pool.", "error")
+        return redirect(url_for("index"))
+
+    user_id = session["user_id"]
+    matches = db.get_all_matches()
+    predictions = db.get_user_predictions(user_id)
+    enriched = enrich_matches(matches, predictions)
+    finished_matches = sort_finished_matches([m for m in enriched if m["collapsible_finished"]])
+
+    return render_template(
+        "finished_matches.html",
+        pool=pool,
+        finished_matches=finished_matches,
+        finished_count=len(finished_matches),
     )
 
 
@@ -763,11 +809,9 @@ def submit_predictions(invite_code):
             match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
         if not match:
             continue
-        if not is_prediction_open(match["match_date"], match["match_time"]):
-            bold_blocked += 1
-            continue
         err = db.set_bold_pick(user_id, match_id)
         if err:
+            bold_blocked += 1
             flash(err, "error")
         else:
             bold_updated += 1
@@ -883,9 +927,6 @@ def set_bold_pick_route(invite_code):
     if not match:
         flash("Match not found.", "error")
         return redirect(url_for("pool_dashboard", invite_code=invite_code))
-    if not is_prediction_open(match["match_date"], match["match_time"]):
-        flash("Bold picks are locked — the prediction deadline has passed.", "error")
-        return redirect(request.referrer or url_for("pool_dashboard", invite_code=invite_code))
 
     err = db.set_bold_pick(session["user_id"], match_id)
     if err:
@@ -1449,6 +1490,8 @@ def match_detail(invite_code, match_id):
 
     user_id = session["user_id"]
     enriched = enrich_matches([match], db.get_user_predictions(user_id))[0]
+    bold_by_day = db.get_user_bold_by_day(user_id)
+    bold_locked_days = compute_bold_locked_days(bold_by_day)
     raw_preds = db.get_pool_predictions_summary(pool["id"], match_id)
     all_preds = filter_predictions_for_display(raw_preds, user_id, dict(match))
     consensus = build_match_consensus(pool["id"], match_id)
@@ -1468,7 +1511,8 @@ def match_detail(invite_code, match_id):
         consensus=consensus,
         match_comments=match_comments,
         picks_revealed=not picks_open,
-        can_bold=bool(enriched.get("prediction")) and enriched.get("open"),
+        can_bold=user_can_edit_bold(enriched, bold_locked_days),
+        bold_pick_locked=f"day_{enriched['match_date']}" in bold_locked_days,
         is_bold_pick=bool((enriched.get("prediction") or {}).get("is_bold")),
         leaderboard=leaderboard[:8],
         ai_display_name=AI_DISPLAY_NAME,

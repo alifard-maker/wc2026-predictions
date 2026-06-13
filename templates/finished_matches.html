@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% from "_fixture_content.html" import render_fixture_content with context %}
+{% from "_team_flag.html" import team_with_flag with context %}
+
+{% block title %}{{ pool.name }} — Finished Matches{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Matches</a>
+
+<section class="hero" style="padding-top: 1rem; text-align: left">
+  <h1 style="text-align: left">Finished Matches</h1>
+  <p style="margin: 0; text-align: left">{{ finished_count }} final result{{ 's' if finished_count != 1 else '' }} — tap any row for goals, cards &amp; your pick</p>
+</section>
+
+{% if finished_count > 0 %}
+<div class="filter-tabs" id="matchday-tabs">
+  <button type="button" class="active" data-filter="all">All</button>
+  <button type="button" data-filter="1">Matchday 1</button>
+  <button type="button" data-filter="2">Matchday 2</button>
+  <button type="button" data-filter="3">Matchday 3</button>
+  <button type="button" data-filter="group">By Group</button>
+</div>
+
+<div class="fixture-finished-toolbar" id="finished-toolbar">
+  <span class="fixture-finished-toolbar-label">{{ finished_count }} finished</span>
+  <button type="button" class="btn btn-secondary btn-sm" id="expand-all-finished">Expand all</button>
+  <button type="button" class="btn btn-secondary btn-sm" id="collapse-all-finished">Collapse all</button>
+</div>
+<div class="fixture-list fixture-list-finished" id="finished-fixtures">
+  {% for m in finished_matches %}
+  <div class="finished-match-card locked fixture-finished{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-collapsed="1">
+    <button type="button" class="finished-match-toggle" aria-expanded="false" aria-controls="finished-panel-{{ m.id }}">
+      <span class="finished-match-arrow" aria-hidden="true">▸</span>
+      <span class="finished-match-teams">
+        <span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
+        <span class="finished-match-vs">vs</span>
+        <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+      </span>
+      <span class="finished-match-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
+      {% if m.prediction and m.prediction.points is not none %}
+      <span class="finished-match-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
+      {% elif m.prediction %}
+      <span class="finished-match-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
+      {% else %}
+      <span class="finished-match-pts"></span>
+      {% endif %}
+    </button>
+    <div class="finished-match-panel" id="finished-panel-{{ m.id }}" hidden>
+      <div class="fixture fixture-finished-expanded">
+        {{ render_fixture_content(m, true) }}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <p style="margin: 0; color: var(--muted)">No finished matches yet — check back after the first final whistle.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const tabs = document.getElementById('matchday-tabs');
+  if (tabs) {
+    tabs.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const f = btn.dataset.filter;
+        document.querySelectorAll('#finished-fixtures [data-match-id]').forEach(el => {
+          if (f === 'all') { el.style.display = ''; return; }
+          if (f === 'group') { el.style.display = el.dataset.stage === 'group' ? '' : 'none'; return; }
+          el.style.display = el.dataset.matchday === f ? '' : 'none';
+        });
+      });
+    });
+  }
+
+  function setFinishedCollapsed(card, collapsed) {
+    if (!card) return;
+    card.dataset.collapsed = collapsed ? '1' : '0';
+    const panel = card.querySelector('.finished-match-panel');
+    const btn = card.querySelector('.finished-match-toggle');
+    if (panel) panel.hidden = collapsed;
+    if (btn) btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  }
+
+  document.getElementById('finished-fixtures')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.finished-match-toggle');
+    if (!btn) return;
+    e.preventDefault();
+    const card = btn.closest('.finished-match-card');
+    if (!card) return;
+    setFinishedCollapsed(card, card.dataset.collapsed === '1' ? false : true);
+  });
+
+  document.getElementById('expand-all-finished')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.finished-match-card').forEach(card => setFinishedCollapsed(card, false));
+  });
+
+  document.getElementById('collapse-all-finished')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.finished-match-card').forEach(card => setFinishedCollapsed(card, true));
+  });
+
+  function updateFinishedSummary(m) {
+    const summaryScore = document.querySelector(`[data-summary-score="${m.id}"]`);
+    if (summaryScore) summaryScore.textContent = `${m.display_home}–${m.display_away}`;
+    const summaryPts = document.querySelector(`[data-summary-pts="${m.id}"]`);
+    if (summaryPts && m.prediction && m.prediction.points != null) {
+      summaryPts.textContent = `+${m.prediction.points} pts`;
+      summaryPts.classList.add('points-earned');
+    }
+  }
+
+  const liveUrl = "{{ url_for('matches_live_feed', invite_code=pool.invite_code) }}";
+
+  function renderFixtureResultInnerHtml(m) {
+    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
+    const actualLabel = m.is_live ? 'Live' : 'Result';
+    let predHtml = '';
+    if (m.prediction) {
+      const bold = m.prediction.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
+      const pts = m.prediction.points != null
+        ? ` <span class="points-earned" data-prediction-points="${m.id}">+${m.prediction.points} pts</span>`
+        : '';
+      predHtml = `<div class="fixture-prediction-row" data-fixture-prediction="${m.id}">
+        <span class="fixture-result-label">Your pick</span>
+        <span class="fixture-result-score">${m.prediction.home_score} – ${m.prediction.away_score}</span>${bold}${pts}
+      </div>`;
+    } else if (!m.is_live) {
+      predHtml = `<div class="fixture-prediction-row fixture-prediction-missing">
+        <span class="fixture-result-label">Your pick</span>
+        <span class="fixture-no-pick">—</span>
+      </div>`;
+    }
+    return `<div class="fixture-actual-row">
+      <span class="fixture-result-label">${actualLabel}</span>
+      <span class="fixture-result-score" data-live-actual-score="${m.id}">${m.display_home} – ${m.display_away}</span>
+      <div class="fixture-result-events" data-live-events="${m.id}">${eventsHtml}</div>
+    </div>${predHtml}`;
+  }
+
+  function updateFixtureResult(scoreEl, m) {
+    const actualScore = scoreEl.querySelector(`[data-live-actual-score="${m.id}"]`);
+    const events = scoreEl.querySelector(`[data-live-events="${m.id}"]`);
+    const actualLabel = scoreEl.querySelector('.fixture-actual-row .fixture-result-label');
+    if (actualScore) actualScore.textContent = `${m.display_home} – ${m.display_away}`;
+    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
+    if (actualLabel) actualLabel.textContent = m.is_live ? 'Live' : 'Result';
+    const ptsEl = scoreEl.querySelector(`[data-prediction-points="${m.id}"]`);
+    if (ptsEl && m.prediction && m.prediction.points != null) {
+      ptsEl.textContent = `+${m.prediction.points} pts`;
+    }
+  }
+
+  function applySpotlight(spotlight) {
+    document.querySelectorAll('#finished-fixtures [data-match-id]').forEach(el => {
+      el.classList.remove('fixture-spotlight');
+    });
+    document.querySelectorAll('[data-fixture-winners]').forEach(el => el.remove());
+    if (!spotlight) return;
+    const fixture = document.getElementById('match-' + spotlight.match_id);
+    if (fixture) fixture.classList.add('fixture-spotlight');
+    const scoreEl = document.querySelector(`[data-live-score="${spotlight.match_id}"]`);
+    if (scoreEl && spotlight.predictors && spotlight.predictors.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'fixture-winners';
+      wrap.dataset.fixtureWinners = spotlight.match_id;
+      wrap.innerHTML = `<span class="fixture-winners-label">Called it:</span>${spotlight.predictors.map(p =>
+        `<span class="spotlight-chip${p.points === 5 ? ' spotlight-exact' : ''}">${p.display_name}${p.is_you ? ' (you)' : ''} +${p.points}</span>`
+      ).join('')}`;
+      scoreEl.appendChild(wrap);
+    }
+  }
+
+  async function refreshLiveScores() {
+    const res = await fetch(liveUrl);
+    if (!res.ok) return;
+    const data = await res.json();
+    applySpotlight(data.spotlight);
+    data.matches.forEach(m => {
+      const badge = document.querySelector(`[data-live-badge="${m.id}"]`);
+      const score = document.querySelector(`[data-live-score="${m.id}"]`);
+      if (m.is_finished && badge) {
+        badge.className = 'badge badge-done';
+        badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
+        updateFinishedSummary(m);
+      }
+      if ((m.is_live || m.is_finished || m.show_result) && score) {
+        updateFixtureResult(score, m);
+      } else if ((m.is_finished || m.show_result) && !score) {
+        const fixture = document.getElementById(`match-${m.id}`);
+        const panel = fixture?.querySelector('.fixture-finished-expanded');
+        const homeTeam = panel?.querySelector('.team.home');
+        if (panel && homeTeam) {
+          const wrap = document.createElement('div');
+          wrap.className = 'fixture-result-stack live-score-display';
+          wrap.dataset.liveScore = String(m.id);
+          if (m.kickoff_iso) wrap.dataset.kickoff = m.kickoff_iso;
+          wrap.innerHTML = renderFixtureResultInnerHtml(m);
+          homeTeam.insertAdjacentElement('afterend', wrap);
+        }
+      }
+    });
+  }
+
+  if (document.getElementById('finished-fixtures')) {
+    setInterval(refreshLiveScores, 15000);
+    refreshLiveScores();
+  }
+</script>
+{% endblock %}

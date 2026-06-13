@@ -61,6 +61,22 @@ def bold_day_key(match: dict) -> str:
     return f"ko_{match.get('stage') or 'knockout'}"
 
 
+def bold_pick_change_allowed(
+    target_match: dict,
+    existing_bold_match: dict | None,
+) -> bool:
+    """True when the user may set or move their bold pick to target_match."""
+    if not is_prediction_open(target_match["match_date"], target_match["match_time"]):
+        return False
+    if (
+        existing_bold_match
+        and existing_bold_match.get("id") != target_match.get("id")
+        and not is_prediction_open(existing_bold_match["match_date"], existing_bold_match["match_time"])
+    ):
+        return False
+    return True
+
+
 def normalize_player(name: str) -> str:
     return " ".join(name.strip().lower().split())
 

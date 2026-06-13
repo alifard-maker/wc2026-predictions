@@ -54,6 +54,8 @@
     </button>
     <span class="muted-inline">One bold per calendar day (ET) — double points if you're right</span>
   </form>
+  {% elif is_bold_pick %}
+  <p class="muted-inline" style="text-align: center">🎰 Bold pick locked for this day — 2× points if you're right</p>
   {% endif %}
 
   {% if consensus.total %}

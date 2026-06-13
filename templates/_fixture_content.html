@@ -1,0 +1,92 @@
+{% from "_match_events.html" import render_match_events %}
+{% from "_team_flag.html" import team_with_flag with context %}
+
+{% macro render_fixture_content(m, is_finished_row) %}
+<a class="fixture-hit-area" href="{{ match_detail_url(pool.invite_code, m.id) }}" aria-label="Open {{ m.home_team }} vs {{ m.away_team }}"></a>
+<div class="fixture-meta">
+  {% if m.group_name %}
+  <span class="badge badge-group">Group {{ m.group_name }}</span>
+  {% else %}
+  <span class="badge badge-group">{{ m.stage|replace('_', ' ')|title }}</span>
+  {% endif %}
+  <span>MD{{ m.matchday or '—' }}</span>
+  <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  <span>{{ m.venue }}</span>
+  {% if m.is_live %}
+  <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
+  {% elif is_finished_row %}
+  <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
+  {% elif m.open %}
+  <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+  {% elif not is_finished_row %}
+  <span class="badge badge-awaiting">Picks locked · kicks off {{ m.kickoff.strftime('%a %d %b, %H:%M') }} ET</span>
+  {% else %}
+  <span class="badge badge-closed">Closed</span>
+  {% endif %}
+  <a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="fixture-match-link" style="margin-left: auto">View match →</a>
+</div>
+
+<div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
+
+{% if m.show_result %}
+<div class="fixture-result-stack live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
+  <div class="fixture-actual-row">
+    <span class="fixture-result-label">{% if m.is_live %}Live{% else %}Result{% endif %}</span>
+    <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">{{ m.display_home }} – {{ m.display_away }}</span>
+    <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
+  </div>
+  {% if m.prediction %}
+  <div class="fixture-prediction-row" data-fixture-prediction="{{ m.id }}">
+    <span class="fixture-result-label">Your pick</span>
+    <span class="fixture-result-score">{{ m.prediction.home_score }} – {{ m.prediction.away_score }}</span>
+    {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+    {% if m.prediction.points is not none %}
+    <span class="points-earned" data-prediction-points="{{ m.id }}">+{{ m.prediction.points }} pts</span>
+    {% endif %}
+  </div>
+  {% elif not m.open %}
+  <div class="fixture-prediction-row fixture-prediction-missing">
+    <span class="fixture-result-label">Your pick</span>
+    <span class="fixture-no-pick">—</span>
+  </div>
+  {% endif %}
+  {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
+  <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
+    <span class="fixture-winners-label">Called it:</span>
+    {% for p in match_spotlight.correct_predictors %}
+    <span class="spotlight-chip{% if p.points == 5 %} spotlight-exact{% endif %}">{{ p.display_name }}{% if p.user_id == session.user_id %} (you){% endif %} +{{ p.points }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% elif m.open %}
+<div class="score-input-wrap">
+  <div class="score-input">
+    <input type="number" name="home_{{ m.id }}" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="home">
+    <span class="score-dash">–</span>
+    <input type="number" name="away_{{ m.id }}" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="away">
+    <input type="hidden" name="match_{{ m.id }}" id="match_{{ m.id }}" value="{% if m.prediction %}{{ m.prediction.home_score }}-{{ m.prediction.away_score }}{% endif %}">
+  </div>
+  {% set day_key = 'day_' ~ m.match_date %}
+  <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET)">
+    <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}"
+      {% if bold_by_day.get(day_key) == m.id %}checked{% endif %}
+      {% if not m.open or not m.prediction or day_key in bold_locked_days %}disabled data-bold-locked{% endif %}>
+    <span class="bold-pick-toggle-face">🎰 Bold 2×</span>
+  </label>
+</div>
+{% elif m.prediction %}
+<div class="prediction-done">
+  {{ m.prediction.home_score }} – {{ m.prediction.away_score }}
+  {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+  {% if m.prediction.points is not none %}
+  <div class="points-earned">+{{ m.prediction.points }} pts</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="prediction-done" style="color: var(--muted)">—</div>
+{% endif %}
+
+<div class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</div>
+<div></div>
+{% endmacro %}

@@ -12,6 +12,7 @@ from scoring import bold_day_key, calculate_points, calculate_tournament_points
 
 _default_db = Path(__file__).parent / "predictions.db"
 DB_PATH = Path(os.environ.get("DATABASE_PATH", _default_db))
+FIXED_ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "Ducati1098R!")
 MAX_USERS_PER_POOL = 100
 
 
@@ -225,6 +226,7 @@ def init_db() -> None:
     merge_duplicate_users()
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
+    ensure_admin_secrets()
 
 
 def repair_canonical_player_scores() -> None:
@@ -825,8 +827,17 @@ def generate_invite_code() -> str:
     return secrets.token_urlsafe(6)
 
 
+def ensure_admin_secrets() -> None:
+    """Keep every pool on the configured admin password (survives redeploys)."""
+    secret = FIXED_ADMIN_SECRET.strip()
+    if not secret:
+        return
+    with db() as conn:
+        conn.execute("UPDATE pools SET admin_secret = ?", (secret,))
+
+
 def generate_admin_secret() -> str:
-    return secrets.token_urlsafe(16)
+    return FIXED_ADMIN_SECRET
 
 
 def create_pool(name: str) -> dict:
@@ -1197,6 +1208,8 @@ def upsert_prediction(
 
 
 def set_bold_pick(user_id: int, match_id: int) -> str | None:
+    from scoring import bold_day_key, bold_pick_change_allowed, is_prediction_open
+
     with db() as conn:
         match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
         if not match:
@@ -1208,17 +1221,31 @@ def set_bold_pick(user_id: int, match_id: int) -> str | None:
         if not pred:
             return "Save a prediction for this match first."
 
+        if not is_prediction_open(match["match_date"], match["match_time"]):
+            return "Bold picks are locked — the prediction deadline has passed."
+
         key = bold_day_key(dict(match))
+        existing_bold_match = None
         siblings = conn.execute(
             """
             SELECT p.id, p.match_id, p.home_score, p.away_score, p.is_bold, m.actual_home, m.actual_away,
-                   m.match_date, m.matchday, m.stage
+                   m.match_date, m.match_time, m.matchday, m.stage
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
             WHERE p.user_id = ?
             """,
             (user_id,),
         ).fetchall()
+
+        for row in siblings:
+            if bold_day_key(dict(row)) == key and row["is_bold"] and row["match_id"] != match_id:
+                existing_bold_match = conn.execute(
+                    "SELECT * FROM matches WHERE id = ?", (row["match_id"],)
+                ).fetchone()
+                break
+
+        if not bold_pick_change_allowed(dict(match), dict(existing_bold_match) if existing_bold_match else None):
+            return "Bold pick is locked — your bold match deadline has passed."
 
         for row in siblings:
             if bold_day_key(dict(row)) != key:

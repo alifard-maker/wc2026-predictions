@@ -126,6 +126,7 @@
       <nav id="main-nav" class="site-nav">
         {% if session.get('invite_code') %}
           <a href="{{ url_for('pool_dashboard', invite_code=session.invite_code) }}">Matches</a>
+          <a href="{{ url_for('finished_matches_page', invite_code=session.invite_code) }}">Finished</a>
           <a href="{{ url_for('tournament_page', invite_code=session.invite_code) }}">Tournament</a>
           <a href="{{ url_for('standings_page', invite_code=session.invite_code) }}">Standings</a>
           <a href="{{ url_for('recaps_page', invite_code=session.invite_code) }}">Recaps</a>

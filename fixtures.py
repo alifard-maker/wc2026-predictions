@@ -7,7 +7,7 @@ GROUP_FIXTURES = [
     {"matchday": 1, "group": "B", "home": "Canada", "away": "Bosnia and Herzegovina", "date": "2026-06-12", "time": "15:00", "venue": "Toronto Stadium"},
     {"matchday": 1, "group": "D", "home": "USA", "away": "Paraguay", "date": "2026-06-12", "time": "21:00", "venue": "Los Angeles Stadium"},
     {"matchday": 1, "group": "C", "home": "Haiti", "away": "Scotland", "date": "2026-06-13", "time": "21:00", "venue": "Boston Stadium"},
-    {"matchday": 1, "group": "D", "home": "Australia", "away": "Türkiye", "date": "2026-06-13", "time": "21:00", "venue": "BC Place Vancouver"},
+    {"matchday": 1, "group": "D", "home": "Australia", "away": "Türkiye", "date": "2026-06-14", "time": "00:00", "venue": "BC Place Vancouver"},
     {"matchday": 1, "group": "C", "home": "Brazil", "away": "Morocco", "date": "2026-06-13", "time": "18:00", "venue": "New York New Jersey Stadium"},
     {"matchday": 1, "group": "B", "home": "Qatar", "away": "Switzerland", "date": "2026-06-13", "time": "15:00", "venue": "San Francisco Bay Area Stadium"},
     {"matchday": 1, "group": "E", "home": "Côte d'Ivoire", "away": "Ecuador", "date": "2026-06-14", "time": "19:00", "venue": "Philadelphia Stadium"},
