@@ -46,9 +46,12 @@ def is_enabled() -> bool:
     return True
 
 
-def _fetch_scoreboard() -> dict | None:
+def _fetch_scoreboard(dates: str | None = None) -> dict | None:
+    url = ESPN_SCOREBOARD
+    if dates:
+        url = f"{url}?dates={dates}"
     req = urllib.request.Request(
-        ESPN_SCOREBOARD,
+        url,
         headers={"User-Agent": "wc2026-predictions/1.0"},
     )
     if certifi is not None:
@@ -326,10 +329,39 @@ def _sync_espn_event(
             if db.upsert_player_card(match_id, player, team_name, "red", minute):
                 result["cards_added"] += 1
 
-    if expected_cards or (db_match.get("actual_home") is None and db_status in ("live", "halftime", "finished")):
+    if result["matched"]:
         db.reconcile_synced_cards(match_id, expected_cards)
 
     return result
+
+
+def sync_historical_cards(
+    db_matches: list[dict] | None = None,
+    our_teams: set[str] | None = None,
+    match_dates: list[str] | None = None,
+) -> dict:
+    """Re-fetch ESPN events for past match dates to drop rescinded cards (e.g. VAR)."""
+    if not match_dates:
+        return {"ok": True, "dates": 0, "matched": 0}
+
+    our_teams = our_teams or set(db.get_distinct_teams())
+    db_matches = db_matches or [dict(m) for m in db.get_all_matches()]
+    totals = {"ok": True, "dates": 0, "matched": 0, "cards_removed": 0}
+
+    for date_str in match_dates:
+        espn_date = (date_str or "").replace("-", "")
+        if len(espn_date) != 8:
+            continue
+        payload = _fetch_scoreboard(espn_date)
+        if not payload:
+            continue
+        totals["dates"] += 1
+        for event in payload.get("events") or []:
+            row = _sync_espn_event(event, db_matches, our_teams)
+            if row.get("matched"):
+                totals["matched"] += 1
+
+    return totals
 
 
 def sync_from_espn(

@@ -688,6 +688,21 @@ def reconcile_synced_cards(
     return removed
 
 
+def match_dates_with_synced_cards() -> list[str]:
+    """Distinct kickoff dates that still have API-synced cards (for VAR reconciliation)."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT m.match_date
+            FROM player_cards c
+            JOIN matches m ON m.id = c.match_id
+            WHERE c.card_source = 'sync'
+            ORDER BY m.match_date DESC
+            """
+        ).fetchall()
+    return [row["match_date"] for row in rows]
+
+
 def clear_match_live_state(match_id: int) -> None:
     """Reset a fixture to scheduled when it was wrongly marked live before kickoff."""
     with db() as conn:

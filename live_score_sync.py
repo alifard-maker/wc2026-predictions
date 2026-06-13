@@ -714,6 +714,39 @@ def _run_espn_sync(
         return {"ok": False, "error": str(exc)[:200]}
 
 
+def reconcile_recorded_match_cards() -> dict:
+    """Re-fetch past match feeds so rescinded cards (e.g. VAR) are dropped from the DB."""
+    dates = db.match_dates_with_synced_cards()
+    if not dates:
+        return {"ok": True, "dates": 0}
+
+    our_teams = set(db.get_distinct_teams())
+    db_matches = [dict(m) for m in db.get_all_matches()]
+    result: dict = {"ok": True, "dates": len(dates), "football_data_matches": 0}
+
+    try:
+        import espn_live_sync
+
+        result["espn"] = espn_live_sync.sync_historical_cards(db_matches, our_teams, dates)
+    except Exception as exc:
+        logger.warning("Historical ESPN card sync failed: %s", exc)
+        result["espn_error"] = str(exc)[:200]
+
+    if is_enabled():
+        for date in dates:
+            payload = _api_request(
+                f"/competitions/{WC_COMPETITION}/matches?dateFrom={date}&dateTo={date}",
+                unfold=UNFOLD_HEADERS,
+            )
+            for api_match in (payload or {}).get("matches") or []:
+                db_match = _find_db_match(api_match, db_matches, our_teams)
+                if db_match:
+                    _sync_bookings(db_match["id"], api_match, our_teams)
+                    result["football_data_matches"] += 1
+
+    return result
+
+
 def sync_live_scores(force: bool = False) -> dict:
     """Pull live scores from ESPN + football-data.org and update the database."""
     our_teams = set(db.get_distinct_teams())
@@ -777,11 +810,13 @@ def sync_live_scores(force: bool = False) -> dict:
     totals["espn"] = espn
 
     knockout = db.sync_knockout_stage()
+    card_reconcile = reconcile_recorded_match_cards()
 
     summary = {
         "ok": True,
         **totals,
         "knockout": knockout,
+        "card_reconcile": card_reconcile,
         "synced_at": datetime.now(TIMEZONE).isoformat(),
     }
     db.set_sync_meta("live_sync_summary", json.dumps(summary))

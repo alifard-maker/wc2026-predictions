@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.18"
+APP_VERSION = "Beta 3.19"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1402,6 +1402,7 @@ def cards_page(invite_code):
         flash("You are not in this pool.", "error")
         return redirect(url_for("index"))
 
+    live_score_sync.reconcile_recorded_match_cards()
     data = db.get_player_cards_table()
     matches = db.get_all_matches()
 
@@ -1422,7 +1423,7 @@ def cards_feed(invite_code):
     if not pool or pool["id"] != session.get("pool_id"):
         return jsonify({"error": "unauthorized"}), 403
 
-    live_score_sync.sync_live_scores()
+    live_score_sync.sync_live_scores(force=True)
     data = db.get_player_cards_table()
     data["team_summary"] = db.get_tournament_cards_by_team()
     return jsonify(data)
