@@ -137,12 +137,41 @@
   <button type="button" data-filter="group">By Group</button>
 </div>
 
+{% if finished_count > 0 %}
+<div class="fixture-finished-toolbar" id="finished-toolbar">
+  <span class="fixture-finished-toolbar-label">{{ finished_count }} finished — collapsed by default</span>
+  <button type="button" class="btn btn-secondary btn-sm" id="expand-all-finished">Expand all</button>
+  <button type="button" class="btn btn-secondary btn-sm" id="collapse-all-finished">Collapse all</button>
+</div>
+{% endif %}
+
 <form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
   <div class="fixture-list">
     {% for m in matches %}
-    <div class="fixture {% if not m.open %}locked{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
+    {% set is_finished_row = (m.is_finished or m.show_result) and not m.is_live %}
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}{% if is_finished_row %} fixture-finished fixture-is-collapsed{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}"{% if is_finished_row %} data-finished="1"{% endif %}>
+      {% if is_finished_row %}
+      <div class="fixture-compact" aria-hidden="false">
+        <button type="button" class="fixture-collapse-btn" aria-expanded="false" aria-controls="fixture-body-{{ m.id }}" title="Show match details">
+          <span class="fixture-collapse-icon" aria-hidden="true">▸</span>
+        </button>
+        <span class="fixture-compact-teams"><span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span> vs <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span></span>
+        <span class="fixture-compact-score">FT {{ m.display_home }}–{{ m.display_away }}</span>
+        {% if m.prediction and m.prediction.points is not none %}
+        <span class="fixture-compact-pts points-earned">+{{ m.prediction.points }} pts</span>
+        {% elif m.prediction %}
+        <span class="fixture-compact-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="fixture-body" id="fixture-body-{{ m.id }}">
       <a class="fixture-hit-area" href="{{ match_detail_url(pool.invite_code, m.id) }}" aria-label="Open {{ m.home_team }} vs {{ m.away_team }}"></a>
       <div class="fixture-meta">
+        {% if is_finished_row %}
+        <button type="button" class="fixture-collapse-btn fixture-collapse-btn-inline" aria-expanded="false" aria-controls="fixture-body-{{ m.id }}" title="Hide match details">
+          <span class="fixture-collapse-icon" aria-hidden="true">▸</span>
+        </button>
+        {% endif %}
         {% if m.group_name %}
         <span class="badge badge-group">Group {{ m.group_name }}</span>
         {% else %}
@@ -226,6 +255,7 @@
 
       <div class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</div>
       <div></div>
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -270,6 +300,44 @@
       });
     });
   });
+
+  function setFixtureCollapsed(fixture, collapsed) {
+    if (!fixture || !fixture.dataset.finished) return;
+    fixture.classList.toggle('fixture-is-collapsed', collapsed);
+    fixture.querySelectorAll('.fixture-collapse-btn').forEach(btn => {
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.title = collapsed ? 'Show match details' : 'Hide match details';
+    });
+  }
+
+  document.querySelectorAll('.fixture-collapse-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const fixture = btn.closest('.fixture');
+      setFixtureCollapsed(fixture, !fixture.classList.contains('fixture-is-collapsed'));
+    });
+  });
+
+  document.getElementById('expand-all-finished')?.addEventListener('click', () => {
+    document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, false));
+  });
+
+  document.getElementById('collapse-all-finished')?.addEventListener('click', () => {
+    document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, true));
+  });
+
+  function markFixtureFinished(fixture) {
+    if (!fixture || fixture.dataset.finished) return;
+    fixture.dataset.finished = '1';
+    fixture.classList.add('fixture-finished', 'fixture-is-collapsed');
+    const toolbar = document.getElementById('finished-toolbar');
+    if (toolbar) {
+      const count = document.querySelectorAll('.fixture[data-finished="1"]').length;
+      const label = toolbar.querySelector('.fixture-finished-toolbar-label');
+      if (label) label.textContent = `${count} finished — collapsed by default`;
+    }
+  }
 
   const tourVote = document.getElementById('dashboard-tournament-vote');
   if (tourVote) {
@@ -386,6 +454,8 @@
       } else if ((m.is_finished || m.show_result) && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
+        const fixture = document.getElementById(`match-${m.id}`);
+        if (fixture && !m.is_live) markFixtureFinished(fixture);
       }
       if ((m.is_live || m.is_finished || m.show_result) && score) {
         updateFixtureResult(score, m);

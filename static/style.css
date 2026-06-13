@@ -455,6 +455,115 @@ select:focus {
   opacity: 0.65;
 }
 
+.fixture-finished-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0 1rem;
+  padding: 0.65rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.fixture-finished-toolbar-label {
+  flex: 1;
+  min-width: 10rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fixture-finished .fixture-body {
+  display: contents;
+}
+
+.fixture-finished.fixture-is-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  padding: 0.65rem 1rem;
+  opacity: 1;
+}
+
+.fixture-finished.fixture-is-collapsed .fixture-body {
+  display: none;
+}
+
+.fixture-finished.fixture-is-collapsed .fixture-compact {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  flex-wrap: wrap;
+}
+
+.fixture-finished:not(.fixture-is-collapsed) .fixture-compact {
+  display: none;
+}
+
+.fixture-finished:not(.fixture-is-collapsed) .fixture-collapse-btn-inline {
+  display: inline-flex;
+}
+
+.fixture-finished.fixture-is-collapsed .fixture-collapse-btn-inline {
+  display: none;
+}
+
+.fixture-compact {
+  display: none;
+  font-size: 0.9rem;
+}
+
+.fixture-compact-teams {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.fixture-compact-score {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.fixture-compact-pts {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.fixture-collapse-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  position: relative;
+  z-index: 3;
+}
+
+.fixture-collapse-btn:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fixture-collapse-btn-inline {
+  margin-right: 0.25rem;
+}
+
+.fixture-finished:not(.fixture-is-collapsed) .fixture-collapse-icon,
+.fixture-finished.fixture-is-collapsed .fixture-collapse-btn[aria-expanded="true"] .fixture-collapse-icon {
+  transform: rotate(90deg);
+  display: inline-block;
+}
+
 .fixture.locked .score-input-wrap,
 .fixture.locked .score-input {
   pointer-events: none;
@@ -3094,6 +3203,21 @@ a.bracket-match:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .fixture-finished.fixture-is-collapsed .fixture-compact {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .fixture-finished-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fixture-finished-toolbar .btn {
+    width: 100%;
   }
 
   .score-input-wrap {

@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.11"
+APP_VERSION = "Beta 3.12"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -329,6 +329,28 @@ def match_show_result(match: dict, raw: dict | None = None, now: datetime | None
     if raw and _match_has_played_data(raw, now):
         return match.get("display_home") is not None
     return False
+
+
+def match_is_finished_display(match: dict) -> bool:
+    """True when the match has a final result (not live)."""
+    return bool((match.get("is_finished") or match.get("show_result")) and not match.get("is_live"))
+
+
+def sort_matches_for_dashboard(matches: list[dict]) -> list[dict]:
+    """Live and open picks first; finished games last so users reach current fixtures faster."""
+
+    def sort_key(m: dict) -> tuple:
+        if m.get("is_live"):
+            bucket = 0
+        elif m.get("open"):
+            bucket = 1
+        elif not match_is_finished_display(m):
+            bucket = 2
+        else:
+            bucket = 3
+        return (bucket, m.get("sort_order") or 0, m.get("match_date") or "", m.get("match_time") or "")
+
+    return sorted(matches, key=sort_key)
 
 
 def enrich_matches(matches, user_predictions=None):
@@ -598,6 +620,8 @@ def pool_dashboard(invite_code):
     matches = db.get_all_matches()
     predictions = db.get_user_predictions(user_id)
     enriched = enrich_matches(matches, predictions)
+    enriched = sort_matches_for_dashboard(enriched)
+    finished_count = sum(1 for m in enriched if match_is_finished_display(m))
     leaderboard = db.get_leaderboard(pool["id"])
 
     open_count = sum(1 for m in enriched if m["open"])
@@ -610,6 +634,7 @@ def pool_dashboard(invite_code):
         "dashboard.html",
         pool=pool,
         matches=enriched,
+        finished_count=finished_count,
         leaderboard=leaderboard,
         leader_message=db.get_leader_message(leaderboard),
         open_count=open_count,
