@@ -2,6 +2,95 @@
 {% from "_match_events.html" import render_match_events %}
 {% from "_team_flag.html" import team_with_flag with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
+
+{% macro render_fixture_content(m, is_finished_row) %}
+<a class="fixture-hit-area" href="{{ match_detail_url(pool.invite_code, m.id) }}" aria-label="Open {{ m.home_team }} vs {{ m.away_team }}"></a>
+<div class="fixture-meta">
+  {% if m.group_name %}
+  <span class="badge badge-group">Group {{ m.group_name }}</span>
+  {% else %}
+  <span class="badge badge-group">{{ m.stage|replace('_', ' ')|title }}</span>
+  {% endif %}
+  <span>MD{{ m.matchday or '—' }}</span>
+  <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  <span>{{ m.venue }}</span>
+  {% if m.is_live %}
+  <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
+  {% elif is_finished_row %}
+  <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
+  {% elif m.open %}
+  <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+  {% else %}
+  <span class="badge badge-closed">Closed</span>
+  {% endif %}
+  <a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="fixture-match-link" style="margin-left: auto">View match →</a>
+</div>
+
+<div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
+
+{% if m.show_result %}
+<div class="fixture-result-stack live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
+  <div class="fixture-actual-row">
+    <span class="fixture-result-label">{% if m.is_live %}Live{% else %}Result{% endif %}</span>
+    <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">{{ m.display_home }} – {{ m.display_away }}</span>
+    <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
+  </div>
+  {% if m.prediction %}
+  <div class="fixture-prediction-row" data-fixture-prediction="{{ m.id }}">
+    <span class="fixture-result-label">Your pick</span>
+    <span class="fixture-result-score">{{ m.prediction.home_score }} – {{ m.prediction.away_score }}</span>
+    {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+    {% if m.prediction.points is not none %}
+    <span class="points-earned" data-prediction-points="{{ m.id }}">+{{ m.prediction.points }} pts</span>
+    {% endif %}
+  </div>
+  {% elif not m.open %}
+  <div class="fixture-prediction-row fixture-prediction-missing">
+    <span class="fixture-result-label">Your pick</span>
+    <span class="fixture-no-pick">—</span>
+  </div>
+  {% endif %}
+  {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
+  <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
+    <span class="fixture-winners-label">Called it:</span>
+    {% for p in match_spotlight.correct_predictors %}
+    <span class="spotlight-chip{% if p.points == 5 %} spotlight-exact{% endif %}">{{ p.display_name }}{% if p.user_id == session.user_id %} (you){% endif %} +{{ p.points }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% elif m.open %}
+<div class="score-input-wrap">
+  <div class="score-input">
+    <input type="number" name="home_{{ m.id }}" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="home">
+    <span class="score-dash">–</span>
+    <input type="number" name="away_{{ m.id }}" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="away">
+    <input type="hidden" name="match_{{ m.id }}" id="match_{{ m.id }}" value="{% if m.prediction %}{{ m.prediction.home_score }}-{{ m.prediction.away_score }}{% endif %}">
+  </div>
+  {% set day_key = 'day_' ~ m.match_date %}
+  <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET)">
+    <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}"
+      {% if bold_by_day.get(day_key) == m.id %}checked{% endif %}
+      {% if not m.prediction %}disabled{% endif %}>
+    <span class="bold-pick-toggle-face">🎰 Bold 2×</span>
+  </label>
+</div>
+{% elif m.prediction %}
+<div class="prediction-done">
+  {{ m.prediction.home_score }} – {{ m.prediction.away_score }}
+  {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
+  {% if m.prediction.points is not none %}
+  <div class="points-earned">+{{ m.prediction.points }} pts</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="prediction-done" style="color: var(--muted)">—</div>
+{% endif %}
+
+<div class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</div>
+<div></div>
+{% endmacro %}
+
 {% block title %}{{ pool.name }} — Matches{% endblock %}
 
 {% block content %}
@@ -149,114 +238,33 @@
   <div class="fixture-list">
     {% for m in matches %}
     {% set is_finished_row = m.collapsible_finished %}
-    <div class="fixture {% if not m.open %}locked{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}{% if is_finished_row %} fixture-finished fixture-is-collapsed{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}"{% if is_finished_row %} data-finished="1"{% endif %}>
-      {% if is_finished_row %}
-      <div class="fixture-compact" aria-hidden="false">
-        <button type="button" class="fixture-collapse-btn" aria-expanded="false" aria-controls="fixture-body-{{ m.id }}" title="Show match details">
-          <span class="fixture-collapse-icon" aria-hidden="true">▸</span>
-        </button>
-        <span class="fixture-compact-teams"><span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span> vs <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span></span>
-        <span class="fixture-compact-score">FT {{ m.display_home }}–{{ m.display_away }}</span>
+    {% if is_finished_row %}
+    <details class="fixture-details-card locked fixture-finished{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-finished="1">
+      <summary class="fixture-summary">
+        <span class="fixture-summary-arrow" aria-hidden="true">▸</span>
+        <span class="fixture-summary-teams">
+          <span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
+          <span class="fixture-summary-vs">vs</span>
+          <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+        </span>
+        <span class="fixture-summary-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
         {% if m.prediction and m.prediction.points is not none %}
-        <span class="fixture-compact-pts points-earned">+{{ m.prediction.points }} pts</span>
+        <span class="fixture-summary-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
         {% elif m.prediction %}
-        <span class="fixture-compact-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
-        {% endif %}
-      </div>
-      {% endif %}
-      <div class="fixture-body" id="fixture-body-{{ m.id }}">
-      <a class="fixture-hit-area" href="{{ match_detail_url(pool.invite_code, m.id) }}" aria-label="Open {{ m.home_team }} vs {{ m.away_team }}"></a>
-      <div class="fixture-meta">
-        {% if is_finished_row %}
-        <button type="button" class="fixture-collapse-btn fixture-collapse-btn-inline" aria-expanded="false" aria-controls="fixture-body-{{ m.id }}" title="Hide match details">
-          <span class="fixture-collapse-icon" aria-hidden="true">▸</span>
-        </button>
-        {% endif %}
-        {% if m.group_name %}
-        <span class="badge badge-group">Group {{ m.group_name }}</span>
+        <span class="fixture-summary-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
         {% else %}
-        <span class="badge badge-group">{{ m.stage|replace('_', ' ')|title }}</span>
+        <span class="fixture-summary-pts"></span>
         {% endif %}
-        <span>MD{{ m.matchday or '—' }}</span>
-        <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
-        <span>{{ m.venue }}</span>
-        {% if m.is_live %}
-        <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
-        {% elif is_finished_row %}
-        <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
-        {% elif m.open %}
-        <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
-        {% else %}
-        <span class="badge badge-closed">Closed</span>
-        {% endif %}
-        <a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="fixture-match-link" style="margin-left: auto">View match →</a>
+      </summary>
+      <div class="fixture fixture-details-body">
+        {{ render_fixture_content(m, is_finished_row) }}
       </div>
-
-      <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
-
-      {% if m.show_result %}
-      <div class="fixture-result-stack live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
-        <div class="fixture-actual-row">
-          <span class="fixture-result-label">{% if m.is_live %}Live{% else %}Result{% endif %}</span>
-          <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">{{ m.display_home }} – {{ m.display_away }}</span>
-          <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
-        </div>
-        {% if m.prediction %}
-        <div class="fixture-prediction-row" data-fixture-prediction="{{ m.id }}">
-          <span class="fixture-result-label">Your pick</span>
-          <span class="fixture-result-score">{{ m.prediction.home_score }} – {{ m.prediction.away_score }}</span>
-          {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
-          {% if m.prediction.points is not none %}
-          <span class="points-earned" data-prediction-points="{{ m.id }}">+{{ m.prediction.points }} pts</span>
-          {% endif %}
-        </div>
-        {% elif not m.open %}
-        <div class="fixture-prediction-row fixture-prediction-missing">
-          <span class="fixture-result-label">Your pick</span>
-          <span class="fixture-no-pick">—</span>
-        </div>
-        {% endif %}
-        {% if match_spotlight and match_spotlight.match_id == m.id and match_spotlight.correct_predictors %}
-        <div class="fixture-winners" data-fixture-winners="{{ m.id }}">
-          <span class="fixture-winners-label">Called it:</span>
-          {% for p in match_spotlight.correct_predictors %}
-          <span class="spotlight-chip{% if p.points == 5 %} spotlight-exact{% endif %}">{{ p.display_name }}{% if p.user_id == session.user_id %} (you){% endif %} +{{ p.points }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </div>
-      {% elif m.open %}
-      <div class="score-input-wrap">
-        <div class="score-input">
-          <input type="number" name="home_{{ m.id }}" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="home">
-          <span class="score-dash">–</span>
-          <input type="number" name="away_{{ m.id }}" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="away">
-          <input type="hidden" name="match_{{ m.id }}" id="match_{{ m.id }}" value="{% if m.prediction %}{{ m.prediction.home_score }}-{{ m.prediction.away_score }}{% endif %}">
-        </div>
-        {% set day_key = 'day_' ~ m.match_date %}
-        <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET)">
-          <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}"
-            {% if bold_by_day.get(day_key) == m.id %}checked{% endif %}
-            {% if not m.prediction %}disabled{% endif %}>
-          <span class="bold-pick-toggle-face">🎰 Bold 2×</span>
-        </label>
-      </div>
-      {% elif m.prediction %}
-      <div class="prediction-done">
-        {{ m.prediction.home_score }} – {{ m.prediction.away_score }}
-        {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
-        {% if m.prediction.points is not none %}
-        <div class="points-earned">+{{ m.prediction.points }} pts</div>
-        {% endif %}
-      </div>
-      {% else %}
-      <div class="prediction-done" style="color: var(--muted)">—</div>
-      {% endif %}
-
-      <div class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</div>
-      <div></div>
-      </div>
+    </details>
+    {% else %}
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open and not is_finished_row %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
+      {{ render_fixture_content(m, is_finished_row) }}
     </div>
+    {% endif %}
     {% endfor %}
   </div>
 
@@ -294,7 +302,7 @@
         tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const f = btn.dataset.filter;
-        document.querySelectorAll('.fixture').forEach(el => {
+        document.querySelectorAll('.fixture-list [data-match-id]').forEach(el => {
           if (f === 'all') { el.style.display = ''; return; }
           if (f === 'group') { el.style.display = el.dataset.stage === 'group' ? '' : 'none'; return; }
           el.style.display = el.dataset.matchday === f ? '' : 'none';
@@ -303,59 +311,23 @@
     });
   }
 
-  function setFixtureCollapsed(fixture, collapsed) {
-    if (!fixture || fixture.dataset.finished !== '1') return;
-    if (collapsed) {
-      fixture.classList.add('fixture-is-collapsed');
-    } else {
-      fixture.classList.remove('fixture-is-collapsed');
-    }
-    fixture.querySelectorAll('.fixture-collapse-btn').forEach(btn => {
-      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      btn.title = collapsed ? 'Show match details' : 'Hide match details';
-    });
-  }
-
-  document.querySelector('.fixture-list')?.addEventListener('click', (e) => {
-    const btn = e.target.closest?.('.fixture-collapse-btn');
-    if (!btn) return;
+  document.getElementById('expand-all-finished')?.addEventListener('click', (e) => {
     e.preventDefault();
-    e.stopPropagation();
-    const fixture = btn.closest('.fixture');
-    if (!fixture) return;
-    setFixtureCollapsed(fixture, !fixture.classList.contains('fixture-is-collapsed'));
+    document.querySelectorAll('details.fixture-details-card').forEach(d => { d.open = true; });
   });
 
-  const expandAllBtn = document.getElementById('expand-all-finished');
-  if (expandAllBtn) {
-    expandAllBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, false));
-    });
-  }
+  document.getElementById('collapse-all-finished')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('details.fixture-details-card').forEach(d => { d.open = false; });
+  });
 
-  const collapseAllBtn = document.getElementById('collapse-all-finished');
-  if (collapseAllBtn) {
-    collapseAllBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      document.querySelectorAll('.fixture[data-finished="1"]').forEach(el => setFixtureCollapsed(el, true));
-    });
-  }
-
-  function markFixtureFinished(fixture) {
-    if (!fixture || fixture.dataset.finished === '1') return;
-    fixture.dataset.finished = '1';
-    fixture.classList.add('fixture-finished', 'fixture-is-collapsed');
-    if (!fixture.querySelector('.fixture-compact')) {
-      return;
-    }
-    const toolbar = document.getElementById('finished-toolbar');
-    if (toolbar) {
-      const count = document.querySelectorAll('.fixture[data-finished="1"]').length;
-      const label = toolbar.querySelector('.fixture-finished-toolbar-label');
-      if (label) label.textContent = `${count} finished — collapsed by default`;
+  function updateFinishedSummary(m) {
+    const summaryScore = document.querySelector(`[data-summary-score="${m.id}"]`);
+    if (summaryScore) summaryScore.textContent = `${m.display_home}–${m.display_away}`;
+    const summaryPts = document.querySelector(`[data-summary-pts="${m.id}"]`);
+    if (summaryPts && m.prediction && m.prediction.points != null) {
+      summaryPts.textContent = `+${m.prediction.points} pts`;
+      summaryPts.classList.add('points-earned');
     }
   }
 
@@ -441,7 +413,7 @@
   }
 
   function applySpotlight(spotlight) {
-    document.querySelectorAll('.fixture').forEach(el => {
+    document.querySelectorAll('.fixture-list [data-match-id]').forEach(el => {
       el.classList.remove('fixture-spotlight');
     });
     document.querySelectorAll('[data-fixture-winners]').forEach(el => el.remove());
@@ -474,8 +446,7 @@
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
-        const fixture = document.getElementById(`match-${m.id}`);
-        if (fixture && !m.is_live && m.actual_home != null) markFixtureFinished(fixture);
+        updateFinishedSummary(m);
       }
       if ((m.is_live || m.is_finished || m.show_result) && score) {
         updateFixtureResult(score, m);

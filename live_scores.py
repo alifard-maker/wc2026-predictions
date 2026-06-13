@@ -96,6 +96,16 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
         except (TypeError, ValueError):
             live_injury_minute = None
     if actual_home is not None and actual_away is not None:
+        if now < kickoff:
+            m["status"] = "scheduled"
+            m["kickoff"] = kickoff
+            m["display_home"] = None
+            m["display_away"] = None
+            m["minute_label"] = None
+            m["live_minute"] = None
+            m["is_live"] = False
+            m["is_finished"] = False
+            return m
         status = "finished"
         display_home, display_away = actual_home, actual_away
         minute_label = "FT"

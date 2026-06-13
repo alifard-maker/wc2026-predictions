@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.14"
+APP_VERSION = "Beta 3.16"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -278,11 +278,11 @@ def cards_for_json(cards: list[dict]) -> list[dict]:
 
 
 def _match_has_played_data(raw: dict, now: datetime) -> bool:
-    if raw.get("actual_home") is not None:
-        return True
     kickoff = parse_match_datetime(raw["match_date"], raw["match_time"])
     if now < kickoff:
         return False
+    if raw.get("actual_home") is not None:
+        return True
     if (raw.get("status") or "") not in ("live", "halftime", "finished"):
         return False
     live_minute = raw.get("live_minute")
@@ -332,16 +332,26 @@ def match_show_result(match: dict, raw: dict | None = None, now: datetime | None
 
 
 def match_is_finished_display(match: dict) -> bool:
-    """True only when the match has a final result entered (not merely closed for picks)."""
+    """True only when kickoff has passed and a final result is recorded."""
     if match.get("is_live"):
         return False
-    return match.get("actual_home") is not None and match.get("actual_away") is not None
+    if match.get("actual_home") is None or match.get("actual_away") is None:
+        return False
+    kickoff = match.get("kickoff")
+    if kickoff is None:
+        kickoff = parse_match_datetime(match["match_date"], match["match_time"])
+    if datetime.now(TIMEZONE) < kickoff:
+        return False
+    return True
 
 
 def sort_matches_for_dashboard(matches: list[dict]) -> list[dict]:
     """Live and open picks first; finished games last so users reach current fixtures faster."""
 
     def sort_key(m: dict) -> tuple:
+        kickoff = m.get("kickoff")
+        if kickoff is None:
+            kickoff = parse_match_datetime(m["match_date"], m["match_time"])
         if m.get("is_live"):
             bucket = 0
         elif m.get("open"):
@@ -350,7 +360,11 @@ def sort_matches_for_dashboard(matches: list[dict]) -> list[dict]:
             bucket = 2
         else:
             bucket = 3
-        return (bucket, m.get("sort_order") or 0, m.get("match_date") or "", m.get("match_time") or "")
+        if bucket == 2:
+            return (bucket, kickoff, m.get("sort_order") or 0)
+        if bucket == 3:
+            return (bucket, m.get("sort_order") or 0, m.get("match_date") or "", m.get("match_time") or "")
+        return (bucket, m.get("sort_order") or 0, kickoff)
 
     return sorted(matches, key=sort_key)
 
@@ -619,6 +633,7 @@ def pool_dashboard(invite_code):
 
     db.sync_ai_predictions(pool["id"])
     db.sync_ai_tournament_vote(pool["id"])
+    db.repair_premature_results()
     user_id = session["user_id"]
     matches = db.get_all_matches()
     predictions = db.get_user_predictions(user_id)
