@@ -718,28 +718,38 @@ def _sync_bookings(
 
 
 def _sync_penalties(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> int:
-    added = 0
-    for goal in api_match.get("goals") or []:
-        if (goal.get("type") or "").upper() != "PENALTY":
-            continue
-        scorer = (goal.get("scorer") or {}).get("name")
-        minute = goal.get("minute")
-        team_name = canonical_team_name((goal.get("team") or {}).get("name", ""), our_teams)
-        if not team_name or minute is None:
-            continue
-        injury = _injury_minute(goal)
-        if db.import_match_penalty(match_id, team_name, "scored", int(minute), scorer, injury):
-            added += 1
+    api_status = (api_match.get("status") or "").upper()
+    db_status = (db_match.get("status") or "").lower()
+    if api_status != "PENALTY_SHOOTOUT" and db_status != "penalty_shootout":
+        return 0
 
-    for i, pen in enumerate(api_match.get("penalties") or []):
+    added = 0
+    existing = db.get_match_penalties(match_id)
+    shootout_count = sum(1 for pen in existing if (pen.get("minute") or 0) > 120)
+    seen: set[tuple[str, str, str]] = {
+        (
+            pen.get("taker_team") or "",
+            pen.get("taker_name") or "",
+            pen.get("outcome") or "",
+        )
+        for pen in existing
+        if (pen.get("minute") or 0) > 120
+    }
+
+    for pen in api_match.get("penalties") or []:
         player = (pen.get("player") or {}).get("name")
         team_name = canonical_team_name((pen.get("team") or {}).get("name", ""), our_teams)
         if not player or not team_name:
             continue
         outcome = "scored" if pen.get("scored") else "missed"
-        minute = 120 + i + 1
+        key = (team_name, player, outcome)
+        if key in seen:
+            continue
+        minute = 120 + shootout_count + 1
         if db.import_match_penalty(match_id, team_name, outcome, minute, player):
             added += 1
+            shootout_count += 1
+            seen.add(key)
     return added
 
 
@@ -945,6 +955,7 @@ def sync_live_scores(force: bool = False) -> dict:
 
     knockout = db.sync_knockout_stage()
     card_reconcile = reconcile_recorded_match_cards()
+    shootout_repair = db.repair_bogus_shootout_penalties()
 
     disagreements = [c for c in crosscheck_rows if c.get("result") == "corrected"]
     summary = {
@@ -954,6 +965,7 @@ def sync_live_scores(force: bool = False) -> dict:
         "crosscheck_disagreements": disagreements[-5:],
         "knockout": knockout,
         "card_reconcile": card_reconcile,
+        "shootout_repair_removed": shootout_repair,
         "synced_at": datetime.now(TIMEZONE).isoformat(),
         "cooldown_seconds": cooldown,
         "fast_poll": any(

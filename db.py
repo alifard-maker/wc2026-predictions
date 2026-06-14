@@ -236,6 +236,7 @@ def init_db() -> None:
     merge_duplicate_users()
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
+    repair_bogus_shootout_penalties()
     repair_backfill_ai_agent_keys()
     repair_split_merged_cursor_ai_accounts()
     repair_rename_ir_iran_team()
@@ -1118,6 +1119,54 @@ def repair_rescinded_var_cards() -> int:
             if row:
                 conn.execute("DELETE FROM player_cards WHERE id = ?", (row["id"],))
                 removed += 1
+    return removed
+
+
+def repair_bogus_shootout_penalties() -> int:
+    """Remove shootout rows wrongly synced from regular-time penalty goals."""
+    removed = 0
+    with db() as conn:
+        cur = conn.execute(
+            """
+            DELETE FROM match_penalties
+            WHERE minute > 120
+              AND match_id IN (
+                SELECT id FROM matches
+                WHERE actual_home IS NOT NULL
+                  AND actual_away IS NOT NULL
+                  AND actual_home != actual_away
+              )
+            """
+        )
+        removed += cur.rowcount
+
+        groups = conn.execute(
+            """
+            SELECT match_id, taker_team, COALESCE(taker_name, '') AS taker_name, outcome,
+                   MIN(id) AS keep_id, COUNT(*) AS n
+            FROM match_penalties
+            WHERE minute > 120
+            GROUP BY match_id, taker_team, taker_name, outcome
+            HAVING n > 1
+            """
+        ).fetchall()
+        for row in groups:
+            cur = conn.execute(
+                """
+                DELETE FROM match_penalties
+                WHERE match_id = ? AND taker_team = ?
+                  AND COALESCE(taker_name, '') = ? AND outcome = ?
+                  AND minute > 120 AND id != ?
+                """,
+                (
+                    row["match_id"],
+                    row["taker_team"],
+                    row["taker_name"],
+                    row["outcome"],
+                    row["keep_id"],
+                ),
+            )
+            removed += cur.rowcount
     return removed
 
 

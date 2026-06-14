@@ -578,12 +578,11 @@ def _sync_shootout_penalties(
     added = 0
     existing = db.get_match_penalties(match_id)
     shootout_count = sum(1 for pen in existing if (pen.get("minute") or 0) > 120)
-    seen: set[tuple[str, str, str, int]] = {
+    seen: set[tuple[str, str, str]] = {
         (
             pen.get("taker_team") or "",
             pen.get("taker_name") or "",
             pen.get("outcome") or "",
-            pen.get("minute") or 0,
         )
         for pen in existing
         if (pen.get("minute") or 0) > 120
@@ -593,13 +592,14 @@ def _sync_shootout_penalties(
         type_text = ((detail.get("type") or {}).get("text") or "").strip()
         if not type_text and not detail.get("penaltyKick"):
             continue
+        if not detail.get("penaltyKick"):
+            continue
         lower = type_text.lower()
-        is_shootout_kick = bool(detail.get("penaltyKick")) and (
-            in_shootout
-            or "shootout" in lower
-            or "penalty" in lower
-        )
-        if not is_shootout_kick:
+        if "shootout" not in lower and not in_shootout:
+            continue
+
+        clock_minute, _ = _parse_espn_minute((detail.get("clock") or {}).get("displayValue"))
+        if clock_minute is not None and clock_minute <= 120:
             continue
 
         player = None
@@ -618,10 +618,10 @@ def _sync_shootout_penalties(
         if not outcome:
             outcome = "scored" if detail.get("scoringPlay") else "missed"
 
-        minute = 120 + shootout_count + 1
-        key = (team_name, player, outcome, minute)
+        key = (team_name, player, outcome)
         if key in seen:
             continue
+        minute = 120 + shootout_count + 1
         if db.import_match_penalty(match_id, team_name, outcome, minute, player):
             added += 1
             shootout_count += 1
@@ -785,7 +785,7 @@ def _sync_espn_event(
         db_match,
         team_by_id,
         competition,
-        in_shootout=in_shootout or db_status == "finished",
+        in_shootout=in_shootout,
     )
 
     if result["matched"]:
