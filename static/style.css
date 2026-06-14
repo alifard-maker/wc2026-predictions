@@ -2000,7 +2000,8 @@ textarea:focus {
 }
 
 .match-result-scoreline,
-.fixture-prediction-meta {
+.fixture-prediction-meta,
+.match-result-meta {
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -2008,12 +2009,57 @@ textarea:focus {
   gap: 0.35rem 0.5rem;
 }
 
+.match-matchup-line-finished-score,
+.fixture-matchup-line-with-pick {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  width: 100%;
+  margin: 0;
+  padding-right: clamp(6.5rem, 24vw, 11rem);
+}
+
+.match-matchup-line-finished-score .match-matchup-team.home,
+.fixture-matchup-line-with-pick .fixture-matchup-team.home {
+  justify-self: end;
+  text-align: right;
+}
+
+.match-matchup-line-finished-score .match-result-center-score,
+.match-matchup-line-finished-score .match-matchup-score,
+.fixture-matchup-line-with-pick .fixture-result-score {
+  justify-self: center;
+}
+
+.match-matchup-line-finished-score .match-matchup-team.away,
+.fixture-matchup-line-with-pick .fixture-matchup-team.away {
+  justify-self: start;
+  text-align: left;
+}
+
 .match-pick-inline,
 .fixture-pick-inline {
-  font-size: 0.78em;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: clamp(6.5rem, 24vw, 11rem);
+  text-align: right;
+  font-size: 0.68rem;
   font-weight: 500;
+  line-height: 1.25;
   color: var(--muted);
-  opacity: 0.72;
+  opacity: 0.65;
+}
+
+.match-result-meta {
+  margin-top: 0.15rem;
+}
+
+.match-result-meta .points-earned {
+  margin: 0;
 }
 
 .fixture-finished-inline .fixture-prediction-row {
@@ -3793,6 +3839,19 @@ a.bracket-match:hover {
 
   .fixture-matchup-line {
     gap: 0.35rem 0.5rem;
+  }
+
+  .match-matchup-line-finished-score,
+  .fixture-matchup-line-with-pick {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    padding-right: clamp(5rem, 34vw, 8rem);
+    gap: 0.35rem 0.45rem;
+  }
+
+  .match-pick-inline,
+  .fixture-pick-inline {
+    max-width: clamp(5rem, 34vw, 8rem);
+    font-size: 0.62rem;
   }
 
   .fixture-matchup-team.home,
