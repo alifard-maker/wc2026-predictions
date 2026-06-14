@@ -31,19 +31,22 @@
   <div class="finished-match-card locked fixture-finished{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-collapsed="1">
     <button type="button" class="finished-match-toggle" aria-expanded="false" aria-controls="finished-panel-{{ m.id }}">
       <span class="finished-match-arrow" aria-hidden="true">▸</span>
-      <span class="finished-match-teams">
-        <span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
-        <span class="finished-match-vs">vs</span>
-        <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+      <span class="finished-match-collapse-hint">Hide details</span>
+      <span class="finished-match-summary">
+        <span class="finished-match-teams">
+          <span class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
+          <span class="finished-match-vs">vs</span>
+          <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+        </span>
+        <span class="finished-match-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
+        {% if m.prediction and m.prediction.points is not none %}
+        <span class="finished-match-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
+        {% elif m.prediction %}
+        <span class="finished-match-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
+        {% else %}
+        <span class="finished-match-pts"></span>
+        {% endif %}
       </span>
-      <span class="finished-match-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
-      {% if m.prediction and m.prediction.points is not none %}
-      <span class="finished-match-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
-      {% elif m.prediction %}
-      <span class="finished-match-pts muted-inline">{{ m.prediction.home_score }}–{{ m.prediction.away_score }}</span>
-      {% else %}
-      <span class="finished-match-pts"></span>
-      {% endif %}
     </button>
     <div class="finished-match-panel" id="finished-panel-{{ m.id }}" hidden>
       <div class="fixture fixture-finished-expanded{% if m.show_result %} fixture-has-result{% endif %}">

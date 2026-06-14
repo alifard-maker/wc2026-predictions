@@ -522,6 +522,31 @@ a.finished-matches-link-card:hover {
   -webkit-tap-highlight-color: transparent;
 }
 
+.finished-match-summary {
+  display: contents;
+}
+
+.finished-match-collapse-hint {
+  display: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.finished-match-card[data-collapsed="0"] .finished-match-toggle {
+  grid-template-columns: auto 1fr;
+  gap: 0.65rem;
+  padding: 0.55rem 1rem;
+}
+
+.finished-match-card[data-collapsed="0"] .finished-match-collapse-hint {
+  display: block;
+}
+
+.finished-match-card[data-collapsed="0"] .finished-match-summary {
+  display: none;
+}
+
 .finished-match-toggle:hover {
   background: rgba(255, 255, 255, 0.03);
 }
@@ -3890,6 +3915,10 @@ a.bracket-match:hover {
   .finished-match-toggle {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 0.5rem 0.75rem;
+  }
+
+  .finished-match-card[data-collapsed="0"] .finished-match-toggle {
+    grid-template-columns: auto 1fr;
   }
 
   .finished-match-teams {
