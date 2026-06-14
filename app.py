@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.60"
+APP_VERSION = "Beta 3.61"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1932,6 +1932,12 @@ def admin_page(invite_code):
         elif action == "repair_ai_split" and session.get("admin_secret") == pool["admin_secret"]:
             db.repair_split_merged_cursor_ai_accounts()
             flash("Cursor AI accounts re-split and points recalculated.", "success")
+        elif action == "repair_ai_relink" and session.get("admin_secret") == pool["admin_secret"]:
+            merged = db.repair_relink_renamed_ai_agents()
+            if merged:
+                flash(f"Relinked renamed AI accounts: {'; '.join(merged)}", "success")
+            else:
+                flash("Renamed AI accounts relinked and agent keys backfilled.", "success")
         elif action == "rename_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 user_id = int(request.form.get("user_id", 0))

@@ -7,6 +7,10 @@ import hashlib
 from team_data import TEAM_FACTS
 
 AI_DISPLAY_NAME = "Cursor AI Prediction"  # backwards compatibility
+CURSOR_LEGACY_DISPLAY_NAMES: frozenset[str] = frozenset({
+    "Cursor AI Prediction",
+    "Cursor AI Predictions",
+})
 
 AI_AGENTS: list[dict] = [
     {"key": "cursor", "display_name": "Cursor AI", "badge": "Cursor", "avatar": "images/ai-agents/cursor.svg"},
@@ -128,6 +132,19 @@ def predict_tournament_picks(pool_id: int, agent_key: str = "cursor") -> dict[st
     }
 
 
+def infer_ai_agent_key(display_name: str | None = None) -> str | None:
+    if not display_name:
+        return None
+    if display_name in CURSOR_LEGACY_DISPLAY_NAMES or display_name in AI_EXTRA_DISPLAY_NAMES:
+        return "cursor"
+    if display_name == AI_DISPLAY_NAME:
+        return "cursor"
+    for agent in AI_AGENTS:
+        if agent["display_name"] == display_name:
+            return agent["key"]
+    return None
+
+
 def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = None) -> dict | None:
     if ai_agent_key:
         for agent in AI_AGENTS:
@@ -137,7 +154,7 @@ def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = N
         for agent in AI_AGENTS:
             if agent["display_name"] == display_name:
                 return agent
-        if display_name == AI_DISPLAY_NAME:
+        if display_name in CURSOR_LEGACY_DISPLAY_NAMES or display_name == AI_DISPLAY_NAME:
             return {"badge": "Cursor", "avatar": AI_AGENTS[0].get("avatar")}
     if display_name in AI_EXTRA_DISPLAY_NAMES:
         return {"badge": "AI", "avatar": AI_AGENTS[0].get("avatar")}
@@ -146,6 +163,8 @@ def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = N
 
 def is_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
     if ai_agent_key and ai_agent_key in AI_AGENT_KEYS:
+        return True
+    if display_name in CURSOR_LEGACY_DISPLAY_NAMES:
         return True
     if display_name in AI_EXTRA_DISPLAY_NAMES:
         return True

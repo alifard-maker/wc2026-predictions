@@ -233,13 +233,14 @@ def init_db() -> None:
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
     repair_backfill_ai_agent_keys()
+    repair_relink_renamed_ai_agents()
     repair_split_merged_cursor_ai_accounts()
     ensure_admin_secrets()
 
 
 def repair_backfill_ai_agent_keys() -> None:
     """Tag synced AI pool users so renames do not break pick sync."""
-    from ai_predictor import AI_AGENTS
+    from ai_predictor import AI_AGENTS, AI_EXTRA_DISPLAY_NAMES, CURSOR_LEGACY_DISPLAY_NAMES, infer_ai_agent_key
 
     with db() as conn:
         for agent in AI_AGENTS:
@@ -251,6 +252,102 @@ def repair_backfill_ai_agent_keys() -> None:
                 """,
                 (agent["key"], agent["display_name"]),
             )
+        for legacy_name in CURSOR_LEGACY_DISPLAY_NAMES | AI_EXTRA_DISPLAY_NAMES:
+            conn.execute(
+                """
+                UPDATE users
+                SET ai_agent_key = 'cursor'
+                WHERE display_name = ? AND (ai_agent_key IS NULL OR ai_agent_key = '')
+                """,
+                (legacy_name,),
+            )
+        rows = conn.execute(
+            "SELECT id, display_name FROM users WHERE ai_agent_key IS NULL OR ai_agent_key = ''"
+        ).fetchall()
+        for row in rows:
+            key = infer_ai_agent_key(row["display_name"])
+            if key:
+                conn.execute(
+                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+                    (key, row["id"]),
+                )
+
+
+def repair_relink_renamed_ai_agents() -> list[str]:
+    """
+    Merge duplicate synced AI accounts after admin renames.
+
+    Example: legacy Cursor AI Predictions renamed to Nostradamus while a fresh
+    Cursor AI row still holds the synced picks.
+    """
+    from ai_predictor import AI_AGENTS, AI_EXTRA_DISPLAY_NAMES, CURSOR_LEGACY_DISPLAY_NAMES
+
+    merged: list[str] = []
+    with db() as conn:
+        pool_ids = [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        for pool_id in pool_ids:
+            for agent in AI_AGENTS:
+                key = agent["key"]
+                canonical = agent["display_name"]
+                users = conn.execute(
+                    "SELECT id, display_name, ai_agent_key FROM users WHERE pool_id = ?",
+                    (pool_id,),
+                ).fetchall()
+                candidates: list[dict] = []
+                seen: set[int] = set()
+                for user in users:
+                    include = False
+                    if user["ai_agent_key"] == key:
+                        include = True
+                    elif user["display_name"] == canonical:
+                        include = True
+                    elif key == "cursor" and user["display_name"] in (
+                        CURSOR_LEGACY_DISPLAY_NAMES | AI_EXTRA_DISPLAY_NAMES
+                    ):
+                        include = True
+                    if include and user["id"] not in seen:
+                        seen.add(user["id"])
+                        candidates.append(dict(user))
+
+                if not candidates:
+                    continue
+
+                def keeper_score(user: dict) -> tuple:
+                    custom_name = (
+                        user["display_name"] != canonical
+                        and user["display_name"] not in CURSOR_LEGACY_DISPLAY_NAMES
+                    )
+                    return (
+                        custom_name,
+                        _user_prediction_count(conn, user["id"]),
+                        _user_match_points(conn, user["id"]),
+                        -user["id"],
+                    )
+
+                keeper = max(candidates, key=keeper_score)
+                keeper_id = keeper["id"]
+                conn.execute(
+                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+                    (key, keeper_id),
+                )
+
+                if len(candidates) < 2:
+                    continue
+
+                for dup in candidates:
+                    if dup["id"] == keeper_id:
+                        continue
+                    line = _merge_user_records(
+                        conn,
+                        keeper_id,
+                        dup["id"],
+                        keeper_label=keeper["display_name"],
+                        dup_label=dup["display_name"],
+                        pool_id=pool_id,
+                    )
+                    if line:
+                        merged.append(line)
+    return merged
 
 
 def repair_split_merged_cursor_ai_accounts() -> None:
@@ -476,6 +573,14 @@ def _user_match_points(conn, user_id: int) -> int:
         (user_id,),
     ).fetchone()
     return int(row["pts"] or 0)
+
+
+def _user_prediction_count(conn, user_id: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM predictions WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    return int(row["c"] or 0)
 
 
 # Same person, different typo when re-joining (normalized names differ).
@@ -2240,7 +2345,7 @@ def delete_user(user_id: int, pool_id: int) -> str | None:
         ).fetchone()
         if not user:
             return "User not found in this pool."
-        if is_ai_agent(user["display_name"]):
+        if is_ai_agent(user["display_name"], user["ai_agent_key"]):
             return "Cannot delete AI pool members."
 
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -2248,6 +2353,8 @@ def delete_user(user_id: int, pool_id: int) -> str | None:
 
 
 def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str:
+    from ai_predictor import infer_ai_agent_key, is_ai_agent
+
     name = new_display_name.strip()
     if not name:
         return "Display name is required."
@@ -2271,10 +2378,16 @@ def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str
             if normalize_display_name(row["display_name"]) == name_key:
                 return f'Another member already uses the name "{row["display_name"]}".'
 
+        agent_key = user["ai_agent_key"] or infer_ai_agent_key(user["display_name"])
         conn.execute(
             "UPDATE users SET display_name = ? WHERE id = ?",
             (name, user_id),
         )
+        if agent_key and is_ai_agent(user["display_name"], agent_key):
+            conn.execute(
+                "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+                (agent_key, user_id),
+            )
     return {
         "id": user_id,
         "display_name": name,
@@ -2465,7 +2578,7 @@ def get_recent_pool_predictions(pool_id: int, limit: int = 40) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id AS user_id, u.display_name, p.home_score, p.away_score, p.submitted_at,
+            SELECT u.id AS user_id, u.display_name, u.ai_agent_key, p.home_score, p.away_score, p.submitted_at,
                    m.id AS match_id, m.home_team, m.away_team, m.match_date, m.match_time
             FROM predictions p
             JOIN users u ON u.id = p.user_id

@@ -61,10 +61,14 @@
 
 <div class="card" style="margin-bottom: 1rem">
   <h3>AI accounts</h3>
-  <p class="muted-inline" style="margin: 0 0 0.75rem">Re-split <strong>Cursor AI</strong> and <strong>Cursor AI Prediction</strong> if their points were accidentally merged.</p>
-  <form method="post">
+  <p class="muted-inline" style="margin: 0 0 0.75rem">Re-split <strong>Cursor AI</strong> and <strong>Cursor AI Prediction</strong> if their points were accidentally merged. Use <strong>Relink renamed AI</strong> if an AI was renamed (e.g. Nostradamus) and its picks disappeared onto a duplicate account.</p>
+  <form method="post" style="display:inline-block; margin-right: 0.5rem">
     <input type="hidden" name="action" value="repair_ai_split">
     <button type="submit" class="btn btn-secondary btn-sm">Repair Cursor AI split &amp; recalc</button>
+  </form>
+  <form method="post" style="display:inline-block">
+    <input type="hidden" name="action" value="repair_ai_relink">
+    <button type="submit" class="btn btn-secondary btn-sm">Relink renamed AI accounts</button>
   </form>
 </div>
 

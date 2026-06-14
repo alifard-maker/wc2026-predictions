@@ -799,7 +799,9 @@ def filter_predictions_for_display(
     if picks_revealed(match):
         return predictions
     return [
-        p if p["user_id"] == viewer_user_id
+        p
+        if p["user_id"] == viewer_user_id
+        or is_ai_agent(p.get("display_name"), p.get("ai_agent_key"))
         else {**p, "home_score": None, "away_score": None, "hidden": True}
         for p in predictions
     ]
@@ -810,14 +812,14 @@ def filter_ticker_predictions(recent: list[dict]) -> list[dict]:
     filtered = []
     for p in recent:
         match = {"match_date": p["match_date"], "match_time": p["match_time"]}
-        if picks_revealed(match) or is_ai_agent(p["display_name"]):
+        if picks_revealed(match) or is_ai_agent(p["display_name"], p.get("ai_agent_key")):
             filtered.append(p)
     return filtered
 
 
 def filter_ticker_predictors(predictors: list[dict]) -> list[dict]:
     """Picks ticker fallback: only AI agents (humans hidden until deadlines pass)."""
-    return [p for p in predictors if is_ai_agent(p["display_name"])]
+    return [p for p in predictors if is_ai_agent(p["display_name"], p.get("ai_agent_key"))]
 
 
 def tournament_picks_revealed(now: datetime | None = None) -> bool:
