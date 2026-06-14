@@ -1766,22 +1766,23 @@ def get_tournament_cards_by_team() -> list[dict]:
                    COUNT(*) AS total_cards
             FROM player_cards
             GROUP BY team
-            ORDER BY total_cards DESC, team ASC
+            ORDER BY team ASC
             """
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_tournament_goals_by_team() -> list[dict]:
+def get_tournament_goals_by_team(*, sort_by_team: bool = False) -> list[dict]:
     with db() as conn:
+        order = "team ASC" if sort_by_team else "goals DESC, team ASC"
         rows = conn.execute(
-            """
+            f"""
             SELECT CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
                    COUNT(*) AS goals
             FROM match_goals g
             JOIN matches m ON m.id = g.match_id
             GROUP BY team
-            ORDER BY goals DESC, team ASC
+            ORDER BY {order}
             """
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1895,18 +1896,19 @@ def delete_match_goal(goal_id: int) -> str | None:
         return None
 
 
-def get_tournament_scorer_leaderboard() -> list[dict]:
+def get_tournament_scorer_leaderboard(*, group_by_team: bool = False) -> list[dict]:
     """Aggregate all match goals into a top-scorers table."""
     with db() as conn:
+        order = "team ASC, player_name ASC" if group_by_team else "goals DESC, player_name ASC"
         rows = conn.execute(
-            """
+            f"""
             SELECT g.scorer_name AS player_name,
                    CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
                    COUNT(*) AS goals
             FROM match_goals g
             JOIN matches m ON m.id = g.match_id
             GROUP BY lower(g.scorer_name), team
-            ORDER BY goals DESC, player_name ASC
+            ORDER BY {order}
             """
         ).fetchall()
         return [dict(r) for r in rows]
@@ -2126,7 +2128,7 @@ def get_player_cards_table() -> list[dict]:
             p["total_cards"] = p["yellow_count"] + p["red_count"]
             summary.append(p)
 
-        summary.sort(key=lambda x: (-x["total_cards"], x["player_name"].lower()))
+        summary.sort(key=lambda x: (x["team"].lower(), x["player_name"].lower()))
         return {"events": events, "summary": summary}
 
 

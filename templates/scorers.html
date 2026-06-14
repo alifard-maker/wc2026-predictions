@@ -45,12 +45,11 @@
 <div class="card">
   <table class="leaderboard-table">
     <thead>
-      <tr><th>#</th><th>Player</th><th>Team</th><th>Goals</th></tr>
+      <tr><th>Player</th><th>Team</th><th>Goals</th></tr>
     </thead>
     <tbody id="scorers-leaderboard-body">
       {% for row in leaderboard %}
       <tr class="{% if user_vote and row.player_name|lower == user_vote.top_scorer|lower %}rank-1{% endif %}">
-        <td>{{ loop.index }}</td>
         <td>
           {{ row.player_name }}
           {% if user_vote and row.player_name|lower == user_vote.top_scorer|lower %} (your pick){% endif %}
@@ -59,7 +58,7 @@
         <td><strong>{{ row.goals }}</strong></td>
       </tr>
       {% else %}
-      <tr><td colspan="4" style="color: var(--muted)">No goals recorded yet</td></tr>
+      <tr><td colspan="3" style="color: var(--muted)">No goals recorded yet</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -112,11 +111,11 @@
     }
 
     const pickName = (data.user_vote && data.user_vote.top_scorer || '').toLowerCase();
-    lbBody.innerHTML = (data.leaderboard || []).map((row, i) => {
+    lbBody.innerHTML = (data.leaderboard || []).map((row) => {
       const yours = pickName && row.player_name.toLowerCase() === pickName ? ' (your pick)' : '';
       const hl = yours ? ' class="rank-1"' : '';
-      return `<tr${hl}><td>${i + 1}</td><td>${esc(row.player_name)}${yours}</td><td>${esc(row.team)}</td><td><strong>${row.goals}</strong></td></tr>`;
-    }).join('') || '<tr><td colspan="4" style="color: var(--muted)">No goals recorded yet</td></tr>';
+      return `<tr${hl}><td>${esc(row.player_name)}${yours}</td><td>${esc(row.team)}</td><td><strong>${row.goals}</strong></td></tr>`;
+    }).join('') || '<tr><td colspan="3" style="color: var(--muted)">No goals recorded yet</td></tr>';
 
     evBody.innerHTML = (data.events || []).map(e =>
       `<tr><td><strong>${esc(e.player_name)}</strong></td><td>${esc(e.team)}</td><td>${esc(e.minute_label)}</td><td>${esc(e.match_label)}</td><td style="color: var(--muted)">${esc(e.match_date)}</td></tr>`

@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.82"
+APP_VERSION = "Beta 3.83"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1551,18 +1551,19 @@ def scorers_page(invite_code):
         flash("You are not in this pool.", "error")
         return redirect(url_for("index"))
 
-    board = db.get_tournament_scorer_leaderboard()
+    rank_board = db.get_tournament_scorer_leaderboard()
+    board = db.get_tournament_scorer_leaderboard(group_by_team=True)
     events = db.get_tournament_scorer_events()
     user_vote = db.get_tournament_vote(session["user_id"])
     user_pick = None
     if user_vote:
-        user_pick = get_scorer_status(user_vote["top_scorer"], board)
+        user_pick = get_scorer_status(user_vote["top_scorer"], rank_board)
 
     return render_template(
         "scorers.html",
         pool=pool,
         leaderboard=board,
-        team_summary=db.get_tournament_goals_by_team(),
+        team_summary=db.get_tournament_goals_by_team(sort_by_team=True),
         events=events,
         user_pick=user_pick,
         user_vote=dict(user_vote) if user_vote else None,
@@ -1577,16 +1578,17 @@ def scorers_feed(invite_code):
         return jsonify({"error": "unauthorized"}), 403
 
     live_score_sync.sync_live_scores()
-    board = db.get_tournament_scorer_leaderboard()
+    rank_board = db.get_tournament_scorer_leaderboard()
+    board = db.get_tournament_scorer_leaderboard(group_by_team=True)
     events = db.get_tournament_scorer_events()
     user_vote = db.get_tournament_vote(session["user_id"])
     user_pick = None
     if user_vote:
-        user_pick = get_scorer_status(user_vote["top_scorer"], board)
+        user_pick = get_scorer_status(user_vote["top_scorer"], rank_board)
 
     return jsonify({
         "leaderboard": board,
-        "team_summary": db.get_tournament_goals_by_team(),
+        "team_summary": db.get_tournament_goals_by_team(sort_by_team=True),
         "events": events,
         "user_pick": user_pick,
         "user_vote": dict(user_vote) if user_vote else None,
