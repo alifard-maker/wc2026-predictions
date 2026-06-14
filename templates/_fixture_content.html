@@ -34,12 +34,14 @@
 <div class="fixture-result-stack live-score-display{% if is_finished_row %} fixture-finished-inline{% endif %}" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
   <div class="fixture-actual-row">
     <span class="fixture-result-label">{% if m.is_live %}Live{% else %}Result{% endif %}</span>
-    <div class="fixture-matchup-line{% if is_finished_row and m.prediction %} fixture-matchup-line-with-pick{% endif %}">
-      <span class="fixture-matchup-team team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
-      <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">
-        <span class="fixture-actual-score">{{ m.display_home }} – {{ m.display_away }}</span>
-      </span>
-      <span class="fixture-matchup-team team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+    <div class="fixture-score-line-wrap{% if not is_finished_row or not m.prediction %} fixture-score-line-wrap-plain{% endif %}">
+      <div class="fixture-matchup-line{% if is_finished_row %} fixture-matchup-line-with-pick{% endif %}">
+        <span class="fixture-matchup-team team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
+        <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">
+          <span class="fixture-actual-score">{{ m.display_home }} – {{ m.display_away }}</span>
+        </span>
+        <span class="fixture-matchup-team team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+      </div>
       {% if is_finished_row and m.prediction %}
       <span class="fixture-pick-inline" data-fixture-pick-inline="{{ m.id }}">(Your prediction {{ m.prediction.home_score }} – {{ m.prediction.away_score }})</span>
       {% endif %}

@@ -222,7 +222,8 @@
     const pickInline = inlineFinished && m.prediction
       ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}">(Your prediction ${m.prediction.home_score} – ${m.prediction.away_score})</span>`
       : '';
-    const matchupClass = inlineFinished && m.prediction ? ' fixture-matchup-line-with-pick' : '';
+    const matchupClass = inlineFinished ? ' fixture-matchup-line-with-pick' : '';
+    const scoreWrapClass = inlineFinished && m.prediction ? 'fixture-score-line-wrap' : 'fixture-score-line-wrap fixture-score-line-wrap-plain';
     let predHtml = '';
     if (!inlineFinished && m.prediction) {
       predHtml = `<div class="fixture-prediction-row" data-fixture-prediction="${m.id}">
@@ -242,10 +243,12 @@
         : '';
     return `<div class="fixture-actual-row">
       <span class="fixture-result-label">${actualLabel}</span>
-      <div class="fixture-matchup-line${matchupClass}">
-        <span class="fixture-matchup-team team home">${m.home_team}</span>
-        <span class="fixture-result-score" data-live-actual-score="${m.id}"><span class="fixture-actual-score">${m.display_home} – ${m.display_away}</span></span>
-        <span class="fixture-matchup-team team away">${m.away_team}</span>${pickInline}
+      <div class="${scoreWrapClass}">
+        <div class="fixture-matchup-line${matchupClass}">
+          <span class="fixture-matchup-team team home">${m.home_team}</span>
+          <span class="fixture-result-score" data-live-actual-score="${m.id}"><span class="fixture-actual-score">${m.display_home} – ${m.display_away}</span></span>
+          <span class="fixture-matchup-team team away">${m.away_team}</span>
+        </div>${pickInline}
       </div>${predMeta}
       <div class="fixture-result-events" data-live-events="${m.id}">${eventsHtml}</div>
     </div>${predHtml}`;

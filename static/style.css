@@ -2009,49 +2009,69 @@ textarea:focus {
   gap: 0.35rem 0.5rem;
 }
 
-.match-matchup-line-finished-score,
-.fixture-matchup-line-with-pick {
+.match-score-line-wrap,
+.fixture-score-line-wrap {
   position: relative;
+  width: 100%;
+}
+
+.match-matchup-line-finished-score,
+.fixture-matchup-line-with-pick,
+.match-matchup-line-score {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 0.5rem 0.85rem;
   width: 100%;
   margin: 0;
-  padding-right: clamp(6.5rem, 24vw, 11rem);
+  justify-content: stretch;
 }
 
 .match-matchup-line-finished-score .match-matchup-team.home,
-.fixture-matchup-line-with-pick .fixture-matchup-team.home {
+.fixture-matchup-line-with-pick .fixture-matchup-team.home,
+.match-matchup-line-score .match-matchup-team.home {
   justify-self: end;
   text-align: right;
 }
 
 .match-matchup-line-finished-score .match-result-center-score,
 .match-matchup-line-finished-score .match-matchup-score,
-.fixture-matchup-line-with-pick .fixture-result-score {
+.fixture-matchup-line-with-pick .fixture-result-score,
+.match-matchup-line-score .match-matchup-score {
   justify-self: center;
 }
 
 .match-matchup-line-finished-score .match-matchup-team.away,
-.fixture-matchup-line-with-pick .fixture-matchup-team.away {
+.fixture-matchup-line-with-pick .fixture-matchup-team.away,
+.match-matchup-line-score .match-matchup-team.away {
   justify-self: start;
   text-align: left;
 }
 
-.match-pick-inline,
-.fixture-pick-inline {
+.match-score-line-wrap .match-pick-inline,
+.fixture-score-line-wrap .fixture-pick-inline {
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  max-width: clamp(6.5rem, 24vw, 11rem);
+  max-width: 42%;
   text-align: right;
   font-size: 0.68rem;
   font-weight: 500;
   line-height: 1.25;
   color: var(--muted);
   opacity: 0.65;
+  pointer-events: none;
+}
+
+.match-actual-row,
+.fixture-actual-row {
+  width: 100%;
+}
+
+.watch-party-card .match-score-line-wrap,
+.fixture-finished-expanded .fixture-score-line-wrap {
+  max-width: 100%;
 }
 
 .match-result-meta {
@@ -3842,15 +3862,14 @@ a.bracket-match:hover {
   }
 
   .match-matchup-line-finished-score,
-  .fixture-matchup-line-with-pick {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    padding-right: clamp(5rem, 34vw, 8rem);
+  .fixture-matchup-line-with-pick,
+  .match-matchup-line-score {
     gap: 0.35rem 0.45rem;
   }
 
-  .match-pick-inline,
-  .fixture-pick-inline {
-    max-width: clamp(5rem, 34vw, 8rem);
+  .match-score-line-wrap .match-pick-inline,
+  .fixture-score-line-wrap .fixture-pick-inline {
+    max-width: 46%;
     font-size: 0.62rem;
   }
 
