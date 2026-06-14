@@ -37,7 +37,7 @@
     <div class="fixture-matchup-line">
       <span class="fixture-matchup-team team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
       <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">
-        <span class="fixture-actual-score">{{ m.display_home }} – {{ m.display_away }}</span>{% if is_finished_row and m.prediction %}<span class="fixture-pick-inline" data-fixture-pick-inline="{{ m.id }}"> ({{ m.prediction.home_score }} – {{ m.prediction.away_score }})</span>{% endif %}
+        <span class="fixture-actual-score">{{ m.display_home }} – {{ m.display_away }}</span>{% if is_finished_row and m.prediction %}<span class="fixture-pick-inline" data-fixture-pick-inline="{{ m.id }}"> (Your prediction {{ m.prediction.home_score }} – {{ m.prediction.away_score }})</span>{% endif %}
       </span>
       <span class="fixture-matchup-team team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
     </div>

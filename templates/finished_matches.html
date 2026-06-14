@@ -127,7 +127,7 @@
       ? ` <span class="points-earned" data-prediction-points="${m.id}">+${m.prediction.points} pts</span>`
       : '';
     const pickInline = inlineFinished && m.prediction
-      ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}"> (${m.prediction.home_score} – ${m.prediction.away_score})</span>`
+      ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}"> (Your prediction ${m.prediction.home_score} – ${m.prediction.away_score})</span>`
       : '';
     let predHtml = '';
     if (!inlineFinished && m.prediction) {

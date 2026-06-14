@@ -57,7 +57,7 @@
       <span class="fixture-result-label">Result</span>
       <div class="match-result-scoreline">
         <span id="match-score" class="match-matchup-score">
-          <span class="match-actual-score">{{ match.display_home }} – {{ match.display_away }}</span>{% if match.prediction %}<span class="match-pick-inline"> ({{ match.prediction.home_score }} – {{ match.prediction.away_score }})</span>{% endif %}
+          <span class="match-actual-score">{{ match.display_home }} – {{ match.display_away }}</span>{% if match.prediction %}<span class="match-pick-inline"> (Your prediction {{ match.prediction.home_score }} – {{ match.prediction.away_score }})</span>{% endif %}
         </span>
         {% if match.prediction %}
         {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
