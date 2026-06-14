@@ -1,6 +1,5 @@
 {% from "_match_events.html" import render_match_events %}
 {% from "_team_flag.html" import team_with_flag with context %}
-{% from "_listen_live.html" import render_listen_live %}
 
 {% macro render_fixture_content(m, is_finished_row) %}
 <a class="fixture-hit-area" href="{{ match_detail_url(pool.invite_code, m.id) }}" aria-label="Open {{ m.home_team }} vs {{ m.away_team }}"></a>
@@ -26,10 +25,6 @@
   {% endif %}
   <a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="fixture-match-link" style="margin-left: auto">View match →</a>
 </div>
-
-{% if m.is_live %}
-{{ render_listen_live(listen_live_destinations, compact=true, wrap_id='listen-live-' ~ m.id) }}
-{% endif %}
 
 <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
 
