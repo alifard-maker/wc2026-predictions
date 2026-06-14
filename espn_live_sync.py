@@ -28,6 +28,8 @@ DRINKS_BREAK_MARKERS = (
     "delay in match for a drinks break",
     "delay in match for a drink break",
     "hydration break",
+    "fifa hydration",
+    "mandatory hydration",
     "water break",
     "drinks break",
     "drink break",
@@ -50,6 +52,8 @@ PLAY_RESUMED_MARKERS = (
     "second half begins",
     "second half kicks",
     "back underway",
+    "delay over",
+    "ready to continue",
 )
 
 PLAY_EVENT_MARKERS = (
@@ -312,6 +316,62 @@ def _espn_not_started(comp_status: dict | None) -> bool:
     return name in ESPN_NOT_STARTED
 
 
+def _espn_status_indicates_hydration(comp_status: dict | None) -> bool:
+    type_info = (comp_status or {}).get("type") or {}
+    combined = " ".join(
+        str(type_info.get(key) or "")
+        for key in ("detail", "shortDetail", "description")
+    ).lower()
+    return any(
+        marker in combined
+        for marker in (
+            "drink",
+            "hydrat",
+            "water break",
+            "cooling break",
+        )
+    )
+
+
+def _mark_hydration_break(match_id: int, minute: int | None) -> None:
+    db.set_sync_meta(
+        f"hydration_break_{match_id}",
+        json.dumps(
+            {
+                "minute": minute,
+                "since": datetime.now(TIMEZONE).isoformat(),
+            }
+        ),
+    )
+
+
+def _resolve_hydration_break(
+    event_id: str | None,
+    match_id: int,
+    live_minute: int | None,
+    kickoff_et: datetime | None,
+    comp_status: dict | None,
+) -> tuple[bool, int | None]:
+    """ESPN commentary, status text, or FIFA ~22' window (each half)."""
+    if event_id:
+        active, minute = _hydration_break_state(event_id, match_id)
+        if active:
+            return True, minute
+
+    if _espn_status_indicates_hydration(comp_status):
+        _mark_hydration_break(match_id, live_minute)
+        return True, live_minute
+
+    if kickoff_et and live_minute is not None:
+        from live_scores import in_fifa_hydration_window
+
+        if in_fifa_hydration_window(live_minute, kickoff_et, datetime.now(TIMEZONE)):
+            _mark_hydration_break(match_id, live_minute)
+            return True, live_minute
+
+    return False, None
+
+
 def _espn_status(comp_status: dict | None) -> str | None:
     type_info = (comp_status or {}).get("type") or {}
     name = type_info.get("name") or ""
@@ -529,9 +589,9 @@ def _sync_espn_event(
     ):
         result["finished"] = 1
     elif db_match.get("actual_home") is None and db_status:
-        hydration_active, hydration_minute = (False, None)
-        if event_id:
-            hydration_active, hydration_minute = _hydration_break_state(event_id, match_id)
+        hydration_active, hydration_minute = _resolve_hydration_break(
+            event_id, match_id, live_minute, kickoff_et, comp_status
+        )
         if hydration_active:
             db_status = "hydration_break"
             if hydration_minute is not None:

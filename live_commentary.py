@@ -375,16 +375,20 @@ def commentaries_for_json(commentaries: list[dict]) -> list[dict]:
 def commentary_for_json(commentary: dict | None) -> dict | None:
     if not commentary:
         return None
+    status = commentary.get("status")
+    minute_label = commentary["minute_label"]
+    if status not in ("halftime", "hydration_break"):
+        minute_label = sanitize_minute_label(minute_label)
     return {
         "match_id": commentary["match_id"],
         "home_team": commentary["home_team"],
         "away_team": commentary["away_team"],
         "display_home": commentary["display_home"],
         "display_away": commentary["display_away"],
-        "minute_label": sanitize_minute_label(commentary["minute_label"]),
+        "minute_label": minute_label,
         "minute_base": commentary.get("minute_base"),
         "added_time_label": commentary.get("added_time_label"),
-        "status": commentary["status"],
+        "status": status,
         "kickoff_iso": commentary.get("kickoff_iso"),
         "scoreline": commentary["scoreline"],
         "headline": commentary["headline"],

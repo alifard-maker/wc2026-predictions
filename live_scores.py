@@ -11,6 +11,26 @@ MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45 (scheduled estimate)
 LIVE_SYNC_MAX = timedelta(hours=3)  # trust ESPN/DB live past delayed kickoff + stoppage
 FIRST_HALF_MINUTES = 45
 HALFTIME_BREAK = timedelta(minutes=15)
+FIFA_HYDRATION_MINUTES_1H = frozenset({22, 23, 24, 25})
+FIFA_HYDRATION_MINUTES_2H = frozenset({67, 68, 69, 70})
+
+
+def in_fifa_hydration_window(
+    live_minute: int | None,
+    kickoff: datetime,
+    now: datetime | None = None,
+) -> bool:
+    """FIFA 2026 mandates a drinks break ~22' into each half (3 minutes)."""
+    now = now or datetime.now(TIMEZONE)
+    minute = normalize_stored_minute(live_minute)
+    if minute is None or now < kickoff:
+        return False
+    elapsed = (now - kickoff).total_seconds() / 60
+    if minute in FIFA_HYDRATION_MINUTES_1H and 19 <= elapsed <= 30:
+        return True
+    if minute in FIFA_HYDRATION_MINUTES_2H and elapsed >= 64:
+        return True
+    return False
 
 
 def normalize_stored_minute(minute: int | None) -> int | None:
@@ -152,8 +172,6 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
         return m
 
     db_status = m.get("status") or "scheduled"
-    synced_live = is_synced_live(m, now)
-    in_progress = is_match_in_progress(kickoff, now, m)
     live_home = m.get("live_home")
     live_away = m.get("live_away")
     live_minute = normalize_stored_minute(m.get("live_minute"))
@@ -165,6 +183,30 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
                 live_injury_minute = None
         except (TypeError, ValueError):
             live_injury_minute = None
+
+    if db_status == "live" and m.get("id"):
+        from db import get_sync_meta
+
+        raw = get_sync_meta(f"hydration_break_{m['id']}")
+        if raw:
+            try:
+                import json
+
+                meta = json.loads(raw)
+                since = datetime.fromisoformat(meta["since"])
+                if since.tzinfo is None:
+                    since = since.replace(tzinfo=TIMEZONE)
+                if (now - since).total_seconds() < 360:
+                    db_status = "hydration_break"
+                    if live_minute is None and meta.get("minute"):
+                        live_minute = normalize_stored_minute(meta.get("minute"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
+        elif in_fifa_hydration_window(live_minute, kickoff, now):
+            db_status = "hydration_break"
+
+    synced_live = is_synced_live(m, now)
+    in_progress = is_match_in_progress(kickoff, now, m)
     if actual_home is not None and actual_away is not None:
         if now < kickoff:
             m["status"] = "scheduled"

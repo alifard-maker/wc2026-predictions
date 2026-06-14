@@ -37,7 +37,7 @@
        data-match-id="{{ c.match_id }}"
        title="Watch live — {{ c.home_team }} vs {{ c.away_team }}">
       <span class="commentary-label">🎙 {% if live_commentaries|length > 1 %}{{ c.home_team }} vs {{ c.away_team }}{% else %}Live{% endif %}</span>
-      <span class="badge badge-live commentary-minute">{% if c.status == 'hydration_break' or c.status == 'halftime' %}{{ c.minute_label | live_minute }}{% else %}LIVE {{ c.minute_base or (c.minute_label | live_minute) }}{% if c.added_time_label %} <span class="live-added-time">{{ c.added_time_label }}</span>{% endif %}{% endif %}</span>
+      <span class="badge badge-live commentary-minute">{% if c.status == 'hydration_break' or c.status == 'halftime' %}{{ c.minute_base or (c.minute_label | live_minute) }}{% else %}LIVE {{ c.minute_base or (c.minute_label | live_minute) }}{% if c.added_time_label %} <span class="live-added-time">{{ c.added_time_label }}</span>{% endif %}{% endif %}</span>
       <span class="commentary-scoreline">{{ c.scoreline }}</span>
       <div class="commentary-ticker-wrap">
         <div class="commentary-track">
@@ -245,7 +245,7 @@
           ? `🎙 ${escapeHtml(c.home_team)} vs ${escapeHtml(c.away_team)}`
           : '🎙 Live';
         const minute = c.status === 'halftime' || c.status === 'hydration_break'
-          ? escapeHtml(resolveLiveMinuteLabel(c.minute_label, c.kickoff_iso, c.status))
+          ? escapeHtml(c.minute_base || c.minute_label || resolveLiveMinuteLabel(c.minute_label, c.kickoff_iso, c.status))
           : formatLiveBannerMinute(c, escapeHtml);
         const items = (c.ticker_items || []).map(item =>
           `<span class="commentary-item">${escapeHtml(item)}</span>`
