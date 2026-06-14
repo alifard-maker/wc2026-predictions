@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from ai_predictor import AI_AGENT_NAMES, is_ai_agent
-from db import db, get_all_matches, get_leaderboard, get_pool_comments, get_tournament_vote
+from db import db, get_all_matches, get_leaderboard, get_pool_comments, get_pool_predictions_summary, get_tournament_vote
 from live_scores import apply_live_state
 from scoring import (
     TIMEZONE,
@@ -365,6 +365,71 @@ def build_head_to_head(user_id: int, other_id: int, pool_id: int) -> dict:
         "b_match_wins": b_wins,
         "ties": ties,
         "matchups": matchups,
+    }
+
+
+def _prediction_accuracy_rank(
+    pred_home: int,
+    pred_away: int,
+    actual_home: int,
+    actual_away: int,
+) -> tuple[int, int, int]:
+    """Higher tuple sorts better: exact score, correct outcome, then closest total."""
+    exact = pred_home == actual_home and pred_away == actual_away
+    correct = match_result(pred_home, pred_away) == match_result(actual_home, actual_away)
+    distance = abs(pred_home - actual_home) + abs(pred_away - actual_away)
+    return (1 if exact else 0, 1 if correct else 0, -distance)
+
+
+def build_match_accuracy_leaders(
+    pool_id: int,
+    match_id: int,
+    actual_home: int,
+    actual_away: int,
+    viewer_user_id: int | None = None,
+    match: dict | None = None,
+) -> dict | None:
+    """Pool members closest to the current live/final score (ties included)."""
+    if match is not None and not picks_revealed(match):
+        return None
+
+    preds = [dict(p) for p in get_pool_predictions_summary(pool_id, match_id)]
+    if not preds:
+        return None
+
+    ranked = [
+        (_prediction_accuracy_rank(p["home_score"], p["away_score"], actual_home, actual_away), p)
+        for p in preds
+    ]
+    best = max(r for r, _ in ranked)
+    leaders = [p for r, p in ranked if r == best]
+    exact, correct, _ = best
+
+    if exact:
+        label = "On the money"
+    elif correct:
+        label = "Closest pick · right outcome"
+    else:
+        label = "Closest pick"
+
+    leaders.sort(key=lambda p: p["display_name"].lower())
+    return {
+        "label": label,
+        "exact": bool(exact),
+        "correct_outcome": bool(correct),
+        "live_score": f"{actual_home}–{actual_away}",
+        "leader_ids": [p["user_id"] for p in leaders],
+        "leaders": [
+            {
+                "user_id": p["user_id"],
+                "display_name": p["display_name"],
+                "home_score": p["home_score"],
+                "away_score": p["away_score"],
+                "is_you": p["user_id"] == viewer_user_id,
+                "ai_agent_key": p.get("ai_agent_key"),
+            }
+            for p in leaders
+        ],
     }
 
 

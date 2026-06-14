@@ -72,6 +72,7 @@ from wc_news import get_wc_news, news_for_json
 from engagement import (
     build_head_to_head,
     build_match_consensus,
+    build_match_accuracy_leaders,
     build_player_picks_summary,
     build_player_season_stats,
     filter_predictions_for_display,
@@ -83,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.49"
+APP_VERSION = "Beta 3.50"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1608,6 +1609,21 @@ def match_detail(invite_code, match_id):
     raw_preds = db.get_pool_predictions_summary(pool["id"], match_id)
     all_preds = filter_predictions_for_display(raw_preds, user_id, dict(match))
     consensus = build_match_consensus(pool["id"], match_id)
+    accuracy_leaders = None
+    if (
+        (enriched.get("is_live") or enriched.get("is_finished"))
+        and picks_revealed(dict(match))
+        and enriched.get("display_home") is not None
+        and enriched.get("display_away") is not None
+    ):
+        accuracy_leaders = build_match_accuracy_leaders(
+            pool["id"],
+            match_id,
+            enriched["display_home"],
+            enriched["display_away"],
+            viewer_user_id=user_id,
+            match=dict(match),
+        )
     context = get_match_context(match["home_team"], match["away_team"])
     goals = db.get_match_goals(match_id)
     match_comments = db.get_pool_comments(pool["id"], match_id)
@@ -1624,6 +1640,7 @@ def match_detail(invite_code, match_id):
         all_predictions=all_preds,
         match_context=context,
         consensus=consensus,
+        accuracy_leaders=accuracy_leaders,
         match_comments=match_comments,
         picks_revealed=not picks_open,
         can_bold=user_can_edit_bold(enriched, bold_locked_days),
@@ -1668,6 +1685,21 @@ def match_watch_feed(invite_code, match_id):
             invite_code, c["user_id"], c.get("photo_updated_at"), c.get("display_name")
         ) if user_has_avatar(c["user_id"], c.get("photo_updated_at"), c.get("display_name")) else None
         comments_out.append(row)
+    accuracy_leaders = None
+    if (
+        (enriched.get("is_live") or enriched.get("is_finished"))
+        and picks_revealed(dict(match))
+        and enriched.get("display_home") is not None
+        and enriched.get("display_away") is not None
+    ):
+        accuracy_leaders = build_match_accuracy_leaders(
+            pool["id"],
+            match_id,
+            enriched["display_home"],
+            enriched["display_away"],
+            viewer_user_id=session["user_id"],
+            match=dict(match),
+        )
     return jsonify({
         "match": {
             "id": enriched["id"],
@@ -1682,6 +1714,7 @@ def match_watch_feed(invite_code, match_id):
         "goals": goals_for_json(enriched.get("goals", [])),
         "cards": cards_for_json(enriched.get("cards", [])),
         "consensus": build_match_consensus(pool["id"], match_id),
+        "accuracy_leaders": accuracy_leaders,
         "predictions": preds_out,
         "picks_revealed": picks_revealed(dict(match)),
         "comments": comments_out,

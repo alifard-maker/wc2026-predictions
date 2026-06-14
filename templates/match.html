@@ -86,6 +86,21 @@
   </div>
   {% endif %}
 
+  {% if accuracy_leaders %}
+  <div class="match-accuracy-callout{% if accuracy_leaders.exact %} match-accuracy-exact{% elif accuracy_leaders.correct_outcome %} match-accuracy-outcome{% endif %}" id="match-accuracy-leaders">
+    <span class="match-accuracy-label" id="match-accuracy-label">{{ accuracy_leaders.label }}</span>
+    <span class="muted-inline">to {{ accuracy_leaders.live_score }}</span>
+    {% for leader in accuracy_leaders.leaders %}
+    <span class="spotlight-chip match-accuracy-chip{% if accuracy_leaders.exact %} spotlight-exact{% endif %}">
+      {{ leader.display_name }}{% if leader.is_you %} (you){% endif %}
+      <strong>{{ leader.home_score }}–{{ leader.away_score }}</strong>
+    </span>
+    {% endfor %}
+  </div>
+  {% elif match.is_live or match.is_finished %}
+  <div class="match-accuracy-callout" id="match-accuracy-leaders" hidden></div>
+  {% endif %}
+
   {% if match.is_finished %}
   {% set winners = all_predictions | selectattr('points') | selectattr('points', 'ge', 2) | rejectattr('hidden') | list %}
   {% if winners %}
@@ -107,12 +122,15 @@
     </thead>
     <tbody>
       {% for p in all_predictions %}
-      <tr class="{% if p.points and p.points >= 5 %}pick-exact{% elif p.points and p.points >= 2 %}pick-correct{% endif %}">
+      <tr class="{% if accuracy_leaders and p.user_id in accuracy_leaders.leader_ids %}pick-accuracy-leader{% if accuracy_leaders.exact %} pick-accuracy-exact{% elif accuracy_leaders.correct_outcome %} pick-accuracy-outcome{% endif %}{% elif p.points and p.points >= 5 %}pick-exact{% elif p.points and p.points >= 2 %}pick-correct{% endif %}" data-user-id="{{ p.user_id }}">
         <td class="player-cell-with-avatar">
           {{ user_avatar(p.user_id, p.display_name, p.photo_updated_at, pool.invite_code, 'sm', ai_agent_key=p.ai_agent_key) }}
           <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=p.user_id) }}" class="pick-player-link">{{ p.display_name }}</a>
           {% if p.user_id == session.user_id %} (you){% endif %}
           {{ render_ai_badge(p.display_name, p.ai_agent_key) }}
+          {% if accuracy_leaders and p.user_id in accuracy_leaders.leader_ids %}
+          <span class="pick-badge {% if accuracy_leaders.exact %}pick-badge-exact{% else %}pick-badge-closest{% endif %}">{{ accuracy_leaders.label }}</span>
+          {% endif %}
           {% if p.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
         </td>
         <td>
@@ -230,6 +248,35 @@
     }).join('');
   }
 
+  function renderAccuracyLeaders(leaders) {
+    const wrap = document.getElementById('match-accuracy-leaders');
+    if (!wrap) return;
+    if (!leaders || !leaders.leaders || !leaders.leaders.length) {
+      wrap.hidden = true;
+      wrap.innerHTML = '';
+      return;
+    }
+    wrap.hidden = false;
+    wrap.className = 'match-accuracy-callout'
+      + (leaders.exact ? ' match-accuracy-exact' : leaders.correct_outcome ? ' match-accuracy-outcome' : '');
+    const chips = leaders.leaders.map(l =>
+      `<span class="spotlight-chip match-accuracy-chip${leaders.exact ? ' spotlight-exact' : ''}">${esc(l.display_name)}${l.is_you ? ' (you)' : ''} <strong>${l.home_score}–${l.away_score}</strong></span>`
+    ).join('');
+    wrap.innerHTML = `<span class="match-accuracy-label" id="match-accuracy-label">${esc(leaders.label)}</span><span class="muted-inline">to ${esc(leaders.live_score)}</span>${chips}`;
+  }
+
+  function pickRowClasses(p, leaders) {
+    const classes = [];
+    const isLeader = leaders && leaders.leader_ids && leaders.leader_ids.includes(p.user_id);
+    if (isLeader) {
+      classes.push('pick-accuracy-leader');
+      if (leaders.exact) classes.push('pick-accuracy-exact');
+      else if (leaders.correct_outcome) classes.push('pick-accuracy-outcome');
+    } else if (p.points >= 5) classes.push('pick-exact');
+    else if (p.points >= 2) classes.push('pick-correct');
+    return classes.join(' ');
+  }
+
   async function refresh() {
     const res = await fetch(feedUrl);
     if (!res.ok) return;
@@ -281,15 +328,21 @@
     }
 
     renderGameStats(data.game_stats);
+    renderAccuracyLeaders(data.accuracy_leaders);
 
     const tbody = document.querySelector('#picks-table tbody');
     if (tbody && data.predictions) {
+      const leaders = data.accuracy_leaders;
       tbody.innerHTML = data.predictions.map(p => {
         const pred = p.hidden
           ? '<span class="pick-hidden">🔒 Hidden</span>'
           : `<strong>${p.home_score} – ${p.away_score}</strong>`;
         const aiBadge = p.is_ai
           ? `<span class="ai-badge" title="${esc(p.display_name)}">${esc(p.ai_badge || 'AI')}</span>`
+          : '';
+        const isLeader = leaders && leaders.leader_ids && leaders.leader_ids.includes(p.user_id);
+        const leaderBadge = isLeader
+          ? `<span class="pick-badge ${leaders.exact ? 'pick-badge-exact' : 'pick-badge-closest'}">${esc(leaders.label)}</span>`
           : '';
         const bold = p.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
         const pts = p.points != null ? p.points : '—';
@@ -299,7 +352,8 @@
         const name = p.user_id
           ? `<a href="${poolPlayerUrl(p.user_id)}" class="pick-player-link">${esc(p.display_name)}</a>`
           : esc(p.display_name);
-        return `<tr><td class="player-cell-with-avatar">${avatar}${name}${aiBadge}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
+        const rowClass = pickRowClasses(p, leaders);
+        return `<tr class="${rowClass}" data-user-id="${p.user_id || ''}"><td class="player-cell-with-avatar">${avatar}${name}${aiBadge}${leaderBadge}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
       }).join('') || '<tr><td colspan="3" style="color:var(--muted)">No predictions yet</td></tr>';
     }
 

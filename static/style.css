@@ -3127,6 +3127,58 @@ a.bracket-match:hover {
   font-size: 0.9rem;
 }
 
+.match-accuracy-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(52, 152, 219, 0.1);
+  border: 1px solid rgba(52, 152, 219, 0.35);
+  font-size: 0.9rem;
+}
+
+.match-accuracy-callout.match-accuracy-outcome {
+  background: rgba(46, 204, 113, 0.1);
+  border-color: rgba(46, 204, 113, 0.35);
+}
+
+.match-accuracy-callout.match-accuracy-exact {
+  background: rgba(241, 196, 15, 0.12);
+  border-color: rgba(241, 196, 15, 0.45);
+}
+
+.match-accuracy-label {
+  font-weight: 700;
+}
+
+.match-accuracy-chip strong {
+  margin-left: 0.25rem;
+}
+
+.leaderboard-table tr.pick-accuracy-leader td {
+  background: rgba(52, 152, 219, 0.12);
+  box-shadow: inset 3px 0 0 rgba(52, 152, 219, 0.75);
+}
+
+.leaderboard-table tr.pick-accuracy-outcome td {
+  background: rgba(46, 204, 113, 0.12);
+  box-shadow: inset 3px 0 0 rgba(46, 204, 113, 0.75);
+}
+
+.leaderboard-table tr.pick-accuracy-exact td {
+  background: rgba(241, 196, 15, 0.14);
+  box-shadow: inset 3px 0 0 #f1c40f;
+}
+
+.pick-badge-closest {
+  background: rgba(52, 152, 219, 0.25);
+  color: #5dade2;
+}
+
 .listen-live-bar {
   display: flex;
   flex-direction: column;
