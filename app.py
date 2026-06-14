@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.50"
+APP_VERSION = "Beta 3.51"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1611,7 +1611,8 @@ def match_detail(invite_code, match_id):
     consensus = build_match_consensus(pool["id"], match_id)
     accuracy_leaders = None
     if (
-        (enriched.get("is_live") or enriched.get("is_finished"))
+        enriched.get("is_live")
+        and not enriched.get("is_finished")
         and picks_revealed(dict(match))
         and enriched.get("display_home") is not None
         and enriched.get("display_away") is not None
@@ -1687,7 +1688,8 @@ def match_watch_feed(invite_code, match_id):
         comments_out.append(row)
     accuracy_leaders = None
     if (
-        (enriched.get("is_live") or enriched.get("is_finished"))
+        enriched.get("is_live")
+        and not enriched.get("is_finished")
         and picks_revealed(dict(match))
         and enriched.get("display_home") is not None
         and enriched.get("display_away") is not None

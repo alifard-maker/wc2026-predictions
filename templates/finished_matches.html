@@ -46,7 +46,7 @@
       {% endif %}
     </button>
     <div class="finished-match-panel" id="finished-panel-{{ m.id }}" hidden>
-      <div class="fixture fixture-finished-expanded">
+      <div class="fixture fixture-finished-expanded{% if m.show_result %} fixture-has-result{% endif %}">
         {{ render_fixture_content(m, true) }}
       </div>
     </div>
@@ -199,6 +199,7 @@
       } else if ((m.is_finished || m.show_result) && !score) {
         const fixture = document.getElementById(`match-${m.id}`);
         const panel = fixture?.querySelector('.fixture-finished-expanded');
+        if (panel) panel.classList.add('fixture-has-result');
         const homeTeam = panel?.querySelector('.team.home');
         if (panel && homeTeam) {
           const wrap = document.createElement('div');

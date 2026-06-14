@@ -586,6 +586,33 @@ a.finished-matches-link-card:hover {
   margin: 0;
 }
 
+.fixture-finished-expanded.fixture-has-result {
+  grid-template-columns: 1fr;
+  text-align: center;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.fixture-finished-expanded .fixture-meta {
+  justify-content: center;
+}
+
+.fixture-finished-expanded .fixture-result-stack {
+  width: 100%;
+  max-width: 100%;
+}
+
+.fixture-finished-expanded .fixture-result-events {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.fixture-finished-expanded .goal-scorers-compact,
+.fixture-finished-expanded .match-cards-compact {
+  width: 100%;
+  max-width: 22rem;
+}
+
 .fixture-list-finished {
   margin-bottom: 2rem;
 }
