@@ -10,6 +10,7 @@
   <h1 style="text-align: left; margin: 0">Tournament standings</h1>
   <p style="margin: 0.5rem 0 0; color: var(--muted)" id="standings-progress">
     Group stage: {{ view.group_matches_finished }} / {{ view.group_matches_total }} matches played
+    {% if view.group_matches_live %} · {{ view.group_matches_live }} live{% endif %}
     {% if view.qualified_count %} · {{ view.qualified_count }} qualified{% elif view.leading_count %} · {{ view.leading_count }} in top two{% endif %}
   </p>
 </section>
@@ -58,6 +59,9 @@
   <span class="legend-dot legend-qualified"></span> Qualified / leading
   <span class="legend-dot legend-contending"></span> 3rd-place race
   <span class="legend-dot legend-eliminated"></span> Out / bottom
+  <span class="legend-live-note{% if not view.has_live_standings %} hidden{% endif %}" id="standings-live-legend">
+    <span class="legend-dot legend-live"></span> Live match — provisional points
+  </span>
 </p>
 
 <div class="groups-grid" id="groups-grid">
@@ -71,7 +75,7 @@
       </thead>
       <tbody>
         {% for row in view.groups[g] %}
-        <tr class="group-row-{{ row.status }}" data-team="{{ row.team }}">
+        <tr class="group-row-{{ row.status }}{% if row.in_live_match %} group-row-live{% endif %}" data-team="{{ row.team }}">
           <td>{{ row.position }}</td>
           <td class="group-team-cell">
             <span class="team-with-flag-sm">{{ team_with_flag(row.team, pool.invite_code) }}</span>
@@ -140,6 +144,9 @@
 
   let currentMode = 'actual';
   let currentPredictorId = {{ current_user_id }};
+  let standingsPollTimer = null;
+  const STANDINGS_POLL_MS = 30000;
+  const STANDINGS_POLL_LIVE_MS = 15000;
 
   function flagImg(team) {
     const code = FLAG_CODES[team];
@@ -202,7 +209,8 @@
           ? `<span class="group-status-tag">3rd (${row.third_rank})</span>`
           : (row.status === 'contending' && row.third_rank ? `<span class="group-status-tag">3rd (${row.third_rank})</span>` : '');
         const gd = (row.gd > 0 ? '+' : '') + row.gd;
-        return `<tr class="group-row-${row.status}" data-team="${escapeHtml(row.team)}">
+        const liveCls = row.in_live_match ? ' group-row-live' : '';
+        return `<tr class="group-row-${row.status}${liveCls}" data-team="${escapeHtml(row.team)}">
           <td>${row.position}</td>
           <td class="group-team-cell">${groupTeamCell(row.team)}${tag}</td>
           <td>${row.played}</td><td>${row.w}</td><td>${row.d}</td><td>${row.l}</td>
@@ -254,10 +262,16 @@
         progress.textContent = text;
       } else {
         let text = `Group stage: ${data.group_matches_finished} / ${data.group_matches_total} matches played`;
+        if (data.group_matches_live) text += ` · ${data.group_matches_live} live`;
         if (data.qualified_count) text += ` · ${data.qualified_count} qualified`;
         else if (data.leading_count) text += ` · ${data.leading_count} in top two`;
         progress.textContent = text;
       }
+    }
+
+    const liveLegend = document.getElementById('standings-live-legend');
+    if (liveLegend) {
+      liveLegend.classList.toggle('hidden', !data.has_live_standings || data.mode === 'predicted');
     }
 
     const champ = document.getElementById('champion-banner');
@@ -305,6 +319,12 @@
     }
   }
 
+  function scheduleStandingsPoll(hasLive) {
+    if (standingsPollTimer) clearInterval(standingsPollTimer);
+    const ms = hasLive ? STANDINGS_POLL_LIVE_MS : STANDINGS_POLL_MS;
+    standingsPollTimer = setInterval(refreshStandings, ms);
+  }
+
   async function refreshStandings() {
     let url = feedUrl + '?mode=' + currentMode;
     if (currentMode === 'predicted') url += '&predictor_id=' + currentPredictorId;
@@ -312,6 +332,7 @@
     if (!res.ok) return;
     const data = await res.json();
     applyView(data);
+    if (currentMode === 'actual') scheduleStandingsPoll(!!data.has_live_standings);
   }
 
   document.getElementById('standings-mode-tabs').querySelectorAll('button').forEach(btn => {
@@ -341,6 +362,6 @@
   });
 
   refreshStandings();
-  setInterval(refreshStandings, 30000);
+  scheduleStandingsPoll({{ 'true' if view.has_live_standings else 'false' }});
 </script>
 {% endblock %}

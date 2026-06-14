@@ -2861,6 +2861,11 @@ textarea:focus {
 .legend-qualified { background: #2ecc71; }
 .legend-contending { background: #f1c40f; }
 .legend-eliminated { background: var(--muted); opacity: 0.5; }
+.legend-live { background: #e74c3c; }
+
+.legend-live-note.hidden {
+  display: none;
+}
 
 .champion-banner {
   display: flex;
@@ -2933,6 +2938,10 @@ textarea:focus {
 .group-row-eliminated td,
 .group-row-bottom td {
   opacity: 0.65;
+}
+
+.group-row-live td {
+  box-shadow: inset 3px 0 0 #e74c3c;
 }
 
 .group-status-tag {

@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.77"
+APP_VERSION = "Beta 3.78"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1142,6 +1142,7 @@ def standings_page(invite_code):
         flash("You are not in this pool.", "error")
         return redirect(url_for("index"))
 
+    live_score_sync.sync_live_scores()
     matches = enrich_matches(db.get_all_matches())
     view = build_tournament_view(matches)
     view["mode"] = "actual"
@@ -1174,6 +1175,7 @@ def standings_feed(invite_code):
     if not pool or pool["id"] != session.get("pool_id"):
         return jsonify({"error": "unauthorized"}), 403
 
+    live_score_sync.sync_live_scores()
     matches = enrich_matches(db.get_all_matches())
     members = db.get_pool_simulation_members(pool["id"])
     mode = request.args.get("mode", "actual")

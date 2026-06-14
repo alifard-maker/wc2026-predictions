@@ -103,15 +103,42 @@ def compute_group_standings_scored(
     return result
 
 
-def compute_group_standings(matches: list[dict]) -> dict[str, list[dict]]:
-    """Build live group tables from finished group-stage matches."""
+def group_match_score(m: dict, *, include_live: bool = False) -> tuple[int, int] | None:
+    """Final score when set; otherwise current live score for in-progress group matches."""
+    if m.get("stage") != "group":
+        return None
+    if m.get("actual_home") is not None and m.get("actual_away") is not None:
+        return int(m["actual_home"]), int(m["actual_away"])
+    if not include_live or not m.get("is_live"):
+        return None
+    display_home = m.get("display_home")
+    display_away = m.get("display_away")
+    if display_home is None or display_away is None:
+        return None
+    return int(display_home), int(display_away)
 
-    def actual_scores(m: dict):
-        if m.get("actual_home") is None or m.get("actual_away") is None:
-            return None
-        return m["actual_home"], m["actual_away"]
 
-    return compute_group_standings_scored(matches, actual_scores)
+def compute_group_standings(matches: list[dict], *, include_live: bool = False) -> dict[str, list[dict]]:
+    """Build group tables from final results, optionally including live in-progress scores."""
+
+    def score_fn(m: dict):
+        return group_match_score(m, include_live=include_live)
+
+    return compute_group_standings_scored(matches, score_fn)
+
+
+def _live_group_teams(matches: list[dict]) -> set[str]:
+    teams: set[str] = set()
+    for m in matches:
+        if m.get("stage") != "group" or m.get("actual_home") is not None:
+            continue
+        if not m.get("is_live"):
+            continue
+        if m.get("home_team"):
+            teams.add(m["home_team"])
+        if m.get("away_team"):
+            teams.add(m["away_team"])
+    return teams
 
 
 def _third_place_rankings(standings: dict[str, list[dict]]) -> dict[str, dict]:
@@ -136,9 +163,15 @@ def _group_stage_complete(group: str, matches: list[dict]) -> bool:
     return finished >= len(group_matches)
 
 
-def annotate_qualification(standings: dict[str, list[dict]], matches: list[dict]) -> dict[str, list[dict]]:
+def annotate_qualification(
+    standings: dict[str, list[dict]],
+    matches: list[dict],
+    *,
+    live_teams: set[str] | None = None,
+) -> dict[str, list[dict]]:
     all_groups_done = all(_group_stage_complete(g, matches) for g in standings)
     third_info = _third_place_rankings(standings) if all_groups_done else {}
+    live_teams = live_teams or set()
     annotated: dict[str, list[dict]] = {}
     for g, rows in standings.items():
         complete = _group_stage_complete(g, matches)
@@ -146,6 +179,8 @@ def annotate_qualification(standings: dict[str, list[dict]], matches: list[dict]
         for row in rows:
             r = dict(row)
             pos = r["position"]
+            if r["team"] in live_teams:
+                r["in_live_match"] = True
             if complete:
                 if pos <= 2:
                     r["status"] = "qualified"
@@ -267,7 +302,17 @@ def build_tournament_view(matches: list[dict]) -> dict:
     finished_groups = sum(
         1 for m in group_matches if m.get("actual_home") is not None and m.get("actual_away") is not None
     )
-    standings = annotate_qualification(compute_group_standings(matches), matches)
+    live_group_matches = sum(
+        1
+        for m in group_matches
+        if m.get("is_live") and m.get("actual_home") is None
+    )
+    live_teams = _live_group_teams(matches)
+    standings = annotate_qualification(
+        compute_group_standings(matches, include_live=True),
+        matches,
+        live_teams=live_teams,
+    )
     bracket = build_knockout_bracket(matches)
 
     qualified = []
@@ -291,6 +336,8 @@ def build_tournament_view(matches: list[dict]) -> dict:
         "qualified_teams": qualified,
         "group_matches_total": len(group_matches),
         "group_matches_finished": finished_groups,
+        "group_matches_live": live_group_matches,
+        "has_live_standings": live_group_matches > 0,
     }
 
 
