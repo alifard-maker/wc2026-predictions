@@ -3371,6 +3371,29 @@ a.bracket-match:hover {
 
   .site-nav.nav-open {
     display: flex;
+    position: fixed;
+    top: var(--mobile-nav-top, var(--top-banners-height, 0px));
+    left: env(safe-area-inset-left, 0);
+    right: env(safe-area-inset-right, 0);
+    z-index: 390;
+    max-height: calc(100dvh - var(--mobile-nav-top, var(--top-banners-height, 0px)) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0;
+    padding: 0.75rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-top: none;
+    border-bottom: 2px solid var(--border);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  }
+
+  body.nav-menu-open {
+    overflow: hidden;
+  }
+
+  body.nav-menu-open .site-header {
+    position: relative;
+    z-index: 400;
   }
 
   .site-nav a,

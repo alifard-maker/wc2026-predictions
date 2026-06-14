@@ -525,13 +525,13 @@
     function updateBannerOffset() {
       const stack = document.getElementById('top-banners');
       if (!stack) return;
-      let h = 0;
-      stack.querySelectorAll(':scope > *').forEach(el => {
-        if (!el.classList.contains('hidden') && el.offsetParent !== null) {
-          h += el.offsetHeight;
-        }
-      });
+      const h = Math.ceil(stack.getBoundingClientRect().height);
       document.documentElement.style.setProperty('--top-banners-height', h + 'px');
+      if (document.body.classList.contains('nav-menu-open')) {
+        const header = document.querySelector('.site-header');
+        const top = header ? Math.ceil(header.getBoundingClientRect().bottom) : h;
+        document.documentElement.style.setProperty('--mobile-nav-top', top + 'px');
+      }
     }
 
     const bannerStack = document.getElementById('top-banners');
@@ -548,20 +548,39 @@
       const toggle = document.getElementById('nav-toggle');
       const nav = document.getElementById('main-nav');
       if (!toggle || !nav) return;
-      toggle.addEventListener('click', () => {
-        const open = nav.classList.toggle('nav-open');
+      const mobileNav = window.matchMedia('(max-width: 768px)');
+
+      function syncMobileNavTop() {
+        if (!nav.classList.contains('nav-open') || !mobileNav.matches) return;
+        const header = document.querySelector('.site-header');
+        const top = header ? Math.ceil(header.getBoundingClientRect().bottom) : 0;
+        document.documentElement.style.setProperty('--mobile-nav-top', top + 'px');
+      }
+
+      function setNavOpen(open) {
+        nav.classList.toggle('nav-open', open);
         toggle.classList.toggle('nav-open', open);
+        document.body.classList.toggle('nav-menu-open', open && mobileNav.matches);
         toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+        if (open && mobileNav.matches) {
+          if (typeof updateBannerOffset === 'function') updateBannerOffset();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          requestAnimationFrame(syncMobileNavTop);
+        } else {
+          document.documentElement.style.removeProperty('--mobile-nav-top');
+        }
+      }
+
+      toggle.addEventListener('click', () => {
+        setNavOpen(!nav.classList.contains('nav-open'));
       });
       nav.querySelectorAll('a').forEach(link => {
-        link.addEventListener('click', () => {
-          nav.classList.remove('nav-open');
-          toggle.classList.remove('nav-open');
-          toggle.setAttribute('aria-expanded', 'false');
-          toggle.setAttribute('aria-label', 'Open menu');
-        });
+        link.addEventListener('click', () => setNavOpen(false));
       });
+      mobileNav.addEventListener('change', () => setNavOpen(false));
+      window.addEventListener('resize', syncMobileNavTop);
+      bannerStack?.addEventListener('transitionend', syncMobileNavTop);
     })();
   </script>
 </body>
