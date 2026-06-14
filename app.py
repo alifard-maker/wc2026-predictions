@@ -21,7 +21,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
-from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_avatar_file, ai_agent_badge, is_ai_agent
+from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_avatar_file, ai_agent_badge, is_ai_agent, is_synced_ai_agent
 import live_score_sync
 from listen_live import LISTEN_LIVE_DESTINATIONS
 from live_scores import (
@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.61"
+APP_VERSION = "Beta 3.62"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1932,12 +1932,12 @@ def admin_page(invite_code):
         elif action == "repair_ai_split" and session.get("admin_secret") == pool["admin_secret"]:
             db.repair_split_merged_cursor_ai_accounts()
             flash("Cursor AI accounts re-split and points recalculated.", "success")
-        elif action == "repair_ai_relink" and session.get("admin_secret") == pool["admin_secret"]:
-            merged = db.repair_relink_renamed_ai_agents()
-            if merged:
-                flash(f"Relinked renamed AI accounts: {'; '.join(merged)}", "success")
+        elif action == "repair_ai_separate" and session.get("admin_secret") == pool["admin_secret"]:
+            actions = db.repair_separate_nostradamus_from_cursor()
+            if actions:
+                flash("; ".join(actions), "success")
             else:
-                flash("Renamed AI accounts relinked and agent keys backfilled.", "success")
+                flash("Nostradamus and Cursor AI are already separated.", "success")
         elif action == "rename_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 user_id = int(request.form.get("user_id", 0))
@@ -1986,8 +1986,8 @@ def admin_page(invite_code):
                 user = db.get_user(user_id)
                 if not user or user["pool_id"] != pool["id"]:
                     flash("User not found in this pool.", "error")
-                elif is_ai_agent(user["display_name"]):
-                    flash("Use the AI sync tools for AI members — not manual override.", "error")
+                elif is_synced_ai_agent(user["display_name"], user.get("ai_agent_key")):
+                    flash("Use the AI sync tools for synced AI members — not manual override.", "error")
                 else:
                     saved = 0
                     for key in request.form:
@@ -2033,8 +2033,8 @@ def admin_page(invite_code):
                 user = db.get_user(user_id)
                 if not user or user["pool_id"] != pool["id"]:
                     flash("User not found in this pool.", "error")
-                elif is_ai_agent(user["display_name"]):
-                    flash("Use the AI sync tools for AI members — not manual override.", "error")
+                elif is_synced_ai_agent(user["display_name"], user.get("ai_agent_key")):
+                    flash("Use the AI sync tools for synced AI members — not manual override.", "error")
                 else:
                     top_scorer = resolve_scorer_pick_value(
                         request.form.get("top_scorer", ""),

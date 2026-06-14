@@ -22,8 +22,12 @@ AI_AGENTS: list[dict] = [
 
 AI_AGENT_NAMES: set[str] = {a["display_name"] for a in AI_AGENTS}
 AI_AGENT_KEYS: set[str] = {a["key"] for a in AI_AGENTS}
-# Admin-renamed synced agents (still AI even if display_name changed before backfill).
-AI_EXTRA_DISPLAY_NAMES: frozenset[str] = frozenset({"Nostradamus"})
+# Sync disabled for this agent — legacy pool member replaced by Nostradamus.
+REMOVED_SYNC_AGENTS: frozenset[str] = frozenset({"cursor"})
+# Ex–Cursor AI Predictions (renamed by admin). Separate from synced Cursor AI.
+LEGACY_PREDICTIONS_AGENT_KEY = "cursor_predictions"
+LEGACY_AI_AGENT_KEYS: frozenset[str] = frozenset({LEGACY_PREDICTIONS_AGENT_KEY})
+RENAMED_LEGACY_AI_NAMES: frozenset[str] = frozenset({"Nostradamus"})
 
 # Weighted toward realistic results — fewer draws than before.
 SCORE_OPTIONS = [
@@ -135,14 +139,20 @@ def predict_tournament_picks(pool_id: int, agent_key: str = "cursor") -> dict[st
 def infer_ai_agent_key(display_name: str | None = None) -> str | None:
     if not display_name:
         return None
-    if display_name in CURSOR_LEGACY_DISPLAY_NAMES or display_name in AI_EXTRA_DISPLAY_NAMES:
-        return "cursor"
-    if display_name == AI_DISPLAY_NAME:
-        return "cursor"
+    if display_name in RENAMED_LEGACY_AI_NAMES or display_name == "Cursor AI Predictions":
+        return LEGACY_PREDICTIONS_AGENT_KEY
+    if display_name in CURSOR_LEGACY_DISPLAY_NAMES:
+        return LEGACY_PREDICTIONS_AGENT_KEY
     for agent in AI_AGENTS:
         if agent["display_name"] == display_name:
             return agent["key"]
     return None
+
+
+def is_synced_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
+    """True for pool members that receive automated pick sync."""
+    key = ai_agent_key or infer_ai_agent_key(display_name)
+    return bool(key and key in AI_AGENT_KEYS and key not in REMOVED_SYNC_AGENTS)
 
 
 def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = None) -> dict | None:
@@ -154,19 +164,21 @@ def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = N
         for agent in AI_AGENTS:
             if agent["display_name"] == display_name:
                 return agent
-        if display_name in CURSOR_LEGACY_DISPLAY_NAMES or display_name == AI_DISPLAY_NAME:
-            return {"badge": "Cursor", "avatar": AI_AGENTS[0].get("avatar")}
-    if display_name in AI_EXTRA_DISPLAY_NAMES:
-        return {"badge": "AI", "avatar": AI_AGENTS[0].get("avatar")}
+        if display_name in CURSOR_LEGACY_DISPLAY_NAMES:
+            return {"badge": "AI", "avatar": None}
+    if display_name in RENAMED_LEGACY_AI_NAMES:
+        return {"badge": "AI", "avatar": None}
     return None
 
 
 def is_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
+    if ai_agent_key and ai_agent_key in LEGACY_AI_AGENT_KEYS:
+        return True
     if ai_agent_key and ai_agent_key in AI_AGENT_KEYS:
         return True
     if display_name in CURSOR_LEGACY_DISPLAY_NAMES:
         return True
-    if display_name in AI_EXTRA_DISPLAY_NAMES:
+    if display_name in RENAMED_LEGACY_AI_NAMES:
         return True
     if display_name in AI_AGENT_NAMES or display_name == AI_DISPLAY_NAME:
         return True
