@@ -361,6 +361,7 @@
       <select name="status">
         <option value="live" {% if m.status == 'live' %}selected{% endif %}>Live</option>
         <option value="halftime" {% if m.status == 'halftime' %}selected{% endif %}>HT</option>
+        <option value="hydration_break" {% if m.status == 'hydration_break' %}selected{% endif %}>Drinks break</option>
         <option value="scheduled" {% if m.status == 'scheduled' %}selected{% endif %}>Scheduled</option>
       </select>
       <button type="submit" class="btn btn-secondary">Live</button>

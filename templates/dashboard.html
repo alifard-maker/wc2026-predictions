@@ -281,7 +281,7 @@
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
         const minute = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
-        const clock = m.status === 'halftime' ? minute : `LIVE ${minute}`;
+        const clock = m.status === 'halftime' || m.status === 'hydration_break' ? minute : `LIVE ${minute}`;
         badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';

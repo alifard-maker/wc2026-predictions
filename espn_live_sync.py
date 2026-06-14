@@ -22,6 +22,19 @@ from scoring import TIMEZONE
 logger = logging.getLogger(__name__)
 
 ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"
+ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary"
+
+DRINKS_BREAK_MARKERS = (
+    "delay in match for a drinks break",
+    "hydration break",
+    "water break",
+    "drinks break",
+)
+
+DELAY_ONLY_MARKERS = (
+    "delay in match",
+    "match delayed",
+)
 
 ESPN_TEAM_ALIASES: dict[str, str] = {
     "south korea": "Korea Republic",
@@ -65,6 +78,96 @@ def _fetch_scoreboard(dates: str | None = None) -> dict | None:
         logger.warning("ESPN scoreboard request failed: %s", exc)
         db.set_sync_meta("espn_sync_error", str(exc)[:200])
         return None
+
+
+def _fetch_summary(event_id: str) -> dict | None:
+    if not event_id:
+        return None
+    url = f"{ESPN_SUMMARY}?event={event_id}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "wc2026-predictions/1.0"},
+    )
+    if certifi is not None:
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    else:
+        ctx = ssl.create_default_context()
+    try:
+        with urllib.request.urlopen(req, timeout=20, context=ctx) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        logger.debug("ESPN summary request failed for %s: %s", event_id, exc)
+        return None
+
+
+def _parse_commentary_minute(time_obj: dict | None) -> int | None:
+    display = (time_obj or {}).get("displayValue")
+    minute, _ = _parse_espn_minute(display)
+    return minute
+
+
+def _commentary_is_drinks_break(text: str) -> bool:
+    lowered = text.lower().strip()
+    return any(marker in lowered for marker in DRINKS_BREAK_MARKERS)
+
+
+def _commentary_is_delay_only(text: str) -> bool:
+    lowered = text.lower().strip()
+    if _commentary_is_drinks_break(lowered):
+        return True
+    return any(marker in lowered for marker in DELAY_ONLY_MARKERS)
+
+
+def _hydration_break_from_summary(event_id: str) -> tuple[bool, int | None]:
+    """True when ESPN commentary shows an active FIFA drinks/hydration break."""
+    payload = _fetch_summary(event_id)
+    if not payload:
+        return False, None
+    commentary = payload.get("commentary") or []
+    if not commentary:
+        return False, None
+
+    # ESPN lists commentary oldest-first; the latest entry is at the end.
+    for item in reversed(commentary):
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        if _commentary_is_drinks_break(text):
+            return True, _parse_commentary_minute(item.get("time"))
+        if _commentary_is_delay_only(text):
+            continue
+        return False, None
+
+    return False, None
+
+
+def _hydration_break_state(event_id: str, match_id: int) -> tuple[bool, int | None]:
+    active, minute = _hydration_break_from_summary(event_id)
+    meta_key = f"hydration_break_{match_id}"
+    if active:
+        db.set_sync_meta(
+            meta_key,
+            json.dumps(
+                {
+                    "minute": minute,
+                    "since": datetime.now(TIMEZONE).isoformat(),
+                }
+            ),
+        )
+        return True, minute
+
+    raw = db.get_sync_meta(meta_key)
+    if raw:
+        try:
+            meta = json.loads(raw)
+            since = datetime.fromisoformat(meta["since"])
+            age = (datetime.now(TIMEZONE) - since).total_seconds()
+            if age < 300 and event_id and _fetch_summary(event_id) is None:
+                return True, meta.get("minute")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        db.set_sync_meta(meta_key, "")
+    return False, None
 
 
 def _parse_espn_minute(display: str | None) -> tuple[int | None, int | None]:
@@ -243,9 +346,10 @@ def _sync_espn_event(
     comp_status = competition.get("status") or event.get("status") or {}
 
     if _espn_not_started(comp_status):
-        if (db_match.get("status") or "") in ("live", "halftime") and db_match.get("actual_home") is None:
+        if (db_match.get("status") or "") in ("live", "halftime", "hydration_break") and db_match.get("actual_home") is None:
             db.clear_match_live_state(match_id)
             db.set_sync_meta(f"espn_live_source_{match_id}", "")
+            db.set_sync_meta(f"hydration_break_{match_id}", "")
             result["reset_scheduled"] = 1
         return result
 
@@ -286,6 +390,14 @@ def _sync_espn_event(
         if db_status == "halftime":
             live_minute = 45
             live_injury = None
+        elif db_status == "live":
+            event_id = str(event.get("id") or "")
+            hydration_active, hydration_minute = _hydration_break_state(event_id, match_id)
+            if hydration_active:
+                db_status = "hydration_break"
+                if hydration_minute is not None:
+                    live_minute = hydration_minute
+                    live_injury = None
         if live_minute is not None and live_minute <= 0:
             live_minute = None
         db.update_match_live(

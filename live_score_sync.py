@@ -203,7 +203,7 @@ def _kickoff_in_play_window(kickoff_et: datetime | None, db_match: dict | None =
         return False
     now = datetime.now(TIMEZONE)
     if db_match and db_match.get("actual_home") is None:
-        if (db_match.get("status") or "") in ("live", "halftime"):
+        if (db_match.get("status") or "") in ("live", "halftime", "hydration_break"):
             return kickoff_et <= now < kickoff_et + LIVE_SYNC_MAX
         if db.get_sync_meta(f"espn_live_source_{db_match['id']}"):
             return kickoff_et <= now < kickoff_et + LIVE_SYNC_MAX

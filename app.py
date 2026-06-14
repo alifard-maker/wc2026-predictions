@@ -82,7 +82,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.39"
+APP_VERSION = "Beta 3.40"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -344,7 +344,7 @@ def _match_has_played_data(raw: dict, now: datetime) -> bool:
         return False
     if raw.get("actual_home") is not None:
         return True
-    if (raw.get("status") or "") not in ("live", "halftime", "finished"):
+    if (raw.get("status") or "") not in ("live", "halftime", "hydration_break", "finished"):
         return False
     live_minute = raw.get("live_minute")
     try:

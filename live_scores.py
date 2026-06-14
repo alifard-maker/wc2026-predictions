@@ -45,7 +45,7 @@ def is_synced_live(match: dict, now: datetime | None = None) -> bool:
     now = now or datetime.now(TIMEZONE)
     if match.get("actual_home") is not None:
         return False
-    if (match.get("status") or "") not in ("live", "halftime"):
+    if (match.get("status") or "") not in ("live", "halftime", "hydration_break"):
         return False
     kickoff = parse_match_datetime(match["match_date"], match["match_time"])
     return kickoff <= now < kickoff + LIVE_SYNC_MAX
@@ -112,7 +112,11 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     elif actual_home is None and (synced_live or in_progress):
         display_home = 0 if live_home is None else live_home
         display_away = 0 if live_away is None else live_away
-        if db_status == "halftime" or (
+        if db_status == "hydration_break":
+            status = "hydration_break"
+            live_minute = normalize_stored_minute(live_minute)
+            minute_label = format_hydration_break_label(live_minute)
+        elif db_status == "halftime" or (
             not synced_live and is_halftime_break(kickoff, now, db_status)
         ):
             status = "halftime"
@@ -148,7 +152,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     m["display_away"] = display_away
     m["minute_label"] = minute_label
     m["live_minute"] = live_minute
-    m["is_live"] = status in ("live", "halftime")
+    m["is_live"] = status in ("live", "halftime", "hydration_break")
     m["is_finished"] = status == "finished"
     return m
 
@@ -249,6 +253,12 @@ def effective_live_minute(
     return stored_minute, stored_injury
 
 
+def format_hydration_break_label(minute: int | None) -> str:
+    if minute is not None and minute > 0:
+        return f"💧 Drinks break · {minute}'"
+    return "💧 Drinks break"
+
+
 def format_halftime_label(kickoff: datetime, now: datetime) -> str:
     resume = second_half_kickoff(kickoff)
     remaining = resume - now
@@ -268,6 +278,8 @@ def format_minute(
 ) -> str:
     if status == "halftime":
         return "HT"
+    if status == "hydration_break":
+        return format_hydration_break_label(minute)
     if status == "finished":
         return "FT"
     if minute is None or minute <= 0:

@@ -943,7 +943,7 @@ def repair_live_display_data() -> None:
             SET status = 'scheduled', live_home = NULL, live_away = NULL,
                 live_minute = NULL, live_injury_minute = NULL
             WHERE actual_home IS NULL
-              AND status IN ('live', 'halftime')
+              AND status IN ('live', 'halftime', 'hydration_break')
               AND COALESCE(live_home, 0) = 0
               AND COALESCE(live_away, 0) = 0
               AND id NOT IN (SELECT DISTINCT match_id FROM match_goals)
@@ -954,7 +954,7 @@ def repair_live_display_data() -> None:
             """
             SELECT id, match_date, match_time
             FROM matches
-            WHERE actual_home IS NULL AND status IN ('live', 'halftime')
+            WHERE actual_home IS NULL AND status IN ('live', 'halftime', 'hydration_break')
             """
         ).fetchall()
         from live_scores import LIVE_SYNC_MAX
@@ -1920,7 +1920,7 @@ def update_match_live(
             "SELECT match_date, match_time FROM matches WHERE id = ?",
             (match_id,),
         ).fetchone()
-        if row and status in ("live", "halftime"):
+        if row and status in ("live", "halftime", "hydration_break"):
             kickoff = parse_match_datetime(row["match_date"], row["match_time"])
             if datetime.now(TIMEZONE) < kickoff:
                 return

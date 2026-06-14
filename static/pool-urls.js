@@ -55,6 +55,9 @@
     if (status === 'halftime' || cleaned.startsWith('HT')) {
       return cleaned.startsWith('HT') ? cleaned : 'HT';
     }
+    if (status === 'hydration_break' || cleaned.includes('Drinks break') || cleaned.startsWith('💧')) {
+      return cleaned && cleaned !== 'LIVE' ? cleaned : '💧 Drinks break';
+    }
     // Trust server-synced minute from ESPN/API polling, but never ahead of kickoff wall clock.
     if (cleaned && cleaned !== 'LIVE' && cleaned !== 'Soon' && cleaned.endsWith("'")) {
       const derived = deriveLiveMinuteFromKickoff(kickoffIso);
