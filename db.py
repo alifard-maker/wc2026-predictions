@@ -1974,9 +1974,16 @@ def get_leaderboard(pool_id: int) -> list[dict]:
             leaderboard.append(entry)
 
         leaderboard.sort(
-            key=lambda x: (-x["total_points"], -x["match_points"], -x["exact_scores"], x["id"]),
+            key=lambda x: (
+                -x["total_points"],
+                -x["exact_scores"],
+                -x["correct_results"],
+                -x["match_points"],
+                x["id"],
+            ),
         )
 
+        # Rank number ties on total points only; sort order uses exact scores above.
         rank = 1
         for i, entry in enumerate(leaderboard):
             if i > 0 and entry["total_points"] < leaderboard[i - 1]["total_points"]:
