@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Grok">
+  <circle cx="64" cy="64" r="64" fill="#0f0f0f"/>
+  <path fill="#fff" stroke="#fff" stroke-width="6" stroke-linecap="round" d="M44 44 L84 84 M84 44 L44 84"/>
+</svg>

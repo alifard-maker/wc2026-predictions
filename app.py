@@ -21,7 +21,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
-from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_badge, is_ai_agent
+from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_avatar_file, ai_agent_badge, is_ai_agent
 import live_score_sync
 from live_scores import (
     apply_live_state,
@@ -81,7 +81,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.27"
+APP_VERSION = "Beta 3.28"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -145,7 +145,8 @@ def leaderboard_top_for_json(
                     invite_code,
                     r["id"],
                     r.get("photo_updated_at"),
-                ) if user_has_avatar(r["id"], r.get("photo_updated_at")) else None,
+                    r["display_name"],
+                ) if user_has_avatar(r["id"], r.get("photo_updated_at"), r["display_name"]) else None,
             }
             for r in board[:5]
         ],
@@ -246,7 +247,14 @@ def user_avatar_url(
     invite_code: str | None,
     user_id: int,
     photo_updated_at: str | None,
+    display_name: str | None = None,
 ) -> str | None:
+    if display_name and is_ai_agent(display_name):
+        avatar_file = ai_agent_avatar_file(display_name)
+        if avatar_file:
+            version = APP_VERSION.replace(" ", "-")
+            return url_for("static", filename=avatar_file) + f"?v={version}"
+        return None
     if not invite_code or not user_avatars.avatar_exists_for_user(user_id, photo_updated_at):
         return None
     base = url_for("user_avatar_image", invite_code=invite_code, user_id=user_id)
@@ -254,7 +262,13 @@ def user_avatar_url(
     return f"{base}?v={token}"
 
 
-def user_has_avatar(user_id: int, photo_updated_at: str | None) -> bool:
+def user_has_avatar(
+    user_id: int,
+    photo_updated_at: str | None,
+    display_name: str | None = None,
+) -> bool:
+    if display_name and is_ai_agent(display_name) and ai_agent_avatar_file(display_name):
+        return True
     return user_avatars.avatar_exists_for_user(user_id, photo_updated_at)
 
 
@@ -1231,7 +1245,8 @@ def comments_feed(invite_code):
                     invite_code,
                     c["user_id"],
                     c.get("photo_updated_at"),
-                ) if user_has_avatar(c["user_id"], c.get("photo_updated_at")) else None,
+                    c["display_name"],
+                ) if user_has_avatar(c["user_id"], c.get("photo_updated_at"), c["display_name"]) else None,
             }
             for c in comments
         ],
@@ -1630,15 +1645,15 @@ def match_watch_feed(invite_code, match_id):
     for p in preds:
         row = dict(p)
         row["avatar_url"] = user_avatar_url(
-            invite_code, p["user_id"], p.get("photo_updated_at")
-        ) if user_has_avatar(p["user_id"], p.get("photo_updated_at")) else None
+            invite_code, p["user_id"], p.get("photo_updated_at"), p.get("display_name")
+        ) if user_has_avatar(p["user_id"], p.get("photo_updated_at"), p.get("display_name")) else None
         preds_out.append(row)
     comments_out = []
     for c in db.get_pool_comments(pool["id"], match_id)[:20]:
         row = dict(c)
         row["avatar_url"] = user_avatar_url(
-            invite_code, c["user_id"], c.get("photo_updated_at")
-        ) if user_has_avatar(c["user_id"], c.get("photo_updated_at")) else None
+            invite_code, c["user_id"], c.get("photo_updated_at"), c.get("display_name")
+        ) if user_has_avatar(c["user_id"], c.get("photo_updated_at"), c.get("display_name")) else None
         comments_out.append(row)
     return jsonify({
         "match": {

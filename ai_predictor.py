@@ -9,11 +9,11 @@ from team_data import TEAM_FACTS
 AI_DISPLAY_NAME = "Cursor AI Prediction"  # backwards compatibility
 
 AI_AGENTS: list[dict] = [
-    {"key": "cursor", "display_name": "Cursor AI", "badge": "Cursor"},
-    {"key": "chatgpt", "display_name": "ChatGPT", "badge": "GPT"},
-    {"key": "gemini", "display_name": "Gemini", "badge": "Gemini"},
-    {"key": "grok", "display_name": "Grok", "badge": "Grok"},
-    {"key": "claude", "display_name": "Claude", "badge": "Claude"},
+    {"key": "cursor", "display_name": "Cursor AI", "badge": "Cursor", "avatar": "images/ai-agents/cursor.svg"},
+    {"key": "chatgpt", "display_name": "ChatGPT", "badge": "GPT", "avatar": "images/ai-agents/chatgpt.svg"},
+    {"key": "gemini", "display_name": "Gemini", "badge": "Gemini", "avatar": "images/ai-agents/gemini.svg"},
+    {"key": "grok", "display_name": "Grok", "badge": "Grok", "avatar": "images/ai-agents/grok.svg"},
+    {"key": "claude", "display_name": "Claude", "badge": "Claude", "avatar": "images/ai-agents/claude.svg"},
 ]
 
 AI_AGENT_NAMES: set[str] = {a["display_name"] for a in AI_AGENTS}
@@ -136,3 +136,13 @@ def ai_agent_badge(display_name: str) -> str:
     if display_name == AI_DISPLAY_NAME:
         return "Cursor"
     return "AI"
+
+
+def ai_agent_avatar_file(display_name: str) -> str | None:
+    """Static image path under /static for this AI agent, if any."""
+    for agent in AI_AGENTS:
+        if agent["display_name"] == display_name:
+            return agent.get("avatar")
+    if display_name == AI_DISPLAY_NAME:
+        return AI_AGENTS[0].get("avatar")
+    return None
