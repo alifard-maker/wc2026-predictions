@@ -24,6 +24,7 @@ import db
 from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_avatar_file, ai_agent_badge, is_ai_agent, is_synced_ai_agent
 import live_score_sync
 from listen_live import LISTEN_LIVE_DESTINATIONS
+from match_health import run_match_health_checks
 from live_scores import (
     apply_live_state,
     next_scheduled_kickoff,
@@ -84,7 +85,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.68"
+APP_VERSION = "Beta 3.69"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -610,6 +611,10 @@ def health():
     except Exception:
         payload["espn_sync"] = None
         payload["espn_sync_error"] = None
+    try:
+        payload["match_checks"] = run_match_health_checks()
+    except Exception as exc:
+        payload["match_checks"] = {"ok": False, "issues": [f"match_checks crashed: {exc}"]}
     try:
         from datetime import datetime
 

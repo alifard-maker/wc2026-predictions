@@ -58,7 +58,14 @@ def main() -> int:
             "SELECT * FROM users WHERE pool_id = ? LIMIT 1", (pool["id"],)
         ).fetchone()
     if not pool or not user:
-        print("No pool/user in database — create a pool first.")
+        pool = db.create_pool("CI smoke pool")
+        joined = db.add_user(pool["id"], "CI smoke tester")
+        if isinstance(joined, str):
+            print(f"Could not create CI user: {joined}")
+            return 1
+        user = db.get_user(joined["id"])
+    if not pool or not user:
+        print("No pool/user in database.")
         return 1
 
     invite = pool["invite_code"]
