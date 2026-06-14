@@ -19,7 +19,7 @@
   {% elif m.open %}
   <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
   {% elif not is_finished_row %}
-  <span class="badge badge-awaiting">Picks locked · kicks off {{ m.kickoff.strftime('%a %d %b, %H:%M') }} ET</span>
+  <span class="badge badge-awaiting" data-live-badge="{{ m.id }}">Picks locked · kicks off {{ m.kickoff.strftime('%a %d %b, %H:%M') }} ET</span>
   {% else %}
   <span class="badge badge-closed">Closed</span>
   {% endif %}

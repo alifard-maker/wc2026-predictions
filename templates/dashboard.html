@@ -294,6 +294,25 @@
     }
   }
 
+  function syncFixtureResultPanel(fixture, m) {
+    if (!fixture) return;
+    fixture.classList.add('fixture-has-result');
+    fixture.querySelectorAll(':scope > .prediction-done, :scope > .score-input-wrap, :scope > .team.home, :scope > .team.away').forEach(el => el.remove());
+    const scoreEl = fixture.querySelector(`[data-live-score="${m.id}"]`);
+    if (scoreEl) {
+      updateFixtureResult(scoreEl, m);
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'fixture-result-stack live-score-display' + (m.is_finished && !m.is_live ? ' fixture-finished-inline' : '');
+    wrap.dataset.liveScore = String(m.id);
+    if (m.kickoff_iso) wrap.dataset.kickoff = m.kickoff_iso;
+    wrap.innerHTML = renderFixtureResultInnerHtml(m);
+    const meta = fixture.querySelector('.fixture-meta');
+    if (meta) meta.insertAdjacentElement('afterend', wrap);
+    else fixture.appendChild(wrap);
+  }
+
   async function refreshLiveScores() {
     const res = await fetch(liveUrl);
     if (!res.ok) return;
@@ -301,7 +320,6 @@
     applySpotlight(data.spotlight);
     data.matches.forEach(m => {
       const badge = document.querySelector(`[data-live-badge="${m.id}"]`);
-      const score = document.querySelector(`[data-live-score="${m.id}"]`);
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
         const minute = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
@@ -311,23 +329,8 @@
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
       }
-      if ((m.is_live || m.is_finished || m.show_result) && score) {
-        updateFixtureResult(score, m);
-      } else if ((m.is_finished || m.show_result) && !score) {
-        const fixture = document.getElementById(`match-${m.id}`);
-        const homeTeam = fixture?.querySelector('.team.home');
-        if (fixture && !fixture.querySelector('[data-live-score]')) {
-          fixture.classList.add('fixture-has-result');
-          fixture.querySelectorAll(':scope > .team.home, :scope > .team.away').forEach(el => el.remove());
-          const wrap = document.createElement('div');
-          wrap.className = 'fixture-result-stack live-score-display' + (m.is_finished && !m.is_live ? ' fixture-finished-inline' : '');
-          wrap.dataset.liveScore = String(m.id);
-          if (m.kickoff_iso) wrap.dataset.kickoff = m.kickoff_iso;
-          wrap.innerHTML = renderFixtureResultInnerHtml(m);
-          const meta = fixture.querySelector('.fixture-meta');
-          if (meta) meta.insertAdjacentElement('afterend', wrap);
-          else fixture.appendChild(wrap);
-        }
+      if (m.is_live || m.is_finished || m.show_result) {
+        syncFixtureResultPanel(document.getElementById(`match-${m.id}`), m);
       }
     });
   }
