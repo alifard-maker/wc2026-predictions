@@ -2861,7 +2861,7 @@ textarea:focus {
 .legend-qualified { background: #2ecc71; }
 .legend-contending { background: #f1c40f; }
 .legend-eliminated { background: var(--muted); opacity: 0.5; }
-.legend-live { background: #e74c3c; }
+.legend-live { background: #f1c40f; }
 
 .legend-live-note.hidden {
   display: none;
@@ -2941,7 +2941,7 @@ textarea:focus {
 }
 
 .group-row-live td {
-  box-shadow: inset 3px 0 0 #e74c3c;
+  box-shadow: inset 3px 0 0 #f1c40f;
 }
 
 .group-status-tag {
