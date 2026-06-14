@@ -360,6 +360,7 @@ def _find_cursor_ai_user(conn, pool_id: int, exclude_id: int | None):
 def fill_nostradamus_cursor_picks(pool_id: int) -> str:
     """Generate Cursor AI picks for remaining fixtures and assign them to Nostradamus."""
     from ai_predictor import LEGACY_PREDICTIONS_AGENT_KEY, predict_score
+    from scoring import match_teams_known
 
     with db() as conn:
         keeper = _find_nostradamus_keeper(conn, pool_id)
@@ -387,7 +388,11 @@ def fill_nostradamus_cursor_picks(pool_id: int) -> str:
 
         assigned = 0
         skipped = 0
+        tbd_skipped = 0
         for match in matches:
+            if not match_teams_known(match["home_team"], match["away_team"]):
+                tbd_skipped += 1
+                continue
             existing = conn.execute(
                 "SELECT id FROM predictions WHERE user_id = ? AND match_id = ?",
                 (keeper_id, match["id"]),
@@ -416,9 +421,10 @@ def fill_nostradamus_cursor_picks(pool_id: int) -> str:
         cursor_name = cursor_user["display_name"] if cursor_user else None
 
     removed = f' Removed synced account "{cursor_name}".' if cursor_name else ""
+    tbd_note = f" {tbd_skipped} TBD fixture(s) skipped." if tbd_skipped else ""
     return (
         f"Added {assigned} Cursor pick(s) to {keeper_name} for remaining matches"
-        f" ({skipped} already had picks).{removed}"
+        f" ({skipped} already had picks).{tbd_note}{removed}"
     )
 
 
@@ -2201,7 +2207,7 @@ def ensure_all_ai_users(pool_id: int) -> list[int]:
 
 def sync_ai_predictions(pool_id: int) -> int:
     from ai_predictor import AI_AGENTS, REMOVED_SYNC_AGENTS, predict_score
-    from scoring import is_prediction_open
+    from scoring import is_prediction_open, match_teams_known
 
     saved = 0
     matches = get_all_matches()
@@ -2213,6 +2219,14 @@ def sync_ai_predictions(pool_id: int) -> int:
             if not is_prediction_open(m["match_date"], m["match_time"]):
                 continue
             pred = get_prediction(ai_id, m["id"])
+            if not match_teams_known(m["home_team"], m["away_team"]):
+                if pred:
+                    with db() as conn:
+                        conn.execute(
+                            "DELETE FROM predictions WHERE user_id = ? AND match_id = ?",
+                            (ai_id, m["id"]),
+                        )
+                continue
             home, away = predict_score(m["home_team"], m["away_team"], m["id"], agent["key"])
             if pred and pred["home_score"] == home and pred["away_score"] == away:
                 continue

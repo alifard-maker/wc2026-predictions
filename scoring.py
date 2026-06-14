@@ -30,6 +30,13 @@ def match_result(home: int, away: int) -> str:
 
 OPENING_MATCH_DATE = "2026-06-11"
 OPENING_MATCH_TIME = "15:00"
+KNOCKOUT_TBD = "TBD"
+
+
+def match_teams_known(home_team: str | None, away_team: str | None) -> bool:
+    """True when both sides are confirmed (not placeholder TBD)."""
+    unknown = {"", KNOCKOUT_TBD}
+    return (home_team or "").strip() not in unknown and (away_team or "").strip() not in unknown
 
 
 def tournament_vote_deadline() -> datetime:
