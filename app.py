@@ -83,7 +83,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.42"
+APP_VERSION = "Beta 3.43"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -207,7 +207,6 @@ def inject_public_url():
             ctx["live_commentaries"][0] if ctx["live_commentaries"] else None
         )
         lb = db.get_leaderboard(pool_id)
-        ctx["top_leaderboard"] = lb[:3]
         ctx["leader_message"] = db.get_leader_message(lb)
         next_k = next_scheduled_kickoff(raw_matches, now)
         ctx["next_kickoff"] = next_k
