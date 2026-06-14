@@ -500,7 +500,7 @@ a.finished-matches-link-card:hover {
 .finished-match-toggle {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem 1rem;
   padding: 0.85rem 1rem;
@@ -508,7 +508,7 @@ a.finished-matches-link-card:hover {
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: center;
+  text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -529,17 +529,29 @@ a.finished-matches-link-card:hover {
 }
 
 .finished-match-teams {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.5rem;
+  gap: 0.35rem 0.75rem;
+  width: 100%;
   min-width: 0;
+}
+
+.finished-match-teams .team.home {
+  justify-self: end;
+  text-align: right;
+}
+
+.finished-match-teams .team.away {
+  justify-self: start;
+  text-align: left;
 }
 
 .finished-match-vs {
   color: var(--muted);
   font-size: 0.85rem;
+  justify-self: center;
+  white-space: nowrap;
 }
 
 .finished-match-score {
@@ -3520,8 +3532,12 @@ a.bracket-match:hover {
   }
 
   .finished-match-toggle {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 0.5rem 0.75rem;
+  }
+
+  .finished-match-teams {
+    gap: 0.35rem 0.5rem;
   }
 
   a.finished-matches-link-card {
