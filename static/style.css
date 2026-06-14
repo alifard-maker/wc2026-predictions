@@ -1893,9 +1893,53 @@ textarea:focus {
 }
 
 .prediction-urgency-card {
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
+  padding: 0.875rem 1rem;
   border-color: var(--accent-2);
   background: linear-gradient(135deg, var(--surface) 0%, #1a2e1a 100%);
+}
+
+.prediction-urgency-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.prediction-urgency-main {
+  flex: 1;
+  min-width: min(100%, 14rem);
+}
+
+.prediction-urgency-card h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.2rem;
+}
+
+.prediction-urgency-card .prediction-match-line {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.prediction-urgency-card .prediction-countdown-timer {
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.prediction-urgency-card .prediction-deadline-note {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.prediction-urgency-action {
+  margin: 0;
+  flex-shrink: 0;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.875rem;
 }
 
 .prediction-countdown-timer {

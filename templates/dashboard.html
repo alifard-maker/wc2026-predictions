@@ -33,15 +33,19 @@
 
 {% if next_prediction %}
 <div class="card prediction-urgency-card" id="dashboard-prediction-countdown" data-deadline="{{ next_prediction.deadline }}">
-  <h3>⏳ Your next prediction due</h3>
-  <p style="margin: 0.25rem 0 0.75rem">
-    <strong><span class="team home">{{ team_with_flag(next_prediction.home_team, pool.invite_code) }}</span> vs <span class="team away">{{ team_with_flag(next_prediction.away_team, pool.invite_code) }}</span></strong>
-  </p>
-  <div class="prediction-countdown-timer" id="dashboard-prediction-timer">Loading…</div>
-  <p style="color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0 0">
-    Submit by <strong>{{ next_prediction.deadline_display }}</strong> (1 hour before kickoff)
-  </p>
-  <a href="#match-{{ next_prediction.match_id }}" class="btn btn-primary" style="margin-top: 1rem">Go to match</a>
+  <div class="prediction-urgency-inner">
+    <div class="prediction-urgency-main">
+      <h3>⏳ Your next prediction due</h3>
+      <p class="prediction-match-line">
+        <strong><span class="team home">{{ team_with_flag(next_prediction.home_team, pool.invite_code) }}</span> vs <span class="team away">{{ team_with_flag(next_prediction.away_team, pool.invite_code) }}</span></strong>
+      </p>
+      <div class="prediction-countdown-timer" id="dashboard-prediction-timer">Loading…</div>
+      <p class="prediction-deadline-note">
+        Submit by <strong>{{ next_prediction.deadline_display }}</strong> (1 hour before kickoff)
+      </p>
+    </div>
+    <a href="#match-{{ next_prediction.match_id }}" class="btn btn-primary prediction-urgency-action">Go to match</a>
+  </div>
 </div>
 {% elif open_count > 0 and predicted_open == open_count %}
 <div class="card" style="margin-bottom: 2rem; border-color: var(--accent)">
