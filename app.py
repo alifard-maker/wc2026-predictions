@@ -83,7 +83,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.48"
+APP_VERSION = "Beta 3.47"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -170,7 +170,6 @@ def inject_public_url():
         "opening_kickoff_iso": opening_kickoff_iso(),
         "next_kickoff": None,
         "banner_kickoff_iso": opening_kickoff_iso(),
-        "banner_kickoff_teams": "Mexico vs South Africa",
         "banner_kickoff_label": "Mexico vs South Africa · 11 Jun 2026, 15:00 ET",
         "banner_countdown_title": "Opening match",
         "ai_display_name": AI_DISPLAY_NAME,
@@ -215,12 +214,10 @@ def inject_public_url():
             ctx["banner_kickoff_iso"] = ctx["live_commentary"]["kickoff_iso"]
         elif next_k:
             ctx["banner_kickoff_iso"] = next_k["iso"]
-            ctx["banner_kickoff_teams"] = f"{next_k['home_team']} vs {next_k['away_team']}"
             ctx["banner_kickoff_label"] = next_k["display"]
             ctx["banner_countdown_title"] = "Next match"
         else:
             ctx["banner_kickoff_iso"] = opening_kickoff_iso()
-            ctx["banner_kickoff_teams"] = "Mexico vs South Africa"
     return ctx
 
 

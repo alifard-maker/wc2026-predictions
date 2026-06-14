@@ -21,11 +21,11 @@
     {% elif match.is_finished %}
     <span class="badge badge-done" id="match-status-badge">Full time</span>
     {% elif match.open %}
-    <span class="badge badge-open badge-deadline-track{% if match.deadline_urgent %} badge-open-urgent{% endif %}" id="match-status-badge" data-deadline="{{ match.deadline.isoformat() }}" data-local-deadline-prefix="Open until" data-local-format="deadline-short" data-show-et="true">Open until {{ match.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+    <span class="badge badge-open badge-deadline-track{% if match.deadline_urgent %} badge-open-urgent{% endif %}" id="match-status-badge" data-deadline="{{ match.deadline.isoformat() }}">Open until {{ match.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
     {% else %}
     <span class="badge badge-closed" id="match-status-badge">Closed</span>
     {% endif %}
-    <span data-local-time="{{ match.kickoff.isoformat() }}" data-local-format="kickoff-long" data-show-et="true">{{ match.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+    <span>{{ match.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
     <span>{{ match.venue }}</span>
   </div>
 

@@ -25,7 +25,7 @@
   {% endif %}
   <div class="prediction-countdown-timer" id="dashboard-tournament-timer">Loading…</div>
   <p style="color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0 0">
-    Locks at <strong data-local-time="{{ tournament_vote.deadline }}" data-local-format="deadline-short" data-show-et="true">{{ tournament_vote.deadline_display }}</strong> (1 minute before kickoff)
+    Locks at <strong>{{ tournament_vote.deadline_display }}</strong> (1 minute before kickoff)
   </p>
   <a href="{{ url_for('tournament_page', invite_code=pool.invite_code) }}" class="btn btn-gold" style="margin-top: 1rem">Enter tournament picks →</a>
 </div>
@@ -41,7 +41,7 @@
       </p>
       <div class="prediction-countdown-timer" id="dashboard-prediction-timer">Loading…</div>
       <p class="prediction-deadline-note">
-        Submit by <strong data-local-time="{{ next_prediction.deadline }}" data-local-format="deadline-short" data-show-et="true">{{ next_prediction.deadline_display }}</strong> (1 hour before kickoff)
+        Submit by <strong>{{ next_prediction.deadline_display }}</strong> (1 hour before kickoff)
       </p>
     </div>
     <a href="#match-{{ next_prediction.match_id }}" class="btn btn-primary prediction-urgency-action">Go to match</a>

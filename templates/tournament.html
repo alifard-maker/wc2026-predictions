@@ -22,7 +22,7 @@
 
 <div class="card" style="margin-bottom: 2rem">
   {% if vote_open %}
-  <span class="badge badge-open" data-local-time="{{ deadline.isoformat() }}" data-local-format="deadline-long" data-local-deadline-prefix="Open until" data-show-et="true">Open until {{ deadline.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  <span class="badge badge-open">Open until {{ deadline.strftime('%a %d %b %Y, %H:%M') }} ET</span>
   <p style="color: var(--muted); margin: 0.75rem 0 1.25rem">
     Submit before the opening match. You can change your picks until <strong>1 minute before kickoff</strong> (Mexico vs South Africa, 11 June 2026).
     Other players&rsquo; picks stay hidden until then. {% for agent in ai_agents %}<strong>{{ agent.display_name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %} picks are visible — can you beat the AI?
@@ -59,7 +59,7 @@
     </button>
   </form>
   {% else %}
-  <span class="badge badge-closed" data-local-time="{{ deadline.isoformat() }}" data-local-format="deadline-long" data-local-deadline-prefix="Locked since" data-show-et="true">Locked since {{ deadline.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  <span class="badge badge-closed">Locked since {{ deadline.strftime('%a %d %b %Y, %H:%M') }} ET</span>
   {% if user_vote %}
   <div class="tournament-locked-picks" style="margin-top: 1.25rem">
     <p><strong>Your locked picks:</strong></p>

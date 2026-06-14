@@ -10,7 +10,6 @@
   <title>{% block title %}WC 2026 Predictions{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version | replace(' ', '-') }}">
   <script src="{{ url_for('static', filename='pool-urls.js') }}?v={{ app_version | replace(' ', '-') }}"></script>
-  <script src="{{ url_for('static', filename='local-time.js') }}?v={{ app_version | replace(' ', '-') }}"></script>
 </head>
 <body{% if session.get('invite_code') %} data-pool-code="{{ session.invite_code }}"{% endif %} data-team-slugs='{{ team_slugs_json | e }}'>
   <div id="maintenance-overlay" class="maintenance-overlay hidden" role="alert" aria-live="assertive">
@@ -26,11 +25,7 @@
     <div id="countdown-panel" class="countdown-panel wc-countdown">
       <span class="countdown-label" id="countdown-label">⏱ {{ banner_countdown_title }}</span>
       <span id="countdown-timer" class="countdown-timer">Loading…</span>
-      <span class="countdown-match" id="countdown-match"
-            data-local-time="{{ banner_kickoff_iso }}"
-            data-local-format="banner"
-            data-local-banner-teams="{{ banner_kickoff_teams }}"
-            data-show-et="true">{{ banner_kickoff_label }}</span>
+      <span class="countdown-match" id="countdown-match">{{ banner_kickoff_label }}</span>
     </div>
   </div>
   {% if session.get('invite_code') and session.get('user_id') %}
@@ -150,7 +145,6 @@
 
     <footer class="site-footer">
       <span>WC 2026 Predictions</span>
-      <span id="local-timezone-hint" class="local-timezone-hint"></span>
       <span class="site-version">{{ app_version }}</span>
     </footer>
   </div>
@@ -320,14 +314,7 @@
         if (nextKickoff && nextKickoff.iso) {
           liveTopBar.dataset.kickoff = nextKickoff.iso;
           if (labelEl) labelEl.textContent = '⏱ Next match';
-          if (matchEl) {
-            matchEl.dataset.localTime = nextKickoff.iso;
-            matchEl.dataset.localFormat = 'banner';
-            matchEl.dataset.localBannerTeams = `${nextKickoff.home_team} vs ${nextKickoff.away_team}`;
-            matchEl.dataset.showEt = 'true';
-            if (typeof applyLocalTimes === 'function') applyLocalTimes(matchEl.parentElement || document);
-            else matchEl.textContent = nextKickoff.display || '';
-          }
+          if (matchEl) matchEl.textContent = nextKickoff.display || '';
         }
         if (typeof updateBannerOffset === 'function') updateBannerOffset();
       }
@@ -389,10 +376,7 @@
         }
         bar.classList.remove('hidden');
         missingEl.textContent = 'Still needed: ' + (data.missing || []).join(' · ');
-        const lockLabel = typeof formatLocalWithEtRef === 'function'
-          ? formatLocalWithEtRef(data.deadline, 'deadline-short', true).html
-          : data.deadline_display;
-        deadlineEl.innerHTML = `Locks ${lockLabel}`;
+        deadlineEl.textContent = `Locks ${data.deadline_display}`;
         deadline = new Date(data.deadline);
         tickVote();
         if (typeof updateBannerOffset === 'function') updateBannerOffset();

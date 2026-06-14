@@ -10,16 +10,16 @@
   <span class="badge badge-group">{{ m.stage|replace('_', ' ')|title }}</span>
   {% endif %}
   <span>MD{{ m.matchday or '—' }}</span>
-  <span data-local-time="{{ m.kickoff.isoformat() }}" data-local-format="kickoff-long" data-show-et="true">{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
+  <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
   <span>{{ m.venue }}</span>
   {% if m.is_live %}
   <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% elif m.status == 'hydration_break' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
   {% elif is_finished_row %}
   <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
   {% elif m.open %}
-  <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}" data-local-deadline-prefix="Open until" data-local-format="deadline-short" data-show-et="true">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
+  <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
   {% elif not is_finished_row %}
-  <span class="badge badge-awaiting" data-local-kickoff-line data-local-time="{{ m.kickoff.isoformat() }}" data-local-prefix="Picks locked · kicks off" data-local-format="kickoff-short" data-show-et="true">Picks locked · kicks off {{ m.kickoff.strftime('%a %d %b, %H:%M') }} ET</span>
+  <span class="badge badge-awaiting">Picks locked · kicks off {{ m.kickoff.strftime('%a %d %b, %H:%M') }} ET</span>
   {% else %}
   <span class="badge badge-closed">Closed</span>
   {% endif %}
