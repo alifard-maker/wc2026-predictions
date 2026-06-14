@@ -1,10 +1,13 @@
-{% macro render_listen_live(destinations, compact=false, wrap_id='', hidden=false) %}
+{% macro render_listen_live(destinations, compact=false, wrap_id='', hidden=false, active=false) %}
 {% if destinations %}
-<div class="listen-live-bar{% if compact %} listen-live-bar-compact{% endif %}"{% if wrap_id %} id="{{ wrap_id }}"{% endif %}{% if hidden %} hidden{% endif %}>
+<div class="listen-live-bar{% if compact %} listen-live-bar-compact{% endif %}{% if not active %} listen-live-bar-awaiting{% endif %}"{% if wrap_id %} id="{{ wrap_id }}"{% endif %}{% if hidden %} hidden{% endif %}>
   <span class="listen-live-label">Listen live</span>
+  {% if not compact %}
+  <p class="listen-live-note"{% if active %} hidden{% endif %}>Available when the match starts.</p>
+  {% endif %}
   <div class="listen-live-links">
     {% for dest in destinations %}
-    <a href="{{ dest.url }}" class="listen-live-link" target="_blank" rel="noopener noreferrer" title="{{ dest.subtitle }}" onclick="event.stopPropagation()">
+    <a href="{{ dest.url }}" class="listen-live-link" target="_blank" rel="noopener noreferrer" title="{{ dest.subtitle }}"{% if not active %} tabindex="-1" aria-disabled="true"{% endif %} onclick="event.stopPropagation()">
       <span class="listen-live-icon" aria-hidden="true">{{ dest.icon }}</span>
       <span class="listen-live-text">
         <span class="listen-live-name">{{ dest.label }}</span>

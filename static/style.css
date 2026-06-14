@@ -2956,6 +2956,28 @@ a.bracket-match:hover {
   display: none !important;
 }
 
+.listen-live-bar-awaiting {
+  background: rgba(127, 140, 141, 0.08);
+  border-color: rgba(127, 140, 141, 0.22);
+}
+
+.listen-live-bar-awaiting .listen-live-label {
+  color: var(--muted);
+}
+
+.listen-live-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.listen-live-bar-awaiting .listen-live-link {
+  pointer-events: none;
+  opacity: 0.55;
+  cursor: default;
+}
+
 .listen-live-bar-compact {
   flex-direction: row;
   flex-wrap: wrap;

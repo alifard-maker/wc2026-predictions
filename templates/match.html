@@ -38,7 +38,7 @@
 
   <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label | live_minute }}</p>
 
-  {{ render_listen_live(listen_live_destinations, wrap_id='listen-live-wrap', hidden=not match.is_live) }}
+  {{ render_listen_live(listen_live_destinations, wrap_id='listen-live-wrap', hidden=match.is_finished, active=match.is_live) }}
 
   <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team) }}</div>
 
@@ -212,7 +212,20 @@
 
     const listenWrap = document.getElementById('listen-live-wrap');
     if (listenWrap) {
-      listenWrap.hidden = !m.is_live;
+      const listenActive = m.is_live && !m.is_finished;
+      listenWrap.hidden = m.is_finished;
+      listenWrap.classList.toggle('listen-live-bar-awaiting', !listenActive && !m.is_finished);
+      const note = listenWrap.querySelector('.listen-live-note');
+      if (note) note.hidden = listenActive || m.is_finished;
+      listenWrap.querySelectorAll('.listen-live-link').forEach(link => {
+        if (listenActive) {
+          link.removeAttribute('tabindex');
+          link.removeAttribute('aria-disabled');
+        } else {
+          link.setAttribute('tabindex', '-1');
+          link.setAttribute('aria-disabled', 'true');
+        }
+      });
     }
 
     const eventsEl = document.getElementById('match-events-wrap');
