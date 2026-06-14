@@ -26,15 +26,47 @@ ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/
 
 DRINKS_BREAK_MARKERS = (
     "delay in match for a drinks break",
+    "delay in match for a drink break",
     "hydration break",
     "water break",
     "drinks break",
+    "drink break",
+    "cooling break",
+    "cooling breaks",
 )
 
 DELAY_ONLY_MARKERS = (
     "delay in match",
     "match delayed",
 )
+
+PLAY_RESUMED_MARKERS = (
+    "play resumes",
+    "match resumes",
+    "restarts",
+    "restart",
+    "kick-off",
+    "kick off",
+    "second half begins",
+    "second half kicks",
+    "back underway",
+)
+
+PLAY_EVENT_MARKERS = (
+    "goal!",
+    "goal ",
+    "yellow card",
+    "red card",
+    "substitution",
+    "corner",
+    "offside",
+    "free kick",
+    "penalty",
+    "attempt",
+    "shot ",
+)
+
+HYDRATION_BREAK_MAX_SECONDS = 360
 
 ESPN_TEAM_ALIASES: dict[str, str] = {
     "south korea": "Korea Republic",
@@ -118,39 +150,74 @@ def _commentary_is_delay_only(text: str) -> bool:
     return any(marker in lowered for marker in DELAY_ONLY_MARKERS)
 
 
-def _hydration_break_from_summary(event_id: str) -> tuple[bool, int | None]:
-    """True when ESPN commentary shows an active FIFA drinks/hydration break."""
+def _commentary_is_play_resumed(text: str) -> bool:
+    lowered = text.lower().strip()
+    if _commentary_is_drinks_break(text) or _commentary_is_delay_only(text):
+        return False
+    if any(marker in lowered for marker in PLAY_RESUMED_MARKERS):
+        return True
+    return any(marker in lowered for marker in PLAY_EVENT_MARKERS)
+
+
+def _summary_commentary(event_id: str) -> list[dict]:
     payload = _fetch_summary(event_id)
     if not payload:
-        return False, None
-    commentary = payload.get("commentary") or []
+        return []
+    return payload.get("commentary") or []
+
+
+def _latest_drinks_break(commentary: list[dict]) -> tuple[int | None, int | None]:
+    latest_idx = None
+    latest_minute = None
+    for idx, item in enumerate(commentary):
+        text = (item.get("text") or "").strip()
+        if text and _commentary_is_drinks_break(text):
+            latest_idx = idx
+            latest_minute = _parse_commentary_minute(item.get("time"))
+    return latest_idx, latest_minute
+
+
+def _hydration_play_resumed_after_break(event_id: str) -> bool:
+    commentary = _summary_commentary(event_id)
+    break_idx, _ = _latest_drinks_break(commentary)
+    if break_idx is None:
+        return False
+    for item in commentary[break_idx + 1:]:
+        text = (item.get("text") or "").strip()
+        if text and _commentary_is_play_resumed(text):
+            return True
+    return False
+
+
+def _hydration_break_from_summary(event_id: str) -> tuple[bool, int | None]:
+    """True when ESPN commentary shows an active FIFA drinks/hydration break."""
+    commentary = _summary_commentary(event_id)
     if not commentary:
         return False, None
 
-    # ESPN lists commentary oldest-first; the latest entry is at the end.
-    for item in reversed(commentary):
-        text = (item.get("text") or "").strip()
-        if not text:
-            continue
-        if _commentary_is_drinks_break(text):
-            return True, _parse_commentary_minute(item.get("time"))
-        if _commentary_is_delay_only(text):
-            continue
+    break_idx, break_minute = _latest_drinks_break(commentary)
+    if break_idx is None:
         return False, None
 
-    return False, None
+    for item in commentary[break_idx + 1:]:
+        text = (item.get("text") or "").strip()
+        if text and _commentary_is_play_resumed(text):
+            return False, None
+
+    return True, break_minute
 
 
 def _hydration_break_state(event_id: str, match_id: int) -> tuple[bool, int | None]:
-    active, minute = _hydration_break_from_summary(event_id)
+    active, minute = _hydration_break_from_summary(event_id) if event_id else (False, None)
     meta_key = f"hydration_break_{match_id}"
+    now = datetime.now(TIMEZONE)
     if active:
         db.set_sync_meta(
             meta_key,
             json.dumps(
                 {
                     "minute": minute,
-                    "since": datetime.now(TIMEZONE).isoformat(),
+                    "since": now.isoformat(),
                 }
             ),
         )
@@ -161,8 +228,13 @@ def _hydration_break_state(event_id: str, match_id: int) -> tuple[bool, int | No
         try:
             meta = json.loads(raw)
             since = datetime.fromisoformat(meta["since"])
-            age = (datetime.now(TIMEZONE) - since).total_seconds()
-            if age < 300 and event_id and _fetch_summary(event_id) is None:
+            age = (now - since).total_seconds()
+            if age < HYDRATION_BREAK_MAX_SECONDS:
+                if event_id and _hydration_play_resumed_after_break(event_id):
+                    db.set_sync_meta(meta_key, "")
+                    return False, None
+                if event_id and not _summary_commentary(event_id):
+                    return True, meta.get("minute")
                 return True, meta.get("minute")
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
@@ -424,16 +496,17 @@ def _sync_espn_event(
     ):
         result["finished"] = 1
     elif db_match.get("actual_home") is None and db_status:
-        if db_status == "halftime":
+        hydration_active, hydration_minute = (False, None)
+        if event_id:
+            hydration_active, hydration_minute = _hydration_break_state(event_id, match_id)
+        if hydration_active:
+            db_status = "hydration_break"
+            if hydration_minute is not None:
+                live_minute = hydration_minute
+                live_injury = None
+        elif db_status == "halftime":
             live_minute = 45
             live_injury = None
-        elif db_status == "live":
-            hydration_active, hydration_minute = _hydration_break_state(event_id, match_id)
-            if hydration_active:
-                db_status = "hydration_break"
-                if hydration_minute is not None:
-                    live_minute = hydration_minute
-                    live_injury = None
         if live_minute is not None and live_minute <= 0:
             live_minute = None
         db.update_match_live(
