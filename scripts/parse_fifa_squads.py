@@ -148,7 +148,7 @@ COACH_COUNTRY_TOKENS = {
     "Germany",
     "Ghana",
     "Haiti",
-    "IR Iran",
+    "Iran",
     "Iraq",
     "Italy",
     "Japan",
@@ -181,7 +181,7 @@ TEAM_COUNTRY_ALIASES: dict[str, set[str]] = {
     "Bosnia and Herzegovina": {"Bosnia And Herzegovina", "Bosnia and Herzegovina"},
     "Côte d'Ivoire": {"Côte D'Ivoire", "Côte d'Ivoire"},
     "Czechia": {"Czech Republic", "Czechia"},
-    "IR Iran": {"IR Iran"},
+    "Iran": {"Iran", "IR Iran"},
     "Korea Republic": {"Korea Republic"},
     "Türkiye": {"Türkiye", "Turkiye"},
 }

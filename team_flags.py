@@ -25,7 +25,7 @@ TEAM_FLAG_CODES: dict[str, str] = {
     "Germany": "de",
     "Ghana": "gh",
     "Haiti": "ht",
-    "IR Iran": "ir",
+    "Iran": "ir",
     "Iraq": "iq",
     "Japan": "jp",
     "Jordan": "jo",
@@ -62,12 +62,12 @@ IR_IRAN_FLAG = "/static/images/flags/iran-lion-sun.png"
 def get_flag_codes_for_js() -> dict[str, str]:
     """Team name → flagcdn code, or local:filename for custom flags."""
     codes = dict(TEAM_FLAG_CODES)
-    codes["IR Iran"] = "local:iran-lion-sun.png"
+    codes["Iran"] = "local:iran-lion-sun.png"
     return codes
 
 
 def get_flag_url(team: str, size: str = "w40") -> str | None:
-    if team == "IR Iran":
+    if team == "Iran":
         return IR_IRAN_FLAG
     code = TEAM_FLAG_CODES.get(team)
     if not code:

@@ -238,7 +238,26 @@ def init_db() -> None:
     repair_rescinded_var_cards()
     repair_backfill_ai_agent_keys()
     repair_split_merged_cursor_ai_accounts()
+    repair_rename_ir_iran_team()
     ensure_admin_secrets()
+
+
+def repair_rename_ir_iran_team() -> None:
+    """Display name Iran (was IR Iran) across stored picks and match rows."""
+    with db() as conn:
+        conn.execute("UPDATE matches SET home_team = 'Iran' WHERE home_team = 'IR Iran'")
+        conn.execute("UPDATE matches SET away_team = 'Iran' WHERE away_team = 'IR Iran'")
+        for col in ("winner", "second_place", "third_place"):
+            conn.execute(
+                f"UPDATE tournament_votes SET {col} = 'Iran' WHERE {col} = 'IR Iran'"
+            )
+            conn.execute(
+                f"UPDATE tournament_results SET {col} = 'Iran' WHERE {col} = 'IR Iran'"
+            )
+        conn.execute("UPDATE player_cards SET team = 'Iran' WHERE team = 'IR Iran'")
+        conn.execute(
+            "UPDATE match_penalties SET taker_team = 'Iran' WHERE taker_team = 'IR Iran'"
+        )
 
 
 def repair_backfill_ai_agent_keys() -> None:

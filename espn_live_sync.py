@@ -83,7 +83,7 @@ ESPN_TEAM_ALIASES: dict[str, str] = {
     "cote divoire": "Côte d'Ivoire",
     "turkey": "Türkiye",
     "czech republic": "Czechia",
-    "iran": "IR Iran",
+    "iran": "Iran",
     "dr congo": "Congo DR",
     "cape verde": "Cabo Verde",
     "curacao": "Curaçao",
