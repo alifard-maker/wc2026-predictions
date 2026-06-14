@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 from scoring import OPENING_MATCH_DATE, OPENING_MATCH_TIME, TIMEZONE, parse_match_datetime
@@ -29,6 +30,70 @@ def sanitize_minute_label(label: str | None) -> str:
     if cleaned in {"0", "0'", "0''"}:
         return "LIVE"
     return cleaned
+
+
+def normalize_stoppage_minute(
+    minute: int | None,
+    injury: int | None,
+) -> tuple[int | None, int | None]:
+    """Split absolute clocks like 47' or 94' into base + stoppage."""
+    if minute is None:
+        return None, injury
+    if injury is not None:
+        try:
+            injury = int(injury) if int(injury) > 0 else None
+        except (TypeError, ValueError):
+            injury = None
+    if minute > 90:
+        return 90, injury if injury else minute - 90
+    if FIRST_HALF_MINUTES < minute < 50:
+        return FIRST_HALF_MINUTES, injury if injury else minute - FIRST_HALF_MINUTES
+    if injury:
+        return minute, injury
+    return minute, None
+
+
+def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
+    """Clock label for the banner plus optional red added-time suffix."""
+    status = match.get("status")
+    if status == "halftime":
+        kickoff = match.get("kickoff")
+        if kickoff:
+            return format_halftime_label(kickoff, datetime.now(TIMEZONE)), None
+        return "HT", None
+    if status == "hydration_break":
+        return format_hydration_break_label(match.get("live_minute")), None
+
+    label = sanitize_minute_label(match.get("minute_label"))
+    minute = normalize_stored_minute(match.get("live_minute"))
+    injury = match.get("live_injury_minute")
+    if injury is not None:
+        try:
+            injury = int(injury) if int(injury) > 0 else None
+        except (TypeError, ValueError):
+            injury = None
+
+    parsed = re.match(r"^(\d+)\+(\d+)'?$", label)
+    if parsed:
+        return f"{parsed.group(1)}'", f"+{parsed.group(2)} min added"
+
+    if minute is not None:
+        minute, injury = normalize_stoppage_minute(minute, injury)
+        if injury:
+            return f"{minute}'", f"+{injury} min added"
+
+    announced = match.get("announced_added_time")
+    if announced and minute is not None:
+        try:
+            announced = int(announced)
+        except (TypeError, ValueError):
+            announced = None
+        if announced and announced > 0:
+            threshold = 88 if (minute or 0) > FIRST_HALF_MINUTES else 40
+            if minute >= threshold:
+                return label if label.endswith("'") else f"{label}'", f"+{announced} min added"
+
+    return label, None
 
 
 def sanitize_goal_minute_label(label: str | None) -> str:
@@ -131,6 +196,9 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
                 live_injury_minute,
                 second_half_start,
             )
+            live_minute, live_injury_minute = normalize_stoppage_minute(
+                live_minute, live_injury_minute
+            )
             minute_label = sanitize_minute_label(
                 format_minute(
                     live_minute,
@@ -152,9 +220,35 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     m["display_away"] = display_away
     m["minute_label"] = minute_label
     m["live_minute"] = live_minute
+    m["live_injury_minute"] = live_injury_minute
     m["is_live"] = status in ("live", "halftime", "hydration_break")
     m["is_finished"] = status == "finished"
+    if m["is_live"]:
+        announced = announced_added_time_for_match(m.get("id"))
+        minute_base, added_time_label = live_minute_display_parts(
+            {**m, "announced_added_time": announced}
+        )
+        m["minute_base"] = minute_base
+        m["added_time_label"] = added_time_label
+    else:
+        m["minute_base"] = None
+        m["added_time_label"] = None
     return m
+
+
+def announced_added_time_for_match(match_id: int | None) -> int | None:
+    if not match_id:
+        return None
+    from db import get_sync_meta
+
+    raw = get_sync_meta(f"announced_added_time_{match_id}")
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def estimate_minute(elapsed: timedelta) -> int:
@@ -228,7 +322,10 @@ def effective_live_minute(
     elapsed = elapsed_wall_minutes(kickoff, now)
 
     if stored_minute is not None and stored_minute > FIRST_HALF_MINUTES:
-        injury = stored_injury if stored_minute >= 90 else None
+        if stored_minute >= 90 or (stored_minute < 50 and stored_injury):
+            injury = stored_injury
+        else:
+            injury = None
         return stored_minute, injury
 
     if second_half_start and now >= second_half_start:
@@ -288,6 +385,8 @@ def format_minute(
     in_second_half = kickoff is not None and now >= second_half_kickoff(kickoff)
     if injury_minute and injury_minute > 0:
         return f"{minute}+{injury_minute}'"
+    if minute is not None and minute > 90:
+        return f"90+{minute - 90}'"
     # 1st-half stoppage only (46–49 before the break) — never rewrite 2nd-half minutes.
     if (
         not in_second_half

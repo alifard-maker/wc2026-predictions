@@ -78,6 +78,21 @@
     return cleaned;
   };
 
+  global.formatLiveBannerMinute = function (commentary, escapeHtml) {
+    const esc = escapeHtml || function (text) {
+      return String(text);
+    };
+    const base = resolveLiveMinuteLabel(
+      commentary.minute_base || commentary.minute_label,
+      commentary.kickoff_iso,
+      commentary.status
+    );
+    const added = commentary.added_time_label
+      ? `<span class="live-added-time">${esc(commentary.added_time_label)}</span>`
+      : '';
+    return `LIVE ${esc(base)}${added ? ` ${added}` : ''}`;
+  };
+
   global.sanitizeMinuteLabel = function (label) {
     if (!label) return 'LIVE';
     const text = String(label).trim();

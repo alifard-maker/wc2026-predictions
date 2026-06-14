@@ -3117,6 +3117,11 @@ a.bracket-match:hover {
   padding: 0.2rem 0.55rem;
 }
 
+.live-added-time {
+  color: #ff3b30;
+  font-weight: 800;
+}
+
 .commentary-scoreline {
   flex-shrink: 0;
   font-weight: 700;

@@ -9,6 +9,8 @@ from live_scores import (
     format_halftime_label,
     format_hydration_break_label,
     is_match_in_progress,
+    announced_added_time_for_match,
+    live_minute_display_parts,
     sanitize_goal_minute_label,
     sanitize_minute_label,
 )
@@ -239,6 +241,10 @@ def _scoreline(match: dict) -> str:
     return f"{home} {h}–{a} {away}"
 
 
+def _announced_added_time(match_id: int) -> int | None:
+    return announced_added_time_for_match(match_id)
+
+
 def _minute_badge(match: dict) -> str:
     if match.get("status") == "halftime":
         kickoff = match.get("kickoff")
@@ -287,6 +293,11 @@ def commentary_for_match(match: dict, extras: list[str] | None = None) -> dict:
     latest = events[-1]["text"] if events else ticker_items[0]
 
     kickoff = match.get("kickoff")
+    display_match = {
+        **match,
+        "announced_added_time": _announced_added_time(match["id"]),
+    }
+    minute_base, added_time_label = live_minute_display_parts(display_match)
     return {
         "match_id": match["id"],
         "home_team": match["home_team"],
@@ -294,6 +305,8 @@ def commentary_for_match(match: dict, extras: list[str] | None = None) -> dict:
         "display_home": match.get("display_home"),
         "display_away": match.get("display_away"),
         "minute_label": _minute_badge(match),
+        "minute_base": minute_base,
+        "added_time_label": added_time_label,
         "status": match.get("status"),
         "venue": match.get("venue"),
         "kickoff_iso": kickoff.isoformat() if kickoff else None,
@@ -369,6 +382,8 @@ def commentary_for_json(commentary: dict | None) -> dict | None:
         "display_home": commentary["display_home"],
         "display_away": commentary["display_away"],
         "minute_label": sanitize_minute_label(commentary["minute_label"]),
+        "minute_base": commentary.get("minute_base"),
+        "added_time_label": commentary.get("added_time_label"),
         "status": commentary["status"],
         "kickoff_iso": commentary.get("kickoff_iso"),
         "scoreline": commentary["scoreline"],

@@ -68,6 +68,12 @@ PLAY_EVENT_MARKERS = (
 
 HYDRATION_BREAK_MAX_SECONDS = 360
 
+ADDED_TIME_RE = re.compile(
+    r"(?i)(?:indicates|showing|allocate[sd]?)\s+(\d{1,2})\s+minutes?|"
+    r"(\d{1,2})\s+minutes?\s+of\s+(?:added|stoppage)\s+time|"
+    r"(?:added|stoppage)\s+time\s+(?:of\s+)?(\d{1,2})"
+)
+
 ESPN_TEAM_ALIASES: dict[str, str] = {
     "south korea": "Korea Republic",
     "korea republic": "Korea Republic",
@@ -240,6 +246,33 @@ def _hydration_break_state(event_id: str, match_id: int) -> tuple[bool, int | No
             pass
         db.set_sync_meta(meta_key, "")
     return False, None
+
+
+def _announced_added_time_from_summary(event_id: str) -> int | None:
+    commentary = _summary_commentary(event_id)
+    for item in reversed(commentary):
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        match = ADDED_TIME_RE.search(text)
+        if not match:
+            continue
+        for group in match.groups():
+            if group:
+                return int(group)
+    return None
+
+
+def _sync_announced_added_time(event_id: str, match_id: int, db_status: str) -> None:
+    meta_key = f"announced_added_time_{match_id}"
+    if db_status in ("halftime", "finished"):
+        db.set_sync_meta(meta_key, "")
+        return
+    if not event_id:
+        return
+    minutes = _announced_added_time_from_summary(event_id)
+    if minutes:
+        db.set_sync_meta(meta_key, str(minutes))
 
 
 def _parse_espn_minute(display: str | None) -> tuple[int | None, int | None]:
@@ -509,6 +542,8 @@ def _sync_espn_event(
             live_injury = None
         if live_minute is not None and live_minute <= 0:
             live_minute = None
+        if event_id:
+            _sync_announced_added_time(event_id, match_id, db_status)
         db.update_match_live(
             match_id,
             home_score,

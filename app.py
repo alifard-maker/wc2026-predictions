@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.57"
+APP_VERSION = "Beta 3.58"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1708,6 +1708,8 @@ def match_watch_feed(invite_code, match_id):
             "display_home": enriched["display_home"],
             "display_away": enriched["display_away"],
             "minute_label": sanitize_minute_label(enriched["minute_label"]),
+            "minute_base": enriched.get("minute_base"),
+            "added_time_label": enriched.get("added_time_label"),
             "kickoff_iso": enriched["kickoff"].isoformat() if enriched.get("kickoff") else None,
             "is_live": enriched["is_live"],
             "is_finished": enriched["is_finished"],
