@@ -183,7 +183,13 @@ def _extract_score(
     our_teams: set[str],
     db_match: dict | None = None,
 ) -> tuple[int | None, int | None]:
+    status = api_match.get("status") or ""
     score = api_match.get("score") or {}
+    if status in {"PENALTY_SHOOTOUT", "EXTRA_TIME", "IN_PLAY", "LIVE", "PAUSED", "FINISHED"}:
+        for key in ("extraTime", "regularTime", "fullTime"):
+            home, away = _score_part(score.get(key))
+            if home is not None and away is not None:
+                return home, away
     for key in ("fullTime", "regularTime", "halfTime"):
         home, away = _score_part(score.get(key))
         if home is not None and away is not None:
@@ -203,7 +209,7 @@ def _kickoff_in_play_window(kickoff_et: datetime | None, db_match: dict | None =
         return False
     now = datetime.now(TIMEZONE)
     if db_match and db_match.get("actual_home") is None:
-        if (db_match.get("status") or "") in ("live", "halftime", "hydration_break"):
+        if (db_match.get("status") or "") in ("live", "halftime", "hydration_break", "extra_time", "penalty_shootout"):
             return kickoff_et <= now < kickoff_et + LIVE_SYNC_MAX
         if db.get_sync_meta(f"espn_live_source_{db_match['id']}"):
             return kickoff_et <= now < kickoff_et + LIVE_SYNC_MAX
@@ -382,9 +388,58 @@ def _injury_minute(goal_or_booking: dict) -> int | None:
 def _db_status(api_status: str) -> str:
     if api_status == "PAUSED":
         return "halftime"
+    if api_status == "EXTRA_TIME":
+        return "extra_time"
+    if api_status == "PENALTY_SHOOTOUT":
+        return "penalty_shootout"
     if api_status in LIVE_API_STATUSES or api_status == "TIMED":
         return "live"
     return "scheduled"
+
+
+def _store_shootout_score(match_id: int, api_match: dict) -> None:
+    score = api_match.get("score") or {}
+    pens = score.get("penalties") or {}
+    home = pens.get("home")
+    away = pens.get("away")
+    if home is None:
+        home = pens.get("homeTeam")
+    if away is None:
+        away = pens.get("awayTeam")
+    if home is None or away is None:
+        return
+    db.set_sync_meta(
+        f"shootout_score_{match_id}",
+        json.dumps({"home": int(home), "away": int(away)}),
+    )
+
+
+def _freeze_regulation_score(match_id: int, home_score: int, away_score: int) -> tuple[int, int]:
+    meta_key = f"regulation_score_{match_id}"
+    raw = db.get_sync_meta(meta_key)
+    if raw:
+        try:
+            home, away = raw.split(",", 1)
+            return int(home), int(away)
+        except (TypeError, ValueError):
+            pass
+    db.set_sync_meta(meta_key, f"{home_score},{away_score}")
+    return home_score, away_score
+
+
+def _live_sync_cooldown(db_matches: list[dict]) -> int:
+    base = SYNC_COOLDOWN_SECONDS
+    shootout = 5
+    extra_time = 10
+    for m in db_matches:
+        if m.get("actual_home") is not None:
+            continue
+        status = m.get("status") or ""
+        if status == "penalty_shootout":
+            return min(base, shootout)
+        if status == "extra_time":
+            base = min(base, extra_time)
+    return base
 
 
 def _card_type(api_card: str) -> str | None:
@@ -678,6 +733,7 @@ def _process_api_match(
             and db.update_match_result(match_id, home_score, away_score)
         ):
             result["finished"] = 1
+            db.set_sync_meta(f"regulation_score_{match_id}", "")
     elif (
         in_window
         and db_match.get("actual_home") is None
@@ -687,6 +743,11 @@ def _process_api_match(
         _track_second_half_start(match_id, status)
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
         db_status = _db_status(status)
+        if db_status == "penalty_shootout":
+            home_score, away_score = _freeze_regulation_score(match_id, home_score, away_score)
+            _store_shootout_score(match_id, api_match)
+        elif db_status == "extra_time" and live_minute is not None and live_minute <= 90:
+            live_minute = max(live_minute, 91)
         if db_status == "halftime" and kickoff:
             from live_scores import is_halftime_break
 
@@ -758,11 +819,12 @@ def sync_live_scores(force: bool = False) -> dict:
     db_matches = [dict(m) for m in db.get_all_matches()]
     espn = _run_espn_sync(db_matches, our_teams)
     espn_skip_live = set(espn.get("matched_match_ids") or [])
+    db_matches = [dict(m) for m in db.get_all_matches()]
 
     if not is_enabled():
         return {"ok": True, "skipped": True, "reason": "no_api_token", "espn": espn}
 
-    cooldown = SYNC_COOLDOWN_SECONDS
+    cooldown = _live_sync_cooldown(db_matches)
     if db.get_sync_meta("live_sync_error") == "HTTP 429":
         cooldown = max(cooldown, 120)
     if not force and not db.try_begin_live_sync(cooldown):
@@ -772,14 +834,12 @@ def sync_live_scores(force: bool = False) -> dict:
     if not api_matches:
         return {"ok": False, "error": "api_request_failed", "espn": espn}
 
-    detail_ids = list(
-        {
-            m["id"]
-            for m in api_matches
-            if m.get("id")
-        }
-    )
-    details = _fetch_match_details(detail_ids) if detail_ids else {}
+    detail_ids = {
+        m["id"]
+        for m in api_matches
+        if m.get("id") and (_should_sync_match(m) or _needs_penalty_detail(m))
+    }
+    details = _fetch_match_details(list(detail_ids)) if detail_ids else {}
 
     totals = {
         "api_matches": len(api_matches),
@@ -823,6 +883,11 @@ def sync_live_scores(force: bool = False) -> dict:
         "knockout": knockout,
         "card_reconcile": card_reconcile,
         "synced_at": datetime.now(TIMEZONE).isoformat(),
+        "cooldown_seconds": cooldown,
+        "fast_poll": any(
+            (m.get("status") or "") == "penalty_shootout" and m.get("actual_home") is None
+            for m in db_matches
+        ),
     }
     db.set_sync_meta("live_sync_summary", json.dumps(summary))
     db.set_sync_meta("live_sync_error", "")

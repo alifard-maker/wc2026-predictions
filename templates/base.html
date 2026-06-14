@@ -244,7 +244,7 @@
         const label = multi
           ? `🎙 ${escapeHtml(c.home_team)} vs ${escapeHtml(c.away_team)}`
           : '🎙 Live';
-        const minute = c.status === 'halftime' || c.status === 'hydration_break'
+        const minute = c.status === 'halftime' || c.status === 'hydration_break' || c.status === 'penalty_shootout' || c.status === 'extra_time'
           ? escapeHtml(c.minute_base || c.minute_label || resolveLiveMinuteLabel(c.minute_label, c.kickoff_iso, c.status))
           : formatLiveBannerMinute(c, escapeHtml);
         const items = (c.ticker_items || []).map(item =>
@@ -319,10 +319,23 @@
         if (typeof updateBannerOffset === 'function') updateBannerOffset();
       }
 
+      let livePollMs = 15000;
+      let livePollTimer = null;
+
+      function scheduleLivePoll() {
+        if (livePollTimer) clearInterval(livePollTimer);
+        livePollTimer = setInterval(refreshLiveFeed, livePollMs);
+      }
+
       async function refreshLiveFeed() {
         const res = await fetch(liveUrl);
         if (!res.ok) return;
         const data = await res.json();
+        const nextPoll = data.poll_interval_ms || 15000;
+        if (nextPoll !== livePollMs) {
+          livePollMs = nextPoll;
+          scheduleLivePoll();
+        }
         const commentaries = data.commentaries
           || (data.commentary ? [data.commentary] : []);
         renderCommentaries(commentaries);
@@ -333,7 +346,7 @@
       }
 
       refreshLiveFeed();
-      setInterval(refreshLiveFeed, 15000);
+      scheduleLivePoll();
     })();
   </script>
   {% endif %}

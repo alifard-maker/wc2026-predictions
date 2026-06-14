@@ -8,6 +8,7 @@ from engagement import build_match_consensus, picks_revealed
 from live_scores import (
     format_halftime_label,
     format_hydration_break_label,
+    format_shootout_scoreline,
     is_match_in_progress,
     announced_added_time_for_match,
     live_minute_display_parts,
@@ -238,6 +239,9 @@ def _scoreline(match: dict) -> str:
     a = match.get("display_away")
     if h is None or a is None:
         return f"{home} vs {away}"
+    pens_line = format_shootout_scoreline(home, away, h, a, match.get("penalties"))
+    if pens_line and match.get("status") == "penalty_shootout":
+        return pens_line
     return f"{home} {h}–{a} {away}"
 
 
@@ -246,6 +250,13 @@ def _announced_added_time(match_id: int) -> int | None:
 
 
 def _minute_badge(match: dict) -> str:
+    if match.get("status") == "penalty_shootout":
+        return "Pens"
+    if match.get("status") == "extra_time":
+        label = sanitize_minute_label(match.get("minute_label"))
+        if label and label != "LIVE":
+            return f"ET {label}" if not label.startswith("ET ") else label
+        return "ET"
     if match.get("status") == "halftime":
         kickoff = match.get("kickoff")
         if kickoff:
@@ -269,6 +280,10 @@ def _ticker_items(match: dict, events: list[dict], extras: list[str] | None = No
     elif match.get("status") == "hydration_break":
         items.append(f"💧 Drinks break — {scoreline}")
         items.append(f"⏱ {format_hydration_break_label(match.get('live_minute'))}")
+    elif match.get("status") == "penalty_shootout":
+        items.append(f"🎯 Penalty shootout — {scoreline}")
+    elif match.get("status") == "extra_time":
+        items.append(f"⏱ Extra time — {scoreline}")
     else:
         items.append(f"▶ {minute} — {scoreline}")
 
@@ -377,7 +392,7 @@ def commentary_for_json(commentary: dict | None) -> dict | None:
         return None
     status = commentary.get("status")
     minute_label = commentary["minute_label"]
-    if status not in ("halftime", "hydration_break"):
+    if status not in ("halftime", "hydration_break", "penalty_shootout", "extra_time"):
         minute_label = sanitize_minute_label(minute_label)
     return {
         "match_id": commentary["match_id"],

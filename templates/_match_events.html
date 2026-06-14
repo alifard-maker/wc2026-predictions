@@ -1,5 +1,36 @@
 {% from "_goal_scorers.html" import render_goals %}
-{% macro render_match_events(goals, cards, home_team, away_team, compact=false) %}
+{% macro render_penalties(penalties, home_team, away_team, compact=false) %}
+{% set ns = namespace(has_shootout=false) %}
+{% for p in penalties if (p.minute or 0) > 120 %}
+{% set ns.has_shootout = true %}
+{% endfor %}
+{% if ns.has_shootout %}
+<div class="match-shootout{% if compact %} match-shootout-compact{% endif %}" data-match-shootout>
+  <div class="shootout-title">Penalty shootout</div>
+  <div class="shootout-columns">
+    <div class="shootout-column shootout-home">
+      {% if not compact %}<div class="shootout-column-title">{{ home_team }}</div>{% endif %}
+      {% for p in penalties if (p.minute or 0) > 120 and p.taker_team == home_team %}
+      <div class="shootout-kick shootout-{{ p.outcome }}">
+        <span class="shootout-icon">{% if p.outcome == 'scored' %}✅{% elif p.outcome == 'saved' %}🧤{% else %}❌{% endif %}</span>
+        <span class="shootout-player">{{ p.taker_name or home_team }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="shootout-column shootout-away">
+      {% if not compact %}<div class="shootout-column-title">{{ away_team }}</div>{% endif %}
+      {% for p in penalties if (p.minute or 0) > 120 and p.taker_team == away_team %}
+      <div class="shootout-kick shootout-{{ p.outcome }}">
+        <span class="shootout-icon">{% if p.outcome == 'scored' %}✅{% elif p.outcome == 'saved' %}🧤{% else %}❌{% endif %}</span>
+        <span class="shootout-player">{{ p.taker_name or away_team }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+{% macro render_match_events(goals, cards, home_team, away_team, compact=false, penalties=none) %}
 {% if goals %}
 {{ render_goals(goals, home_team, away_team, compact) }}
 {% endif %}
@@ -26,5 +57,8 @@
     {% endfor %}
   </div>
 </div>
+{% endif %}
+{% if penalties %}
+{{ render_penalties(penalties, home_team, away_team, compact) }}
 {% endif %}
 {% endmacro %}

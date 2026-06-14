@@ -13,7 +13,7 @@
   <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
   <span>{{ m.venue }}</span>
   {% if m.is_live %}
-  <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% elif m.status == 'hydration_break' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
+  <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'penalty_shootout' %}Pens{% elif m.status == 'extra_time' %}ET {{ m.minute_label | live_minute }}{% elif m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% elif m.status == 'hydration_break' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
   {% elif is_finished_row %}
   <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
   {% elif m.open %}
@@ -60,7 +60,7 @@
     </div>
     {% endif %}
     {% endif %}
-    <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
+    <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true, penalties=m.penalties) }}</div>
   </div>
   {% if not is_finished_row %}
   {% if m.prediction %}

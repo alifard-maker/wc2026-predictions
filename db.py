@@ -2147,7 +2147,7 @@ def update_match_live(
             "SELECT match_date, match_time FROM matches WHERE id = ?",
             (match_id,),
         ).fetchone()
-        if row and status in ("live", "halftime", "hydration_break"):
+        if row and status in ("live", "halftime", "hydration_break", "extra_time", "penalty_shootout"):
             kickoff = parse_match_datetime(row["match_date"], row["match_time"])
             if datetime.now(TIMEZONE) < kickoff:
                 return

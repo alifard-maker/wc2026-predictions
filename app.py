@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.72"
+APP_VERSION = "Beta 3.74"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -326,6 +326,20 @@ def goals_for_json(goals: list[dict]) -> list[dict]:
     ]
 
 
+def penalties_for_json(penalties: list[dict]) -> list[dict]:
+    return [
+        {
+            "taker_team": p.get("taker_team"),
+            "taker_name": p.get("taker_name"),
+            "outcome": p.get("outcome"),
+            "minute": p.get("minute"),
+            "minute_label": sanitize_goal_minute_label(p.get("minute_label")),
+            "is_shootout": bool((p.get("minute") or 0) > 120),
+        }
+        for p in penalties
+    ]
+
+
 def cards_for_json(cards: list[dict]) -> list[dict]:
     return [
         {
@@ -345,7 +359,9 @@ def _match_has_played_data(raw: dict, now: datetime) -> bool:
         return False
     if raw.get("actual_home") is not None:
         return True
-    if (raw.get("status") or "") not in ("live", "halftime", "hydration_break", "finished"):
+    if (raw.get("status") or "") not in (
+        "live", "halftime", "hydration_break", "extra_time", "penalty_shootout", "finished"
+    ):
         return False
     live_minute = raw.get("live_minute")
     try:
@@ -619,24 +635,35 @@ def health():
         now = datetime.now(TIMEZONE)
         for row in db.get_all_matches():
             m = dict(row)
-            if m.get("home_team") == "Mexico" and m.get("away_team") == "South Africa":
-                enriched = apply_live_state(m, now)
-                kickoff = enriched.get("kickoff")
-                goals = db.get_match_goals(m["id"])
-                payload["clock_debug"] = {
-                    "db_live_minute": m.get("live_minute"),
-                    "db_status": m.get("status"),
-                    "live_home": m.get("live_home"),
-                    "live_away": m.get("live_away"),
-                    "minute_label": enriched.get("minute_label"),
-                    "display_status": enriched.get("status"),
-                    "kickoff_minute": minute_from_kickoff(kickoff, now) if kickoff else None,
-                    "actual_home": m.get("actual_home"),
-                    "goals_in_db": len(goals),
-                    "goal_scorers": [g["scorer_name"] for g in goals],
-                    "espn_source": db.get_sync_meta(f"espn_live_source_{m['id']}"),
-                }
-                break
+            if m.get("actual_home") is not None:
+                continue
+            if (m.get("status") or "") not in (
+                "live", "halftime", "hydration_break", "extra_time", "penalty_shootout"
+            ):
+                continue
+            enriched = apply_live_state(m, now)
+            goals = db.get_match_goals(m["id"])
+            payload["clock_debug"] = {
+                "match_id": m["id"],
+                "home_team": m.get("home_team"),
+                "away_team": m.get("away_team"),
+                "db_live_minute": m.get("live_minute"),
+                "db_status": m.get("status"),
+                "live_home": m.get("live_home"),
+                "live_away": m.get("live_away"),
+                "minute_label": enriched.get("minute_label"),
+                "display_status": enriched.get("status"),
+                "display_home": enriched.get("display_home"),
+                "display_away": enriched.get("display_away"),
+                "kickoff_minute": minute_from_kickoff(enriched.get("kickoff"), now)
+                if enriched.get("kickoff")
+                else None,
+                "actual_home": m.get("actual_home"),
+                "goals_in_db": len(goals),
+                "goal_scorers": [g["scorer_name"] for g in goals],
+                "espn_source": db.get_sync_meta(f"espn_live_source_{m['id']}"),
+            }
+            break
     except Exception:
         pass
     return jsonify(payload)
@@ -1312,8 +1339,13 @@ def matches_live_feed(invite_code):
     now = datetime.now(TIMEZONE)
     commentaries = build_live_commentaries(matches, pool["id"])
     next_k = next_scheduled_kickoff(raw_matches, now)
+    fast_poll = any(
+        m.get("is_live") and (m.get("status") or "") == "penalty_shootout"
+        for m in matches
+    )
     return jsonify({
         "live_count": len(live),
+        "poll_interval_ms": 5000 if fast_poll else 15000,
         "commentaries": commentaries_for_json(commentaries),
         "commentary": commentary_for_json(commentaries[0] if commentaries else None),
         "next_kickoff": next_k,
@@ -1333,6 +1365,7 @@ def matches_live_feed(invite_code):
                 "show_result": m.get("show_result", False),
                 "goals": goals_for_json(m.get("goals", [])),
                 "cards": cards_for_json(m.get("cards", [])),
+                "penalties": penalties_for_json(m.get("penalties", [])),
                 "prediction": (
                     {
                         "home_score": m["prediction"]["home_score"],
@@ -1703,6 +1736,7 @@ def match_watch_feed(invite_code, match_id):
             match=dict(match),
         )
     return jsonify({
+        "poll_interval_ms": 5000 if enriched.get("status") == "penalty_shootout" and enriched.get("is_live") else 15000,
         "match": {
             "id": enriched["id"],
             "display_home": enriched["display_home"],
@@ -1717,6 +1751,7 @@ def match_watch_feed(invite_code, match_id):
         },
         "goals": goals_for_json(enriched.get("goals", [])),
         "cards": cards_for_json(enriched.get("cards", [])),
+        "penalties": penalties_for_json(enriched.get("penalties", [])),
         "consensus": build_match_consensus(pool["id"], match_id),
         "accuracy_leaders": accuracy_leaders,
         "predictions": preds_out,

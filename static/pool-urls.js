@@ -52,6 +52,13 @@
         return 'Soon';
       }
     }
+    if (status === 'penalty_shootout') {
+      return 'Pens';
+    }
+    if (status === 'extra_time') {
+      const et = cleaned && cleaned !== 'LIVE' ? cleaned.replace(/^ET\s+/, '') : '';
+      return et ? `ET ${et}` : 'ET';
+    }
     if (status === 'halftime' || cleaned.startsWith('HT')) {
       return cleaned.startsWith('HT') ? cleaned : 'HT';
     }
@@ -85,11 +92,20 @@
     const esc = escapeHtml || function (text) {
       return String(text);
     };
+    if (commentary.status === 'penalty_shootout') {
+      return esc('Pens');
+    }
     const base = resolveLiveMinuteLabel(
       commentary.minute_base || commentary.minute_label,
       commentary.kickoff_iso,
       commentary.status
     );
+    if (commentary.status === 'extra_time') {
+      const added = commentary.added_time_label
+        ? ` <span class="live-added-time">${esc(commentary.added_time_label)}</span>`
+        : '';
+      return `${esc(base)}${added}`;
+    }
     const added = commentary.added_time_label
       ? `<span class="live-added-time">${esc(commentary.added_time_label)}</span>`
       : '';
@@ -152,7 +168,24 @@
     return `<div class="match-cards${compactClass}" data-match-cards><div class="card-column card-home">${homeTitle}${renderCol('home')}</div><div class="card-column card-away">${awayTitle}${renderCol('away')}</div></div>`;
   };
 
-  global.renderMatchEventsHtml = function (goals, cards, compact, homeTeam, awayTeam) {
-    return `${renderGoalsHtml(goals, compact)}${renderCardsHtml(cards, compact, homeTeam, awayTeam)}`;
+  global.renderPenaltiesHtml = function (penalties, compact, homeTeam, awayTeam) {
+    const kicks = (penalties || []).filter(p => (p.minute || 0) > 120);
+    if (!kicks.length) return '';
+    const compactClass = compact ? ' match-shootout-compact' : '';
+    const renderCol = (team) => kicks
+      .filter(p => p.taker_team === team)
+      .map(p => {
+        const icon = p.outcome === 'scored' ? '✅' : p.outcome === 'saved' ? '🧤' : '❌';
+        const player = p.taker_name || team;
+        return `<div class="shootout-kick shootout-${p.outcome}"><span class="shootout-icon">${icon}</span><span class="shootout-player">${player}</span></div>`;
+      })
+      .join('');
+    const homeTitle = !compact && homeTeam ? `<div class="shootout-column-title">${homeTeam}</div>` : '';
+    const awayTitle = !compact && awayTeam ? `<div class="shootout-column-title">${awayTeam}</div>` : '';
+    return `<div class="match-shootout${compactClass}" data-match-shootout><div class="shootout-title">Penalty shootout</div><div class="shootout-columns"><div class="shootout-column shootout-home">${homeTitle}${renderCol(homeTeam)}</div><div class="shootout-column shootout-away">${awayTitle}${renderCol(awayTeam)}</div></div></div>`;
+  };
+
+  global.renderMatchEventsHtml = function (goals, cards, compact, homeTeam, awayTeam, penalties) {
+    return `${renderGoalsHtml(goals, compact)}${renderCardsHtml(cards, compact, homeTeam, awayTeam)}${renderPenaltiesHtml(penalties, compact, homeTeam, awayTeam)}`;
   };
 })(window);

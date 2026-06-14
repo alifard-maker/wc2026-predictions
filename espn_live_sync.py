@@ -8,7 +8,7 @@ import re
 import ssl
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import certifi
@@ -379,7 +379,15 @@ def _espn_status(comp_status: dict | None) -> str | None:
     completed = bool(type_info.get("completed"))
     if name in ESPN_NOT_STARTED:
         return None
+    if name == "STATUS_PENALTY_SHOOTOUT":
+        return "penalty_shootout"
+    if name == "STATUS_EXTRA_TIME":
+        return "extra_time"
     if name in {"STATUS_HALFTIME", "STATUS_PAUSE"}:
+        detail = (type_info.get("detail") or "").strip().upper()
+        short_detail = (type_info.get("shortDetail") or "").strip().upper()
+        if "ET" in detail or "EXTRA" in detail or "ET" in short_detail or "EXTRA" in short_detail:
+            return "extra_time"
         return "halftime"
     detail = (type_info.get("detail") or "").strip().upper()
     short_detail = (type_info.get("shortDetail") or "").strip().upper()
@@ -395,8 +403,6 @@ def _espn_status(comp_status: dict | None) -> str | None:
         "STATUS_IN_PROGRESS",
         "STATUS_FIRST_HALF",
         "STATUS_SECOND_HALF",
-        "STATUS_EXTRA_TIME",
-        "STATUS_PENALTY_SHOOTOUT",
     }:
         return "live"
     display = (comp_status or {}).get("displayClock")
@@ -516,6 +522,98 @@ def _competitor_teams(
     return home_name, away_name, team_by_id
 
 
+def _freeze_regulation_score(match_id: int, home_score: int, away_score: int) -> tuple[int, int]:
+    """Keep 90'/ET score during penalty shootout; pens do not change live goals."""
+    meta_key = f"regulation_score_{match_id}"
+    raw = db.get_sync_meta(meta_key)
+    if raw:
+        try:
+            home, away = raw.split(",", 1)
+            return int(home), int(away)
+        except (TypeError, ValueError):
+            pass
+    db.set_sync_meta(meta_key, f"{home_score},{away_score}")
+    return home_score, away_score
+
+
+def _shootout_outcome(type_text: str, scoring_play: bool | None) -> str | None:
+    text = (type_text or "").strip().lower()
+    if scoring_play is True or "scored" in text or text == "goal":
+        return "scored"
+    if "saved" in text or "keeper" in text:
+        return "saved"
+    if "miss" in text or "wide" in text or "post" in text or "off target" in text:
+        return "missed"
+    if "penalty" in text:
+        return "missed"
+    return None
+
+
+def _sync_shootout_penalties(
+    match_id: int,
+    db_match: dict,
+    team_by_id: dict[str, str],
+    competition: dict,
+    *,
+    in_shootout: bool,
+) -> int:
+    if not in_shootout:
+        return 0
+
+    added = 0
+    existing = db.get_match_penalties(match_id)
+    shootout_count = sum(1 for pen in existing if (pen.get("minute") or 0) > 120)
+    seen: set[tuple[str, str, str, int]] = {
+        (
+            pen.get("taker_team") or "",
+            pen.get("taker_name") or "",
+            pen.get("outcome") or "",
+            pen.get("minute") or 0,
+        )
+        for pen in existing
+        if (pen.get("minute") or 0) > 120
+    }
+
+    for detail in competition.get("details") or []:
+        type_text = ((detail.get("type") or {}).get("text") or "").strip()
+        if not type_text and not detail.get("penaltyKick"):
+            continue
+        lower = type_text.lower()
+        is_shootout_kick = bool(detail.get("penaltyKick")) and (
+            in_shootout
+            or "shootout" in lower
+            or "penalty" in lower
+        )
+        if not is_shootout_kick:
+            continue
+
+        player = None
+        athletes = detail.get("athletesInvolved") or []
+        if athletes:
+            player = (athletes[0].get("displayName") or athletes[0].get("fullName") or "").strip()
+        if not player:
+            continue
+
+        team_id = str((detail.get("team") or {}).get("id") or "")
+        team_name = team_by_id.get(team_id)
+        if not team_name:
+            continue
+
+        outcome = _shootout_outcome(type_text, detail.get("scoringPlay"))
+        if not outcome:
+            outcome = "scored" if detail.get("scoringPlay") else "missed"
+
+        minute = 120 + shootout_count + 1
+        key = (team_name, player, outcome, minute)
+        if key in seen:
+            continue
+        if db.import_match_penalty(match_id, team_name, outcome, minute, player):
+            added += 1
+            shootout_count += 1
+            seen.add(key)
+    return added
+
+
 def _sync_espn_event(
     event: dict,
     db_matches: list[dict],
@@ -528,6 +626,7 @@ def _sync_espn_event(
         "goals_added": 0,
         "cards_added": 0,
         "cards_removed": 0,
+        "penalties_added": 0,
         "espn_minute": None,
     }
     competitions = event.get("competitions") or []
@@ -545,7 +644,9 @@ def _sync_espn_event(
     comp_status = competition.get("status") or event.get("status") or {}
 
     if _espn_not_started(comp_status):
-        if (db_match.get("status") or "") in ("live", "halftime", "hydration_break") and db_match.get("actual_home") is None:
+        if (db_match.get("status") or "") in (
+            "live", "halftime", "hydration_break", "extra_time", "penalty_shootout"
+        ) and db_match.get("actual_home") is None:
             db.clear_match_live_state(match_id)
             db.set_sync_meta(f"espn_live_source_{match_id}", "")
             db.set_sync_meta(f"hydration_break_{match_id}", "")
@@ -580,6 +681,9 @@ def _sync_espn_event(
     live_minute, live_injury = _parse_espn_minute(display_clock)
     result["espn_minute"] = live_minute
 
+    if db_status == "penalty_shootout":
+        home_score, away_score = _freeze_regulation_score(match_id, home_score, away_score)
+
     if (
         db_status == "finished"
         and db_match.get("actual_home") is None
@@ -588,6 +692,7 @@ def _sync_espn_event(
         and db.update_match_result(match_id, home_score, away_score)
     ):
         result["finished"] = 1
+        db.set_sync_meta(f"regulation_score_{match_id}", "")
     elif db_match.get("actual_home") is None and db_status:
         hydration_active, hydration_minute = _resolve_hydration_break(
             event_id, match_id, live_minute, kickoff_et, comp_status
@@ -600,6 +705,8 @@ def _sync_espn_event(
         elif db_status == "halftime":
             live_minute = 45
             live_injury = None
+        elif db_status == "extra_time" and live_minute is not None and live_minute <= 90:
+            live_minute = max(live_minute, 91)
         if live_minute is not None and live_minute <= 0:
             live_minute = None
         if event_id:
@@ -618,6 +725,7 @@ def _sync_espn_event(
         db.set_sync_meta(f"espn_live_source_{match_id}", datetime.now(TIMEZONE).isoformat())
 
     expected_cards: list[tuple[str, str, str]] = []
+    in_shootout = db_status == "penalty_shootout"
     for detail in competition.get("details") or []:
         type_text = ((detail.get("type") or {}).get("text") or "").strip()
         player = None
@@ -636,6 +744,8 @@ def _sync_espn_event(
         if _is_goal_event(type_text):
             if minute is None:
                 continue
+            if in_shootout and detail.get("penaltyKick"):
+                continue
             if team_name == db_match["home_team"]:
                 side = "home"
             elif team_name == db_match["away_team"]:
@@ -653,6 +763,14 @@ def _sync_espn_event(
             expected_cards.append((player, team_name, "red"))
             if db.upsert_player_card(match_id, player, team_name, "red", minute):
                 result["cards_added"] += 1
+
+    result["penalties_added"] = _sync_shootout_penalties(
+        match_id,
+        db_match,
+        team_by_id,
+        competition,
+        in_shootout=in_shootout or db_status == "finished",
+    )
 
     if result["matched"]:
         finished = db_match.get("actual_home") is not None
@@ -699,6 +817,31 @@ def sync_historical_cards(
     return totals
 
 
+def _espn_scoreboard_dates() -> list[str | None]:
+    """ESPN's default scoreboard omits some live fixtures; dated fetches include them."""
+    now = datetime.now(TIMEZONE)
+    dated = {
+        now.strftime("%Y%m%d"),
+        (now - timedelta(days=1)).strftime("%Y%m%d"),
+        (now + timedelta(days=1)).strftime("%Y%m%d"),
+    }
+    # None = default board (recent finished + in-progress ESPN promotes globally)
+    return [None, *sorted(dated)]
+
+
+def _collect_espn_events() -> list[dict]:
+    by_id: dict[str, dict] = {}
+    for dates in _espn_scoreboard_dates():
+        payload = _fetch_scoreboard(dates)
+        if not payload:
+            continue
+        for event in payload.get("events") or []:
+            event_id = event.get("id")
+            if event_id is not None:
+                by_id[str(event_id)] = event
+    return list(by_id.values())
+
+
 def sync_from_espn(
     db_matches: list[dict] | None = None,
     our_teams: set[str] | None = None,
@@ -707,8 +850,8 @@ def sync_from_espn(
     if not is_enabled():
         return {"ok": False, "skipped": True, "reason": "disabled"}
 
-    payload = _fetch_scoreboard()
-    if not payload:
+    events = _collect_espn_events()
+    if not events:
         summary = {
             "ok": False,
             "error": "espn_request_failed",
@@ -726,11 +869,12 @@ def sync_from_espn(
         "finished": 0,
         "goals_added": 0,
         "cards_added": 0,
-        "espn_events": len(payload.get("events") or []),
+        "penalties_added": 0,
+        "espn_events": len(events),
         "matched_match_ids": [],
     }
 
-    for event in payload.get("events") or []:
+    for event in events:
         row = _sync_espn_event(event, db_matches, our_teams)
         for key in totals:
             if key == "matched_match_ids":

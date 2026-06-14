@@ -122,7 +122,7 @@
   const liveUrl = "{{ url_for('matches_live_feed', invite_code=pool.invite_code) }}";
 
   function renderFixtureResultInnerHtml(m) {
-    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
+    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team, m.penalties);
     const actualLabel = m.is_live ? 'Live' : 'Result';
     const inlineFinished = !m.is_live;
     const bold = m.prediction?.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
@@ -172,7 +172,7 @@
     const scoreText = `${m.display_home} – ${m.display_away}`;
     if (actualPart) actualPart.textContent = scoreText;
     else if (actualScore) actualScore.textContent = scoreText;
-    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
+    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team, m.penalties);
     if (actualLabel) actualLabel.textContent = m.is_live ? 'Live' : 'Result';
     const ptsEl = scoreEl.querySelector(`[data-prediction-points="${m.id}"]`);
     if (ptsEl && m.prediction && m.prediction.points != null) {

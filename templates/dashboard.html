@@ -212,7 +212,7 @@
   const liveUrl = "{{ url_for('matches_live_feed', invite_code=pool.invite_code) }}";
 
   function renderFixtureResultInnerHtml(m) {
-    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
+    const eventsHtml = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team, m.penalties);
     const actualLabel = m.is_live ? 'Live' : 'Result';
     const inlineFinished = m.is_finished && !m.is_live;
     const bold = m.prediction?.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
@@ -262,7 +262,7 @@
     const scoreText = `${m.display_home} – ${m.display_away}`;
     if (actualPart) actualPart.textContent = scoreText;
     else if (actualScore) actualScore.textContent = scoreText;
-    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team);
+    if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team, m.penalties);
     if (actualLabel) actualLabel.textContent = m.is_live ? 'Live' : 'Result';
     const ptsEl = scoreEl.querySelector(`[data-prediction-points="${m.id}"]`);
     if (ptsEl && m.prediction && m.prediction.points != null) {
@@ -313,17 +313,38 @@
     else fixture.appendChild(wrap);
   }
 
+  let livePollMs = 15000;
+  let livePollTimer = null;
+
+  function scheduleLivePoll() {
+    if (livePollTimer) clearInterval(livePollTimer);
+    livePollTimer = setInterval(refreshLiveScores, livePollMs);
+  }
+
   async function refreshLiveScores() {
     const res = await fetch(liveUrl);
     if (!res.ok) return;
     const data = await res.json();
+    const nextPoll = data.poll_interval_ms || 15000;
+    if (nextPoll !== livePollMs) {
+      livePollMs = nextPoll;
+      scheduleLivePoll();
+    }
     applySpotlight(data.spotlight);
     data.matches.forEach(m => {
       const badge = document.querySelector(`[data-live-badge="${m.id}"]`);
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
-        const minute = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
-        const clock = m.status === 'halftime' || m.status === 'hydration_break' ? minute : `LIVE ${minute}`;
+        let clock;
+        if (m.status === 'penalty_shootout') {
+          clock = 'Pens';
+        } else if (m.status === 'extra_time') {
+          clock = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
+        } else if (m.status === 'halftime' || m.status === 'hydration_break') {
+          clock = resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status);
+        } else {
+          clock = `LIVE ${resolveLiveMinuteLabel(m.minute_label, m.kickoff_iso, m.status)}`;
+        }
         badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
@@ -334,7 +355,7 @@
       }
     });
   }
-  setInterval(refreshLiveScores, 15000);
+  scheduleLivePoll();
   refreshLiveScores();
 </script>
 {% endblock %}

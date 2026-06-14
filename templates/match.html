@@ -17,7 +17,7 @@
     <span class="badge badge-group">Group {{ match.group_name }}</span>
     {% endif %}
     {% if match.is_live %}
-    <span class="badge badge-live" id="match-status-badge">{% if match.status == 'halftime' %}{{ match.minute_label | live_minute }}{% elif match.status == 'hydration_break' %}{{ match.minute_label | live_minute }}{% else %}LIVE {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% endif %}</span>
+    <span class="badge badge-live" id="match-status-badge">{% if match.status == 'penalty_shootout' %}Pens{% elif match.status == 'extra_time' %}ET {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% elif match.status == 'halftime' %}{{ match.minute_label | live_minute }}{% elif match.status == 'hydration_break' %}{{ match.minute_label | live_minute }}{% else %}LIVE {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% endif %}</span>
     {% elif match.is_finished %}
     <span class="badge badge-done" id="match-status-badge">Full time</span>
     {% elif match.open %}
@@ -81,7 +81,7 @@
 
   {{ render_listen_live(listen_live_destinations, compact=true, wrap_id='listen-live-wrap', hidden=match.is_finished, active=match.is_live) }}
 
-  <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team, compact=true) }}</div>
+  <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team, compact=true, penalties=match.penalties) }}</div>
 
   {{ render_game_stats(game_stats) }}
 
@@ -300,10 +300,23 @@
     return classes.join(' ');
   }
 
+  let matchPollMs = 15000;
+  let matchPollTimer = null;
+
+  function scheduleMatchPoll() {
+    if (matchPollTimer) clearInterval(matchPollTimer);
+    matchPollTimer = setInterval(refresh, matchPollMs);
+  }
+
   async function refresh() {
     const res = await fetch(feedUrl);
     if (!res.ok) return;
     const data = await res.json();
+    const nextPoll = data.poll_interval_ms || 15000;
+    if (nextPoll !== matchPollMs) {
+      matchPollMs = nextPoll;
+      scheduleMatchPoll();
+    }
     const m = data.match;
     const scoreEl = document.getElementById('match-score');
     if (scoreEl && (m.is_live || m.is_finished)) {
@@ -316,6 +329,10 @@
       badge.className = 'badge badge-live';
       if (m.status === 'halftime' || m.status === 'hydration_break') {
         badge.textContent = resolveLiveMinuteLabel(m.minute_label, data.match.kickoff_iso, m.status);
+      } else if (m.status === 'penalty_shootout') {
+        badge.textContent = 'Pens';
+      } else if (m.status === 'extra_time') {
+        badge.innerHTML = formatLiveBannerMinute(m, esc);
       } else {
         badge.innerHTML = formatLiveBannerMinute(m, esc);
       }
@@ -349,7 +366,8 @@
         data.cards,
         true,
         {{ match.home_team | tojson }},
-        {{ match.away_team | tojson }}
+        {{ match.away_team | tojson }},
+        data.penalties
       );
     }
 
@@ -395,7 +413,7 @@
 
   if (isLive) {
     refresh();
-    setInterval(refresh, 15000);
+    scheduleMatchPoll();
   }
 })();
 </script>

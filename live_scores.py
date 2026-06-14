@@ -8,9 +8,20 @@ from datetime import datetime, timedelta
 from scoring import OPENING_MATCH_DATE, OPENING_MATCH_TIME, TIMEZONE, parse_match_datetime
 
 MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45 (scheduled estimate)
-LIVE_SYNC_MAX = timedelta(hours=3)  # trust ESPN/DB live past delayed kickoff + stoppage
+KNOCKOUT_SYNC_MAX = timedelta(hours=3, minutes=30)  # ET + penalty shootout
+LIVE_SYNC_MAX = KNOCKOUT_SYNC_MAX
 FIRST_HALF_MINUTES = 45
+EXTRA_TIME_FIRST_HALF_END = 105
+EXTRA_TIME_END = 120
+SHOOTOUT_MINUTE_BASE = 121
 HALFTIME_BREAK = timedelta(minutes=15)
+LIVE_PHASE_STATUSES = frozenset({
+    "live",
+    "halftime",
+    "hydration_break",
+    "extra_time",
+    "penalty_shootout",
+})
 FIFA_HYDRATION_MINUTES_1H = frozenset({22, 23, 24, 25})
 FIFA_HYDRATION_MINUTES_2H = frozenset({67, 68, 69, 70})
 
@@ -64,8 +75,12 @@ def normalize_stoppage_minute(
             injury = int(injury) if int(injury) > 0 else None
         except (TypeError, ValueError):
             injury = None
+    if minute > EXTRA_TIME_END:
+        return minute, injury
+    if minute > EXTRA_TIME_FIRST_HALF_END:
+        return EXTRA_TIME_FIRST_HALF_END, injury if injury else minute - EXTRA_TIME_FIRST_HALF_END
     if minute > 90:
-        return 90, injury if injury else minute - 90
+        return minute, injury
     if FIRST_HALF_MINUTES < minute < 50:
         return FIRST_HALF_MINUTES, injury if injury else minute - FIRST_HALF_MINUTES
     if injury:
@@ -73,9 +88,51 @@ def normalize_stoppage_minute(
     return minute, None
 
 
+def shootout_tally(penalties: list[dict] | None) -> tuple[int, int] | None:
+    """Count scored elimination kicks (minute > 120) per side."""
+    if not penalties:
+        return None
+    home = away = 0
+    found = False
+    for pen in penalties:
+        minute = pen.get("minute") or 0
+        if minute <= EXTRA_TIME_END:
+            continue
+        found = True
+        if pen.get("outcome") != "scored":
+            continue
+        team = pen.get("taker_team") or ""
+        if team == pen.get("home_team"):
+            home += 1
+        elif team == pen.get("away_team"):
+            away += 1
+    return (home, away) if found else None
+
+
+def format_shootout_scoreline(
+    home_team: str,
+    away_team: str,
+    home_goals: int,
+    away_goals: int,
+    penalties: list[dict] | None,
+) -> str | None:
+    tally = shootout_tally(penalties)
+    if not tally:
+        return None
+    pen_home, pen_away = tally
+    return f"{home_team} {home_goals}–{away_goals} {away_team} ({pen_home}–{pen_away} pens)"
+
+
 def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
     """Clock label for the banner plus optional red announced-added-time suffix."""
     status = match.get("status")
+    if status == "penalty_shootout":
+        return "Pens", None
+    if status == "extra_time":
+        label = sanitize_minute_label(match.get("minute_label"))
+        if label and label != "LIVE":
+            return f"ET {label}" if not label.startswith("ET ") else label, None
+        return "ET", None
     if status == "halftime":
         kickoff = match.get("kickoff")
         if kickoff:
@@ -135,7 +192,7 @@ def is_synced_live(match: dict, now: datetime | None = None) -> bool:
     now = now or datetime.now(TIMEZONE)
     if match.get("actual_home") is not None:
         return False
-    if (match.get("status") or "") not in ("live", "halftime", "hydration_break"):
+    if (match.get("status") or "") not in LIVE_PHASE_STATUSES:
         return False
     kickoff = parse_match_datetime(match["match_date"], match["match_time"])
     return kickoff <= now < kickoff + LIVE_SYNC_MAX
@@ -228,6 +285,33 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
             status = "hydration_break"
             live_minute = normalize_stored_minute(live_minute)
             minute_label = format_hydration_break_label(live_minute)
+        elif db_status == "penalty_shootout":
+            status = "penalty_shootout"
+            live_minute = None
+            live_injury_minute = None
+            minute_label = format_minute(None, "penalty_shootout")
+        elif db_status == "extra_time":
+            status = "extra_time"
+            second_half_start = _second_half_start_for_match(m.get("id"))
+            live_minute, live_injury_minute = effective_live_minute(
+                kickoff,
+                now,
+                live_minute,
+                live_injury_minute,
+                second_half_start,
+            )
+            live_minute, live_injury_minute = normalize_stoppage_minute(
+                live_minute, live_injury_minute
+            )
+            minute_label = sanitize_minute_label(
+                format_minute(
+                    live_minute,
+                    "extra_time",
+                    live_injury_minute,
+                    kickoff=kickoff,
+                    now=now,
+                )
+            )
         elif db_status == "halftime" or (
             not synced_live and is_halftime_break(kickoff, now, db_status)
         ):
@@ -268,7 +352,7 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
     m["minute_label"] = minute_label
     m["live_minute"] = live_minute
     m["live_injury_minute"] = live_injury_minute
-    m["is_live"] = status in ("live", "halftime", "hydration_break")
+    m["is_live"] = status in LIVE_PHASE_STATUSES
     m["is_finished"] = status == "finished"
     if m["is_live"]:
         announced = announced_added_time_for_match(m.get("id"))
@@ -424,15 +508,20 @@ def format_minute(
         return "HT"
     if status == "hydration_break":
         return format_hydration_break_label(minute)
+    if status == "penalty_shootout":
+        return "Pens"
     if status == "finished":
         return "FT"
     if minute is None or minute <= 0:
-        return "LIVE"
+        return "ET" if status == "extra_time" else "LIVE"
     now = now or datetime.now(TIMEZONE)
     in_second_half = kickoff is not None and now >= second_half_kickoff(kickoff)
     if injury_minute and injury_minute > 0:
-        return f"{minute}+{injury_minute}'"
-    if minute is not None and minute > 90:
+        base = f"{minute}+{injury_minute}'"
+        return f"ET {base}" if status == "extra_time" else base
+    if status == "extra_time" and minute > 90:
+        return f"ET {minute}'"
+    if minute is not None and minute > 90 and status != "extra_time":
         return f"90+{minute - 90}'"
     # 1st-half stoppage only (46–49 before the break) — never rewrite 2nd-half minutes.
     if (
