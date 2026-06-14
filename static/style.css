@@ -883,6 +883,10 @@ tr.picks-missed td {
   color: var(--accent);
 }
 
+.user-avatar-fallback[hidden] {
+  display: none !important;
+}
+
 .user-avatar-xs .user-avatar-img,
 .user-avatar-xs .user-avatar-fallback,
 .user-avatar-img.user-avatar-xs,

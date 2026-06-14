@@ -18,6 +18,10 @@ def avatar_path(user_id: int) -> Path:
     return AVATAR_DIR / f"{user_id}.jpg"
 
 
+def avatar_exists_for_user(user_id: int, photo_updated_at: str | None) -> bool:
+    return bool(photo_updated_at) and avatar_exists(user_id)
+
+
 def user_initial(display_name: str) -> str:
     for ch in (display_name or "").strip():
         if ch.isalnum():

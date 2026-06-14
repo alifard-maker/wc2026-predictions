@@ -81,7 +81,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.26"
+APP_VERSION = "Beta 3.27"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -145,7 +145,7 @@ def leaderboard_top_for_json(
                     invite_code,
                     r["id"],
                     r.get("photo_updated_at"),
-                ),
+                ) if user_has_avatar(r["id"], r.get("photo_updated_at")) else None,
             }
             for r in board[:5]
         ],
@@ -177,6 +177,7 @@ def inject_public_url():
         "team_page_url": team_page_url,
         "player_page_url": player_page_url,
         "user_avatar_url": user_avatar_url,
+        "user_has_avatar": user_has_avatar,
         "user_initial": user_avatars.user_initial,
         "current_user_photo": None,
         "team_slugs_json": json.dumps({t: team_slug(t) for t in get_all_teams()}),
@@ -246,11 +247,15 @@ def user_avatar_url(
     user_id: int,
     photo_updated_at: str | None,
 ) -> str | None:
-    if not invite_code or not photo_updated_at:
+    if not invite_code or not user_avatars.avatar_exists_for_user(user_id, photo_updated_at):
         return None
     base = url_for("user_avatar_image", invite_code=invite_code, user_id=user_id)
     token = str(photo_updated_at).replace(" ", "_")
     return f"{base}?v={token}"
+
+
+def user_has_avatar(user_id: int, photo_updated_at: str | None) -> bool:
+    return user_avatars.avatar_exists_for_user(user_id, photo_updated_at)
 
 
 def login_required(f):
@@ -1226,7 +1231,7 @@ def comments_feed(invite_code):
                     invite_code,
                     c["user_id"],
                     c.get("photo_updated_at"),
-                ),
+                ) if user_has_avatar(c["user_id"], c.get("photo_updated_at")) else None,
             }
             for c in comments
         ],
@@ -1626,14 +1631,14 @@ def match_watch_feed(invite_code, match_id):
         row = dict(p)
         row["avatar_url"] = user_avatar_url(
             invite_code, p["user_id"], p.get("photo_updated_at")
-        )
+        ) if user_has_avatar(p["user_id"], p.get("photo_updated_at")) else None
         preds_out.append(row)
     comments_out = []
     for c in db.get_pool_comments(pool["id"], match_id)[:20]:
         row = dict(c)
         row["avatar_url"] = user_avatar_url(
             invite_code, c["user_id"], c.get("photo_updated_at")
-        )
+        ) if user_has_avatar(c["user_id"], c.get("photo_updated_at")) else None
         comments_out.append(row)
     return jsonify({
         "match": {
