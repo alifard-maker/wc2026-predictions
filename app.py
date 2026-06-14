@@ -78,7 +78,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.24"
+APP_VERSION = "Beta 3.25"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -586,7 +586,6 @@ ensure_db()
 def _warm_live_data() -> None:
     try:
         live_score_sync._run_espn_sync()
-        db.repair_stale_live_matches()
         db.repair_live_display_data()
     except Exception:
         pass
@@ -696,7 +695,6 @@ def pool_dashboard(invite_code):
     db.sync_ai_tournament_vote(pool["id"])
     db.repair_fixture_schedules()
     db.repair_premature_results()
-    db.repair_stale_live_matches()
     user_id = session["user_id"]
     matches = db.get_all_matches()
     predictions = db.get_user_predictions(user_id)

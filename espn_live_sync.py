@@ -17,7 +17,6 @@ except ImportError:
 
 import db
 from live_score_sync import canonical_team_name, _db_kickoff_et, _kickoffs_align, _match_started
-from live_scores import elapsed_wall_minutes, POST_MATCH_DISPLAY_MAX
 from scoring import TIMEZONE
 
 logger = logging.getLogger(__name__)
@@ -114,7 +113,15 @@ def _espn_status(comp_status: dict | None) -> str | None:
         return None
     if name in {"STATUS_HALFTIME", "STATUS_PAUSE"}:
         return "halftime"
-    if completed or name in {"STATUS_FULL_TIME", "STATUS_FINAL"}:
+    detail = (type_info.get("detail") or "").strip().upper()
+    short_detail = (type_info.get("shortDetail") or "").strip().upper()
+    if (
+        completed
+        or state == "post"
+        or name in {"STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_END_PERIOD"}
+        or detail in {"FT", "FULL TIME", "FULL-TIME"}
+        or short_detail in {"FT", "FULL TIME", "FULL-TIME"}
+    ):
         return "finished"
     if state == "in" or name in {
         "STATUS_IN_PROGRESS",
@@ -130,31 +137,6 @@ def _espn_status(comp_status: dict | None) -> str | None:
         if minute and minute > 0:
             return "live"
     return None
-
-
-def _should_force_finish(
-    kickoff_et: datetime | None,
-    live_minute: int | None,
-    live_injury: int | None,
-    comp_status: dict | None,
-) -> bool:
-    """True when ESPN still says in-play but the match should be over."""
-    if not kickoff_et:
-        return False
-    now = datetime.now(TIMEZONE)
-    elapsed = elapsed_wall_minutes(kickoff_et, now)
-    if elapsed < 100:
-        return False
-    if _espn_status(comp_status) == "finished":
-        return True
-    if elapsed >= int(POST_MATCH_DISPLAY_MAX.total_seconds() // 60):
-        return True
-    if live_minute is not None and live_minute >= 90:
-        if live_injury is not None and live_injury >= 8:
-            return True
-        if elapsed >= 110:
-            return True
-    return False
 
 
 def _is_goal_event(type_text: str) -> bool:
@@ -291,12 +273,6 @@ def _sync_espn_event(
     )
     live_minute, live_injury = _parse_espn_minute(display_clock)
     result["espn_minute"] = live_minute
-
-    if (
-        db_match.get("actual_home") is None
-        and _should_force_finish(kickoff_et, live_minute, live_injury, comp_status)
-    ):
-        db_status = "finished"
 
     if (
         db_status == "finished"

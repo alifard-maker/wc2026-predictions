@@ -8,7 +8,6 @@ from scoring import OPENING_MATCH_DATE, OPENING_MATCH_TIME, TIMEZONE, parse_matc
 
 MATCH_DURATION = timedelta(minutes=105)  # 45 + 15 HT + 45 (scheduled estimate)
 LIVE_SYNC_MAX = timedelta(hours=3)  # trust ESPN/DB live past delayed kickoff + stoppage
-POST_MATCH_DISPLAY_MAX = timedelta(minutes=118)  # stop showing LIVE after kickoff + stoppage
 FIRST_HALF_MINUTES = 45
 HALFTIME_BREAK = timedelta(minutes=15)
 
@@ -49,8 +48,6 @@ def is_synced_live(match: dict, now: datetime | None = None) -> bool:
     if (match.get("status") or "") not in ("live", "halftime"):
         return False
     kickoff = parse_match_datetime(match["match_date"], match["match_time"])
-    if now >= kickoff + POST_MATCH_DISPLAY_MAX:
-        return False
     return kickoff <= now < kickoff + LIVE_SYNC_MAX
 
 
@@ -62,8 +59,6 @@ def is_match_in_progress(
     """True while the match is playing (scheduled window or synced live state)."""
     if match and is_synced_live(match, now):
         return kickoff <= now < kickoff + LIVE_SYNC_MAX
-    if now >= kickoff + POST_MATCH_DISPLAY_MAX:
-        return False
     return kickoff <= now < kickoff + MATCH_DURATION
 
 
