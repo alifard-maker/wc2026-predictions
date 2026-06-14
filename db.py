@@ -2715,17 +2715,25 @@ def get_pool_tournament_votes(pool_id: int) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_recent_pool_predictions(pool_id: int, limit: int = 40) -> list[dict]:
+def get_recent_pool_predictions(pool_id: int, limit: int = 40, *, active_only: bool = False) -> list[dict]:
     with db() as conn:
+        active_clause = "AND m.actual_home IS NULL" if active_only else ""
         rows = conn.execute(
-            """
+            f"""
             SELECT u.id AS user_id, u.display_name, u.ai_agent_key, p.home_score, p.away_score, p.submitted_at,
-                   m.id AS match_id, m.home_team, m.away_team, m.match_date, m.match_time
+                   m.id AS match_id, m.home_team, m.away_team, m.match_date, m.match_time,
+                   m.status AS match_status, m.actual_home, m.actual_away
             FROM predictions p
             JOIN users u ON u.id = p.user_id
             JOIN matches m ON m.id = p.match_id
-            WHERE u.pool_id = ?
-            ORDER BY p.submitted_at DESC
+            WHERE u.pool_id = ? {active_clause}
+            ORDER BY
+                CASE WHEN COALESCE(m.status, '') IN (
+                    'live', 'halftime', 'hydration_break', 'extra_time', 'penalty_shootout'
+                ) THEN 0 ELSE 1 END,
+                m.match_date ASC,
+                m.match_time ASC,
+                p.submitted_at DESC
             LIMIT ?
             """,
             (pool_id, limit),
@@ -2734,8 +2742,8 @@ def get_recent_pool_predictions(pool_id: int, limit: int = 40) -> list[dict]:
 
 
 def get_ticker_pool_predictions(pool_id: int, limit: int = 40, max_per_user: int = 8) -> list[dict]:
-    """Interleave recent picks across predictors so one bulk submitter doesn't dominate the banner."""
-    pool = get_recent_pool_predictions(pool_id, limit=limit * 6)
+    """Interleave recent picks for upcoming/live matches across predictors."""
+    pool = get_recent_pool_predictions(pool_id, limit=limit * 8, active_only=True)
     by_user: dict[int, list[dict]] = {}
     user_order: list[int] = []
 
@@ -2782,16 +2790,19 @@ def get_pool_simulation_members(pool_id: int) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_pool_predictors(pool_id: int) -> list[dict]:
+def get_pool_predictors(pool_id: int, *, active_only: bool = False) -> list[dict]:
     """Users who have entered at least one prediction, with counts."""
     with db() as conn:
+        join_matches = "JOIN matches m ON m.id = p.match_id" if active_only else ""
+        active_clause = "AND m.actual_home IS NULL" if active_only else ""
         rows = conn.execute(
-            """
+            f"""
             SELECT u.display_name, COUNT(p.id) AS prediction_count,
                    MAX(p.submitted_at) AS last_submitted
             FROM users u
             JOIN predictions p ON p.user_id = u.id
-            WHERE u.pool_id = ?
+            {join_matches}
+            WHERE u.pool_id = ? {active_clause}
             GROUP BY u.id
             ORDER BY last_submitted DESC
             """,

@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.75"
+APP_VERSION = "Beta 3.76"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1399,7 +1399,7 @@ def predictions_feed(invite_code):
         return jsonify({"error": "unauthorized"}), 403
 
     recent = filter_ticker_predictions(db.get_ticker_pool_predictions(pool["id"]))
-    predictors = filter_ticker_predictors(db.get_pool_predictors(pool["id"]))
+    predictors = filter_ticker_predictors(db.get_pool_predictors(pool["id"], active_only=True))
 
     return jsonify({
         "recent": [

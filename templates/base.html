@@ -205,7 +205,7 @@
             `<span class="ticker-item"><strong>${escapeHtml(p.display_name)}</strong> has ${p.prediction_count} prediction${p.prediction_count === 1 ? '' : 's'}</span>`
           ).join('<span class="ticker-sep">•</span>');
         }
-        return '<span class="ticker-item ticker-empty">No predictions yet — tap here to enter yours!</span>';
+        return '<span class="ticker-item ticker-empty">No active match picks yet — tap here to enter yours!</span>';
       }
 
       function updateTicker(recent, predictors) {

@@ -807,11 +807,23 @@ def filter_predictions_for_display(
     ]
 
 
+def is_ticker_active_match(match: dict) -> bool:
+    """Picks banner only rolls upcoming or in-play fixtures, not finished results."""
+    return match.get("actual_home") is None and match.get("actual_away") is None
+
+
 def filter_ticker_predictions(recent: list[dict]) -> list[dict]:
-    """Picks ticker: only revealed matches or AI agents (all humans hidden until deadline)."""
+    """Picks ticker: active matches only; revealed picks or AI agents."""
     filtered = []
     for p in recent:
-        match = {"match_date": p["match_date"], "match_time": p["match_time"]}
+        match = {
+            "match_date": p["match_date"],
+            "match_time": p["match_time"],
+            "actual_home": p.get("actual_home"),
+            "actual_away": p.get("actual_away"),
+        }
+        if not is_ticker_active_match(match):
+            continue
         if picks_revealed(match) or is_ai_agent(p["display_name"], p.get("ai_agent_key")):
             filtered.append(p)
     return filtered
