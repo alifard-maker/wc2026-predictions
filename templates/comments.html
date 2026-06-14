@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
+{% from "_user_avatar.html" import user_avatar with context %}
 {% block title %}{{ pool.name }} — Comments{% endblock %}
 
 {% block content %}
@@ -37,10 +38,13 @@
   {% for c in comments %}
   <div class="comment" data-id="{{ c.id }}" id="comment-{{ c.id }}">
     <div class="comment-header">
-      <div>
+      <div class="comment-author">
+        {{ user_avatar(c.user_id, c.display_name, c.photo_updated_at, pool.invite_code, 'sm') }}
+        <div>
         <strong>{{ c.display_name }}</strong>{% if c.user_id == session.user_id %} (you){% endif %}
         {% if c.match_id and c.home_team %}<span class="comment-match-tag">⚽ {{ c.home_team }} vs {{ c.away_team }}</span>{% endif %}
         <span class="comment-time">{{ c.created_at }}{% if c.updated_at %} · edited{% endif %}</span>
+        </div>
       </div>
       {% if c.user_id == session.user_id %}
       <div class="comment-actions">
@@ -136,12 +140,18 @@
           <button type="submit" class="btn btn-secondary">Save</button>
           <button type="button" class="btn btn-secondary" onclick="cancelEdit(${c.id})">Cancel</button>
         </form>` : '';
+      const avatar = c.avatar_url
+        ? `<img src="${esc(c.avatar_url)}" alt="" class="user-avatar-img user-avatar-sm" loading="lazy">`
+        : `<span class="user-avatar-fallback user-avatar-sm">${escapeHtml((c.display_name || '?')[0])}</span>`;
       return `
         <div class="comment" data-id="${c.id}" id="comment-${c.id}">
           <div class="comment-header">
-            <div>
+            <div class="comment-author">
+              ${avatar}
+              <div>
               <strong>${escapeHtml(c.display_name)}</strong>${c.is_you ? ' (you)' : ''}
               <span class="comment-time">${c.created_at}${edited}</span>
+              </div>
             </div>
             ${actions}
           </div>

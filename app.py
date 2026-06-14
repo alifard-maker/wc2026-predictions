@@ -8,11 +8,13 @@ from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
+    abort,
     flash,
     jsonify,
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -45,6 +47,7 @@ from scoring import (
 from player_stats import get_scorer_squads_data, get_scorer_status, resolve_scorer_pick_value
 from team_data import get_match_context
 from team_flags import get_flag_codes_for_js, get_flag_url
+import user_avatars
 from prediction_simulation import build_predicted_tournament_view
 from tournament_standings import build_tournament_view, tournament_view_for_json
 from live_commentary import (
@@ -78,7 +81,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.25"
+APP_VERSION = "Beta 3.26"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -121,7 +124,11 @@ def get_comments_seen(pool_id: int) -> str | None:
     return session.get(comments_seen_key(pool_id))
 
 
-def leaderboard_top_for_json(pool_id: int, user_id: int | None) -> dict:
+def leaderboard_top_for_json(
+    pool_id: int,
+    user_id: int | None,
+    invite_code: str | None = None,
+) -> dict:
     board = db.get_leaderboard(pool_id)
     return {
         "leader_message": db.get_leader_message(board),
@@ -133,6 +140,12 @@ def leaderboard_top_for_json(pool_id: int, user_id: int | None) -> dict:
                 "total_points": r["total_points"],
                 "exact_scores": r["exact_scores"],
                 "is_you": r["id"] == user_id,
+                "photo_updated_at": r.get("photo_updated_at"),
+                "avatar_url": user_avatar_url(
+                    invite_code,
+                    r["id"],
+                    r.get("photo_updated_at"),
+                ),
             }
             for r in board[:5]
         ],
@@ -163,9 +176,16 @@ def inject_public_url():
         "match_detail_url": match_detail_url,
         "team_page_url": team_page_url,
         "player_page_url": player_page_url,
+        "user_avatar_url": user_avatar_url,
+        "user_initial": user_avatars.user_initial,
+        "current_user_photo": None,
         "team_slugs_json": json.dumps({t: team_slug(t) for t in get_all_teams()}),
     }
     pool_id = session.get("pool_id")
+    if session.get("user_id"):
+        member = db.get_user(session["user_id"])
+        if member:
+            ctx["current_user_photo"] = member["photo_updated_at"]
     if pool_id and session.get("user_id"):
         now = datetime.now(TIMEZONE)
         raw_matches = db.get_all_matches()
@@ -219,6 +239,18 @@ def team_page_url(invite_code: str, team_name: str) -> str:
 
 def player_page_url(invite_code: str, user_id: int) -> str:
     return url_for("player_page", invite_code=invite_code, user_id=user_id)
+
+
+def user_avatar_url(
+    invite_code: str | None,
+    user_id: int,
+    photo_updated_at: str | None,
+) -> str | None:
+    if not invite_code or not photo_updated_at:
+        return None
+    base = url_for("user_avatar_image", invite_code=invite_code, user_id=user_id)
+    token = str(photo_updated_at).replace(" ", "_")
+    return f"{base}?v={token}"
 
 
 def login_required(f):
@@ -873,6 +905,54 @@ def player_page(invite_code, user_id):
     )
 
 
+@app.route("/pool/<invite_code>/avatar/<int:user_id>")
+@login_required
+def user_avatar_image(invite_code, user_id):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        abort(403)
+    member = db.get_user(user_id)
+    if not member or member["pool_id"] != pool["id"]:
+        abort(404)
+    if not member["photo_updated_at"]:
+        abort(404)
+    path = user_avatars.avatar_path(user_id)
+    if not path.is_file():
+        abort(404)
+    return send_file(path, mimetype="image/jpeg", max_age=86400)
+
+
+@app.route("/pool/<invite_code>/profile/photo", methods=["POST"])
+@login_required
+def upload_profile_photo(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool or pool["id"] != session.get("pool_id"):
+        flash("You are not in this pool.", "error")
+        return redirect(url_for("index"))
+
+    user_id = session["user_id"]
+    redirect_to = request.referrer or url_for("player_page", invite_code=invite_code, user_id=user_id)
+
+    if request.form.get("action") == "remove":
+        db.clear_user_photo(user_id)
+        flash("Profile photo removed.", "success")
+        return redirect(redirect_to)
+
+    file = request.files.get("photo")
+    if not file or not file.filename:
+        flash("Choose a photo to upload.", "error")
+        return redirect(redirect_to)
+
+    err = user_avatars.save_avatar(user_id, file.read())
+    if err:
+        flash(err, "error")
+        return redirect(redirect_to)
+
+    db.mark_user_photo_updated(user_id)
+    flash("Profile photo updated!", "success")
+    return redirect(redirect_to)
+
+
 @app.route("/pool/<invite_code>/guide")
 @login_required
 def guide_page(invite_code):
@@ -943,7 +1023,7 @@ def leaderboard_feed(invite_code):
     if not pool or pool["id"] != session.get("pool_id"):
         return jsonify({"error": "unauthorized"}), 403
 
-    return jsonify(leaderboard_top_for_json(pool["id"], session.get("user_id")))
+    return jsonify(leaderboard_top_for_json(pool["id"], session.get("user_id"), invite_code))
 
 
 @app.route("/pool/<invite_code>/leaderboard")
@@ -1141,6 +1221,12 @@ def comments_feed(invite_code):
                 "created_at": c["created_at"],
                 "updated_at": c.get("updated_at"),
                 "is_you": c["user_id"] == session.get("user_id"),
+                "photo_updated_at": c.get("photo_updated_at"),
+                "avatar_url": user_avatar_url(
+                    invite_code,
+                    c["user_id"],
+                    c.get("photo_updated_at"),
+                ),
             }
             for c in comments
         ],
@@ -1535,6 +1621,20 @@ def match_watch_feed(invite_code, match_id):
     enriched = enrich_matches([match])[0]
     raw_preds = db.get_pool_predictions_summary(pool["id"], match_id)
     preds = filter_predictions_for_display(raw_preds, session["user_id"], dict(match))
+    preds_out = []
+    for p in preds:
+        row = dict(p)
+        row["avatar_url"] = user_avatar_url(
+            invite_code, p["user_id"], p.get("photo_updated_at")
+        )
+        preds_out.append(row)
+    comments_out = []
+    for c in db.get_pool_comments(pool["id"], match_id)[:20]:
+        row = dict(c)
+        row["avatar_url"] = user_avatar_url(
+            invite_code, c["user_id"], c.get("photo_updated_at")
+        )
+        comments_out.append(row)
     return jsonify({
         "match": {
             "id": enriched["id"],
@@ -1549,9 +1649,9 @@ def match_watch_feed(invite_code, match_id):
         "goals": goals_for_json(enriched.get("goals", [])),
         "cards": cards_for_json(enriched.get("cards", [])),
         "consensus": build_match_consensus(pool["id"], match_id),
-        "predictions": preds,
+        "predictions": preds_out,
         "picks_revealed": picks_revealed(dict(match)),
-        "comments": db.get_pool_comments(pool["id"], match_id)[:20],
+        "comments": comments_out,
     })
 
 

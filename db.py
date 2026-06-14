@@ -187,6 +187,10 @@ def init_db() -> None:
                 "ALTER TABLE player_cards ADD COLUMN card_source TEXT NOT NULL DEFAULT 'admin'"
             )
 
+        user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if user_cols and "photo_updated_at" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN photo_updated_at TEXT")
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sync_meta (
@@ -932,6 +936,22 @@ def get_pool_users(pool_id: int) -> list[sqlite3.Row]:
 def get_user(user_id: int) -> sqlite3.Row | None:
     with db() as conn:
         return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def mark_user_photo_updated(user_id: int) -> None:
+    with db() as conn:
+        conn.execute(
+            "UPDATE users SET photo_updated_at = datetime('now') WHERE id = ?",
+            (user_id,),
+        )
+
+
+def clear_user_photo(user_id: int) -> None:
+    from user_avatars import delete_avatar_file
+
+    delete_avatar_file(user_id)
+    with db() as conn:
+        conn.execute("UPDATE users SET photo_updated_at = NULL WHERE id = ?", (user_id,))
 
 
 def get_distinct_teams() -> list[str]:
@@ -1922,7 +1942,7 @@ def get_leaderboard(pool_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.display_name,
+            SELECT u.id, u.display_name, u.photo_updated_at,
                    COALESCE(SUM(p.points), 0) AS match_points,
                    COUNT(p.id) AS predictions_made,
                    SUM(CASE WHEN p.points >= 5 THEN 1 ELSE 0 END) AS exact_scores,
@@ -1995,7 +2015,7 @@ def get_pool_predictions_summary(pool_id: int, match_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id AS user_id, u.display_name, p.home_score, p.away_score,
+            SELECT u.id AS user_id, u.display_name, u.photo_updated_at, p.home_score, p.away_score,
                    p.points, p.submitted_at, p.is_bold
             FROM predictions p
             JOIN users u ON u.id = p.user_id
@@ -2010,7 +2030,7 @@ def get_pool_predictions_summary(pool_id: int, match_id: int) -> list[dict]:
 def get_pool_members(pool_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
-            "SELECT id, display_name FROM users WHERE pool_id = ? ORDER BY display_name",
+            "SELECT id, display_name, photo_updated_at FROM users WHERE pool_id = ? ORDER BY display_name",
             (pool_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -2020,7 +2040,7 @@ def get_pool_members_with_stats(pool_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.display_name,
+            SELECT u.id, u.display_name, u.photo_updated_at,
                    (SELECT COUNT(*) FROM predictions WHERE user_id = u.id) AS prediction_count,
                    (SELECT COUNT(*) FROM comments WHERE user_id = u.id) AS comment_count
             FROM users u
@@ -2137,7 +2157,7 @@ def get_pool_comments(pool_id: int, match_id: int | None = None) -> list[dict]:
             rows = conn.execute(
                 """
                 SELECT c.id, c.body, c.created_at, c.updated_at, c.match_id,
-                       u.display_name, c.user_id,
+                       u.display_name, c.user_id, u.photo_updated_at,
                        m.home_team, m.away_team
                 FROM comments c
                 JOIN users u ON u.id = c.user_id
@@ -2151,7 +2171,7 @@ def get_pool_comments(pool_id: int, match_id: int | None = None) -> list[dict]:
             rows = conn.execute(
                 """
                 SELECT c.id, c.body, c.created_at, c.updated_at, c.match_id,
-                       u.display_name, c.user_id,
+                       u.display_name, c.user_id, u.photo_updated_at,
                        m.home_team, m.away_team
                 FROM comments c
                 JOIN users u ON u.id = c.user_id

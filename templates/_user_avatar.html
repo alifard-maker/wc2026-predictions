@@ -1,0 +1,28 @@
+{% macro user_avatar(user_id, display_name, photo_updated_at=None, invite_code=None, size='md', link=None) %}
+{% set code = invite_code or session.invite_code %}
+{% set url = user_avatar_url(code, user_id, photo_updated_at) if code and photo_updated_at else none %}
+{% set initial = user_initial(display_name) %}
+{% set tag = 'a' if link else 'span' %}
+<{{ tag }} class="user-avatar user-avatar-{{ size }}{% if link %} user-avatar-link{% endif %}"{% if link %} href="{{ link }}"{% endif %}>
+  {% if url %}
+  <img src="{{ url }}" alt="" class="user-avatar-img" loading="lazy" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
+  <span class="user-avatar-fallback" hidden aria-hidden="true">{{ initial }}</span>
+  {% else %}
+  <span class="user-avatar-fallback" aria-hidden="true">{{ initial }}</span>
+  {% endif %}
+</{{ tag }}>
+{% endmacro %}
+
+{% macro user_with_name(user_id, display_name, photo_updated_at=None, invite_code=None, size='sm', link=None, extra='') %}
+<span class="user-with-name">
+  {{ user_avatar(user_id, display_name, photo_updated_at, invite_code, size, link) }}
+  <span class="user-with-name-text">
+    {% if link %}
+    <a href="{{ link }}">{{ display_name }}</a>
+    {% else %}
+    {{ display_name }}
+    {% endif %}
+    {{ extra }}
+  </span>
+</span>
+{% endmacro %}

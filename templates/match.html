@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_match_events.html" import render_match_events %}
 {% from "_team_flag.html" import team_with_flag with context %}
+{% from "_user_avatar.html" import user_avatar with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
 {% block title %}{{ match.home_team }} vs {{ match.away_team }}{% endblock %}
@@ -92,7 +93,8 @@
     <tbody>
       {% for p in all_predictions %}
       <tr class="{% if p.points and p.points >= 5 %}pick-exact{% elif p.points and p.points >= 2 %}pick-correct{% endif %}">
-        <td>
+        <td class="player-cell-with-avatar">
+          {{ user_avatar(p.user_id, p.display_name, p.photo_updated_at, pool.invite_code, 'sm') }}
           <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=p.user_id) }}" class="pick-player-link">{{ p.display_name }}</a>
           {% if p.user_id == session.user_id %} (you){% endif %}
           {{ render_ai_badge(p.display_name) }}
@@ -224,10 +226,13 @@
           : `<strong>${p.home_score} – ${p.away_score}</strong>`;
         const bold = p.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
         const pts = p.points != null ? p.points : '—';
+        const avatar = p.avatar_url
+          ? `<img src="${esc(p.avatar_url)}" alt="" class="user-avatar-img user-avatar-sm" loading="lazy">`
+          : `<span class="user-avatar-fallback user-avatar-sm">${esc((p.display_name || '?')[0]).toUpperCase()}</span>`;
         const name = p.user_id
           ? `<a href="${poolPlayerUrl(p.user_id)}" class="pick-player-link">${esc(p.display_name)}</a>`
           : esc(p.display_name);
-        return `<tr><td>${name}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
+        return `<tr><td class="player-cell-with-avatar">${avatar}${name}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
       }).join('') || '<tr><td colspan="3" style="color:var(--muted)">No predictions yet</td></tr>';
     }
 

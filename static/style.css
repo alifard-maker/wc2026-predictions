@@ -853,6 +853,104 @@ tr.picks-missed td {
   background: var(--surface-2);
 }
 
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.user-avatar-link {
+  text-decoration: none;
+}
+
+.user-avatar-img,
+.user-avatar-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+}
+
+.user-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.user-avatar-xs .user-avatar-img,
+.user-avatar-xs .user-avatar-fallback,
+.user-avatar-img.user-avatar-xs,
+.user-avatar-fallback.user-avatar-xs {
+  width: 24px;
+  height: 24px;
+  font-size: 0.7rem;
+}
+
+.user-avatar-sm .user-avatar-img,
+.user-avatar-sm .user-avatar-fallback,
+.user-avatar-img.user-avatar-sm,
+.user-avatar-fallback.user-avatar-sm {
+  width: 32px;
+  height: 32px;
+  font-size: 0.85rem;
+}
+
+.user-avatar-md .user-avatar-img,
+.user-avatar-md .user-avatar-fallback {
+  width: 40px;
+  height: 40px;
+}
+
+.user-avatar-lg .user-avatar-img,
+.user-avatar-lg .user-avatar-fallback {
+  width: 64px;
+  height: 64px;
+  font-size: 1.25rem;
+}
+
+.user-with-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.player-cell-with-avatar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.profile-hero-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.profile-photo-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.comment-author {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.nav-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .person-details {
   display: flex;
   flex-direction: column;

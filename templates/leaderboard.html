@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
+{% from "_user_avatar.html" import user_avatar with context %}
 {% block title %}{{ pool.name }} — Leaderboard{% endblock %}
 
 {% block content %}
@@ -35,7 +36,8 @@
       {% for row in leaderboard %}
       <tr class="{% if row.rank and row.rank <= 3 %}rank-{{ row.rank }}{% endif %}">
         <td>{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</td>
-        <td>
+        <td class="player-cell-with-avatar">
+          {{ user_avatar(row.id, row.display_name, row.photo_updated_at, pool.invite_code, 'sm') }}
           <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>
           {% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}
         </td>

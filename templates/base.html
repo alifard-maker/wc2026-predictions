@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+{% from "_user_avatar.html" import user_avatar with context %}
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -142,7 +143,7 @@
           <a href="{{ url_for('guide_page', invite_code=session.invite_code) }}">Guide</a>
         {% endif %}
         {% if session.get('display_name') %}
-          <span class="nav-user">{{ session.display_name }}</span>
+          <span class="nav-user">{{ user_avatar(session.user_id, session.display_name, current_user_photo, session.invite_code, 'xs') }} {{ session.display_name }}</span>
           <a href="{{ url_for('logout') }}">Logout</a>
         {% endif %}
       </nav>

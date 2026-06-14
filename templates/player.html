@@ -1,14 +1,37 @@
 {% extends "base.html" %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
+{% from "_user_avatar.html" import user_avatar with context %}
 {% block title %}{{ player.display_name }} — {{ pool.name }}{% endblock %}
 
 {% block content %}
 <a href="{{ url_for('leaderboard_page', invite_code=pool.invite_code) }}">← Leaderboard</a>
 
-<section class="hero" style="padding-top: 1rem; text-align: left">
-  <h1 style="text-align: left">{{ player.display_name }}{% if is_you %} (you){% endif %}{{ render_ai_badge(player.display_name) }}</h1>
-  <p style="margin: 0; text-align: left">Season stats · {{ pool.name }}</p>
+<section class="hero profile-hero" style="padding-top: 1rem; text-align: left">
+  <div class="profile-hero-main">
+    {{ user_avatar(player.id, player.display_name, player.photo_updated_at, pool.invite_code, 'lg') }}
+    <div>
+      <h1 style="text-align: left; margin: 0">{{ player.display_name }}{% if is_you %} (you){% endif %}{{ render_ai_badge(player.display_name) }}</h1>
+      <p style="margin: 0.35rem 0 0; text-align: left">Season stats · {{ pool.name }}</p>
+    </div>
+  </div>
 </section>
+
+{% if is_you %}
+<div class="card profile-photo-card" style="margin-bottom: 1.5rem">
+  <h3>Profile photo</h3>
+  <p class="muted-inline" style="margin: 0 0 1rem">Shown next to your name across the pool. JPEG, PNG, WebP, or GIF · max 2 MB.</p>
+  <form method="post" action="{{ url_for('upload_profile_photo', invite_code=pool.invite_code) }}" enctype="multipart/form-data" class="profile-photo-form">
+    <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" required>
+    <button type="submit" class="btn btn-primary btn-sm">Upload photo</button>
+  </form>
+  {% if player.photo_updated_at %}
+  <form method="post" action="{{ url_for('upload_profile_photo', invite_code=pool.invite_code) }}" style="margin-top: 0.75rem">
+    <input type="hidden" name="action" value="remove">
+    <button type="submit" class="btn btn-secondary btn-sm">Remove photo</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="stats-row">
   <div class="stat">

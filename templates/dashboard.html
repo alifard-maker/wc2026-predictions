@@ -2,13 +2,14 @@
 {% from "_fixture_content.html" import render_fixture_content with context %}
 {% from "_team_flag.html" import team_with_flag with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
+{% from "_user_avatar.html" import user_avatar, user_with_name with context %}
 
 {% block title %}{{ pool.name }} — Matches{% endblock %}
 
 {% block content %}
 <section class="hero" style="padding-top: 0; text-align: left">
   <h1 style="text-align: left">{{ pool.name }}</h1>
-  <p style="margin: 0; text-align: left">Logged in as <strong>{{ session.display_name }}</strong></p>
+  <p style="margin: 0; text-align: left">Logged in as {{ user_with_name(session.user_id, session.display_name, current_user_photo, pool.invite_code, 'sm', url_for('player_page', invite_code=pool.invite_code, user_id=session.user_id)) }}</p>
 </section>
 
 {% if tournament_vote.show_reminder %}
@@ -106,7 +107,10 @@
       {% for row in leaderboard[:5] %}
       <tr class="{% if row.rank and row.rank <= 3 %}rank-{{ row.rank }}{% endif %}">
         <td>{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</td>
-        <td><a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>{% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}</td>
+        <td class="player-cell-with-avatar">
+          {{ user_avatar(row.id, row.display_name, row.photo_updated_at, pool.invite_code, 'sm') }}
+          <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>{% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}
+        </td>
         <td><strong>{{ row.total_points }}</strong></td>
         <td>{{ row.exact_scores }}</td>
       </tr>

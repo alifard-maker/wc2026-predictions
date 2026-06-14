@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .env
 predictions.db
+uploads/
 .venv/
 venv/
 bin/
