@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.66"
+APP_VERSION = "Beta 3.67"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1982,7 +1982,7 @@ def admin_page(invite_code):
                 user = db.get_user(user_id)
                 if not user or user["pool_id"] != pool["id"]:
                     flash("User not found in this pool.", "error")
-                elif is_synced_ai_agent(user["display_name"], user.get("ai_agent_key")):
+                elif is_synced_ai_agent(user["display_name"], user["ai_agent_key"]):
                     flash("Use the AI sync tools for synced AI members — not manual override.", "error")
                 else:
                     saved = 0
@@ -2006,19 +2006,27 @@ def admin_page(invite_code):
                             continue
                         db.upsert_prediction(user_id, match_id, home_score, away_score)
                         saved += 1
-                    bold_match = request.form.get("bold_match_id", "").strip()
-                    if bold_match:
+                    bold_updated = 0
+                    for key, value in request.form.items():
+                        if not key.startswith("bold_match"):
+                            continue
+                        match_id_str = value.strip()
+                        if not match_id_str:
+                            continue
                         try:
-                            err = db.set_bold_pick(user_id, int(bold_match))
-                            if err:
-                                flash(err, "error")
-                            else:
-                                flash("Bold pick updated for member.", "success")
+                            match_id = int(match_id_str)
                         except ValueError:
-                            pass
+                            continue
+                        err = db.set_bold_pick(user_id, match_id, admin_bypass=True)
+                        if err:
+                            flash(err, "error")
+                        else:
+                            bold_updated += 1
+                    if bold_updated:
+                        flash("Bold pick updated for member.", "success")
                     if saved:
                         flash(f"Saved {saved} match prediction(s) for {user['display_name']} (deadline bypassed).", "success")
-                    elif not bold_match:
+                    elif not bold_updated:
                         flash("No predictions to save.", "error")
         elif action == "admin_tournament_vote" and session.get("admin_secret") == pool["admin_secret"]:
             try:
@@ -2029,7 +2037,7 @@ def admin_page(invite_code):
                 user = db.get_user(user_id)
                 if not user or user["pool_id"] != pool["id"]:
                     flash("User not found in this pool.", "error")
-                elif is_synced_ai_agent(user["display_name"], user.get("ai_agent_key")):
+                elif is_synced_ai_agent(user["display_name"], user["ai_agent_key"]):
                     flash("Use the AI sync tools for synced AI members — not manual override.", "error")
                 else:
                     top_scorer = resolve_scorer_pick_value(

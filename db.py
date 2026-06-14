@@ -1579,7 +1579,7 @@ def upsert_prediction(
         )
 
 
-def set_bold_pick(user_id: int, match_id: int) -> str | None:
+def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) -> str | None:
     from scoring import bold_day_key, bold_pick_change_allowed, is_prediction_open
 
     with db() as conn:
@@ -1593,15 +1593,15 @@ def set_bold_pick(user_id: int, match_id: int) -> str | None:
         if not pred:
             return "Save a prediction for this match first."
 
-        if not is_prediction_open(match["match_date"], match["match_time"]):
+        if not admin_bypass and not is_prediction_open(match["match_date"], match["match_time"]):
             return "Bold picks are locked — the prediction deadline has passed."
 
         key = bold_day_key(dict(match))
         existing_bold_match = None
         siblings = conn.execute(
             """
-            SELECT p.id, p.match_id, p.home_score, p.away_score, p.is_bold, m.actual_home, m.actual_away,
-                   m.match_date, m.match_time, m.matchday, m.stage
+            SELECT p.id, p.match_id, p.home_score, p.away_score, p.is_bold, p.points_excluded,
+                   m.actual_home, m.actual_away, m.match_date, m.match_time, m.matchday, m.stage
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
             WHERE p.user_id = ?
@@ -1616,20 +1616,25 @@ def set_bold_pick(user_id: int, match_id: int) -> str | None:
                 ).fetchone()
                 break
 
-        if not bold_pick_change_allowed(dict(match), dict(existing_bold_match) if existing_bold_match else None):
+        if not admin_bypass and not bold_pick_change_allowed(
+            dict(match), dict(existing_bold_match) if existing_bold_match else None
+        ):
             return "Bold pick is locked — your bold match deadline has passed."
 
         for row in siblings:
             if bold_day_key(dict(row)) != key:
                 continue
             new_bold = 1 if row["match_id"] == match_id else 0
-            pts = calculate_points(
-                row["home_score"],
-                row["away_score"],
-                row["actual_home"],
-                row["actual_away"],
-                bool(new_bold),
-            )
+            if row["points_excluded"]:
+                pts = 0
+            else:
+                pts = calculate_points(
+                    row["home_score"],
+                    row["away_score"],
+                    row["actual_home"],
+                    row["actual_away"],
+                    bool(new_bold),
+                )
             conn.execute(
                 "UPDATE predictions SET is_bold = ?, points = ? WHERE id = ?",
                 (new_bold, pts, row["id"]),
