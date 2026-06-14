@@ -456,6 +456,33 @@ def _freeze_regulation_score(match_id: int, home_score: int, away_score: int) ->
     return home_score, away_score
 
 
+PHASE_STATUSES = frozenset({"halftime", "hydration_break", "extra_time", "penalty_shootout"})
+
+
+def _preserve_phase_status(
+    match_id: int,
+    db_match: dict,
+    db_status: str,
+    live_minute: int | None,
+    live_injury: int | None,
+) -> tuple[str, int | None, int | None]:
+    """Keep ESPN phase (e.g. HT) when football-data still reports generic live at 45'."""
+    prev = db_match.get("status") or ""
+    espn_phase = db.get_sync_meta(f"espn_phase_{match_id}") or ""
+    phase = prev if prev in PHASE_STATUSES else espn_phase
+    if phase not in PHASE_STATUSES or db_status != "live":
+        return db_status, live_minute, live_injury
+
+    minute = normalize_stored_minute(live_minute)
+    if minute is None:
+        minute = normalize_stored_minute(db_match.get("live_minute"))
+    if phase == "halftime" and (minute is None or minute <= 45):
+        return "halftime", 45, None
+    if phase in PHASE_STATUSES - {"halftime"}:
+        return phase, db_match.get("live_minute"), db_match.get("live_injury_minute")
+    return db_status, live_minute, live_injury
+
+
 def _live_sync_cooldown(db_matches: list[dict]) -> int:
     base = SYNC_COOLDOWN_SECONDS
     shootout = 5
@@ -785,6 +812,9 @@ def _process_api_match(
 
             if not is_halftime_break(kickoff, datetime.now(TIMEZONE), db_status):
                 db_status = "live"
+        db_status, live_minute, live_injury = _preserve_phase_status(
+            match_id, db_match, db_status, live_minute, live_injury
+        )
         if live_minute is not None:
             db.update_match_live(
                 match_id,

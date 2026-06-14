@@ -92,22 +92,35 @@
     const esc = escapeHtml || function (text) {
       return String(text);
     };
-    if (commentary.status === 'penalty_shootout') {
+    return formatMatchStatusBadge(commentary, esc, commentary.kickoff_iso);
+  };
+
+  global.formatMatchStatusBadge = function (match, escapeHtml, kickoffIso) {
+    const esc = escapeHtml || function (text) {
+      return String(text);
+    };
+    const status = match.status;
+    const label = match.minute_base || match.minute_label;
+    const kickoff = kickoffIso || match.kickoff_iso;
+    if (status === 'halftime' || String(label || '').startsWith('HT')) {
+      return esc(resolveLiveMinuteLabel(label, kickoff, 'halftime'));
+    }
+    if (status === 'hydration_break' || String(label || '').includes('Drinks break')) {
+      return esc(resolveLiveMinuteLabel(label, kickoff, 'hydration_break'));
+    }
+    if (status === 'penalty_shootout') {
       return esc('Pens');
     }
-    const base = resolveLiveMinuteLabel(
-      commentary.minute_base || commentary.minute_label,
-      commentary.kickoff_iso,
-      commentary.status
-    );
-    if (commentary.status === 'extra_time') {
-      const added = commentary.added_time_label
-        ? ` <span class="live-added-time">${esc(commentary.added_time_label)}</span>`
+    if (status === 'extra_time') {
+      const base = resolveLiveMinuteLabel(label, kickoff, 'extra_time');
+      const added = match.added_time_label
+        ? ` <span class="live-added-time">${esc(match.added_time_label)}</span>`
         : '';
       return `${esc(base)}${added}`;
     }
-    const added = commentary.added_time_label
-      ? `<span class="live-added-time">${esc(commentary.added_time_label)}</span>`
+    const base = resolveLiveMinuteLabel(label, kickoff, status);
+    const added = match.added_time_label
+      ? ` <span class="live-added-time">${esc(match.added_time_label)}</span>`
       : '';
     return `LIVE ${esc(base)}${added ? ` ${added}` : ''}`;
   };

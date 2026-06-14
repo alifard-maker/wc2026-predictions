@@ -17,7 +17,7 @@
     <span class="badge badge-group">Group {{ match.group_name }}</span>
     {% endif %}
     {% if match.is_live %}
-    <span class="badge badge-live" id="match-status-badge">{% if match.status == 'penalty_shootout' %}Pens{% elif match.status == 'extra_time' %}ET {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% elif match.status == 'halftime' %}{{ match.minute_label | live_minute }}{% elif match.status == 'hydration_break' %}{{ match.minute_label | live_minute }}{% else %}LIVE {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% endif %}</span>
+    <span class="badge badge-live" id="match-status-badge">{% if match.status == 'penalty_shootout' %}Pens{% elif match.status == 'extra_time' %}ET {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% elif match.status == 'halftime' %}{{ match.minute_base or (match.minute_label | live_minute) }}{% elif match.status == 'hydration_break' %}{{ match.minute_base or (match.minute_label | live_minute) }}{% else %}LIVE {{ match.minute_base or (match.minute_label | live_minute) }}{% if match.added_time_label %} <span class="live-added-time">{{ match.added_time_label }}</span>{% endif %}{% endif %}</span>
     {% elif match.is_finished %}
     <span class="badge badge-done" id="match-status-badge">Full time</span>
     {% elif match.open %}
@@ -327,15 +327,7 @@
     const badge = document.getElementById('match-status-badge');
     if (badge && m.is_live) {
       badge.className = 'badge badge-live';
-      if (m.status === 'halftime' || m.status === 'hydration_break') {
-        badge.textContent = resolveLiveMinuteLabel(m.minute_label, data.match.kickoff_iso, m.status);
-      } else if (m.status === 'penalty_shootout') {
-        badge.textContent = 'Pens';
-      } else if (m.status === 'extra_time') {
-        badge.innerHTML = formatLiveBannerMinute(m, esc);
-      } else {
-        badge.innerHTML = formatLiveBannerMinute(m, esc);
-      }
+      badge.innerHTML = formatMatchStatusBadge(m, esc, data.match.kickoff_iso);
     } else if (badge && m.is_finished) {
       badge.className = 'badge badge-done';
       badge.textContent = 'Full time';

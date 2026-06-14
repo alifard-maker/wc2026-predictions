@@ -719,6 +719,7 @@ def _sync_espn_event(
             db_status,
             live_injury,
         )
+        db.set_sync_meta(f"espn_phase_{match_id}", db_status or "")
         result["updated_live"] = 1
         result["live_home"] = home_score
         result["live_away"] = away_score
