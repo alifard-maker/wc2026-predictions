@@ -6,12 +6,12 @@ import hashlib
 
 from team_data import TEAM_FACTS
 
-CURSOR_AGENT_DISPLAY_NAME = "Nostradamus"
-AI_DISPLAY_NAME = CURSOR_AGENT_DISPLAY_NAME  # backwards compatibility
-CURSOR_LEGACY_NAMES = frozenset({"Cursor AI Prediction", "Cursor AI"})
+# Legacy single-AI player (renamed from "Cursor AI Prediction"); separate from Cursor AI agent.
+AI_DISPLAY_NAME = "Nostradamus"
+LEGACY_AI_OLD_NAME = "Cursor AI Prediction"
 
 AI_AGENTS: list[dict] = [
-    {"key": "cursor", "display_name": CURSOR_AGENT_DISPLAY_NAME, "badge": "Nostra", "avatar": "images/ai-agents/cursor.svg"},
+    {"key": "cursor", "display_name": "Cursor AI", "badge": "Cursor", "avatar": "images/ai-agents/cursor.svg"},
     {"key": "chatgpt", "display_name": "ChatGPT", "badge": "GPT", "avatar": "images/ai-agents/chatgpt.svg"},
     {"key": "gemini", "display_name": "Gemini", "badge": "Gemini", "avatar": "images/ai-agents/gemini.svg"},
     {"key": "grok", "display_name": "Grok", "badge": "Grok", "avatar": "images/ai-agents/grok.svg"},
@@ -127,17 +127,24 @@ def predict_tournament_picks(pool_id: int, agent_key: str = "cursor") -> dict[st
     }
 
 
+def _legacy_nostradamus_profile() -> dict:
+    return {"badge": "Nostra", "avatar": "images/ai-agents/cursor.svg"}
+
+
 def _agent_for_display_name(display_name: str) -> dict | None:
     for agent in AI_AGENTS:
         if agent["display_name"] == display_name:
             return agent
-    if display_name in CURSOR_LEGACY_NAMES:
-        return AI_AGENTS[0]
+    if display_name in {AI_DISPLAY_NAME, LEGACY_AI_OLD_NAME}:
+        return _legacy_nostradamus_profile()
     return None
 
 
 def is_ai_agent(display_name: str) -> bool:
-    return display_name in AI_AGENT_NAMES or display_name in CURSOR_LEGACY_NAMES
+    return (
+        display_name in AI_AGENT_NAMES
+        or display_name in {AI_DISPLAY_NAME, LEGACY_AI_OLD_NAME}
+    )
 
 
 def ai_agent_badge(display_name: str) -> str:
