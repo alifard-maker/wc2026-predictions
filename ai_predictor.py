@@ -6,9 +6,7 @@ import hashlib
 
 from team_data import TEAM_FACTS
 
-# Legacy single-AI player (renamed from "Cursor AI Prediction"); separate from Cursor AI agent.
-AI_DISPLAY_NAME = "Nostradamus"
-LEGACY_AI_OLD_NAME = "Cursor AI Prediction"
+AI_DISPLAY_NAME = "Cursor AI Prediction"  # backwards compatibility
 
 AI_AGENTS: list[dict] = [
     {"key": "cursor", "display_name": "Cursor AI", "badge": "Cursor", "avatar": "images/ai-agents/cursor.svg"},
@@ -127,32 +125,24 @@ def predict_tournament_picks(pool_id: int, agent_key: str = "cursor") -> dict[st
     }
 
 
-def _legacy_nostradamus_profile() -> dict:
-    return {"badge": "Nostra", "avatar": "images/ai-agents/cursor.svg"}
-
-
-def _agent_for_display_name(display_name: str) -> dict | None:
-    for agent in AI_AGENTS:
-        if agent["display_name"] == display_name:
-            return agent
-    if display_name in {AI_DISPLAY_NAME, LEGACY_AI_OLD_NAME}:
-        return _legacy_nostradamus_profile()
-    return None
-
-
 def is_ai_agent(display_name: str) -> bool:
-    return (
-        display_name in AI_AGENT_NAMES
-        or display_name in {AI_DISPLAY_NAME, LEGACY_AI_OLD_NAME}
-    )
+    return display_name in AI_AGENT_NAMES or display_name == AI_DISPLAY_NAME
 
 
 def ai_agent_badge(display_name: str) -> str:
-    agent = _agent_for_display_name(display_name)
-    return agent["badge"] if agent else "AI"
+    for agent in AI_AGENTS:
+        if agent["display_name"] == display_name:
+            return agent["badge"]
+    if display_name == AI_DISPLAY_NAME:
+        return "Cursor"
+    return "AI"
 
 
 def ai_agent_avatar_file(display_name: str) -> str | None:
     """Static image path under /static for this AI agent, if any."""
-    agent = _agent_for_display_name(display_name)
-    return agent.get("avatar") if agent else None
+    for agent in AI_AGENTS:
+        if agent["display_name"] == display_name:
+            return agent.get("avatar")
+    if display_name == AI_DISPLAY_NAME:
+        return AI_AGENTS[0].get("avatar")
+    return None

@@ -230,28 +230,25 @@ def init_db() -> None:
     merge_duplicate_users()
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
-    repair_rename_cursor_ai_agent()
+    repair_revert_nostradamus_rename()
     ensure_admin_secrets()
 
 
-def repair_rename_cursor_ai_agent() -> None:
-    """Rename legacy Cursor AI Prediction users to Nostradamus (no merge with Cursor AI)."""
-    from ai_predictor import AI_DISPLAY_NAME, LEGACY_AI_OLD_NAME
-
+def repair_revert_nostradamus_rename() -> None:
+    """Undo Beta 3.35/3.36 rename: Nostradamus → Cursor AI Prediction (no merge)."""
     with db() as conn:
         conn.execute(
             """
             UPDATE users
-            SET display_name = ?
-            WHERE display_name = ?
+            SET display_name = 'Cursor AI Prediction'
+            WHERE display_name = 'Nostradamus'
               AND NOT EXISTS (
                 SELECT 1 FROM users u2
                 WHERE u2.pool_id = users.pool_id
-                  AND u2.display_name = ?
+                  AND u2.display_name = 'Cursor AI Prediction'
                   AND u2.id != users.id
               )
             """,
-            (AI_DISPLAY_NAME, LEGACY_AI_OLD_NAME, AI_DISPLAY_NAME),
         )
 
 
