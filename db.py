@@ -232,28 +232,9 @@ def init_db() -> None:
     merge_duplicate_users()
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
-    repair_revert_nostradamus_rename()
     repair_backfill_ai_agent_keys()
     repair_split_merged_cursor_ai_accounts()
     ensure_admin_secrets()
-
-
-def repair_revert_nostradamus_rename() -> None:
-    """Undo Beta 3.35/3.36 rename: Nostradamus → Cursor AI Prediction (no merge)."""
-    with db() as conn:
-        conn.execute(
-            """
-            UPDATE users
-            SET display_name = 'Cursor AI Prediction'
-            WHERE display_name = 'Nostradamus'
-              AND NOT EXISTS (
-                SELECT 1 FROM users u2
-                WHERE u2.pool_id = users.pool_id
-                  AND u2.display_name = 'Cursor AI Prediction'
-                  AND u2.id != users.id
-              )
-            """,
-        )
 
 
 def repair_backfill_ai_agent_keys() -> None:
@@ -280,7 +261,7 @@ def repair_split_merged_cursor_ai_accounts() -> None:
     """
     from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, predict_score, predict_tournament_picks
 
-    legacy_names = (AI_DISPLAY_NAME, "Cursor AI Predictions", "Nostradamus")
+    legacy_names = (AI_DISPLAY_NAME, "Cursor AI Predictions")
     cursor_agent = next(a for a in AI_AGENTS if a["key"] == "cursor")
     legacy_placeholders = ", ".join("?" * len(legacy_names))
 
@@ -2205,7 +2186,8 @@ def get_pool_predictions_summary(pool_id: int, match_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id AS user_id, u.display_name, u.photo_updated_at, p.home_score, p.away_score,
+            SELECT u.id AS user_id, u.display_name, u.photo_updated_at, u.ai_agent_key,
+                   p.home_score, p.away_score,
                    p.points, p.submitted_at, p.is_bold
             FROM predictions p
             JOIN users u ON u.id = p.user_id

@@ -1,7 +1,7 @@
-{% macro user_avatar(user_id, display_name, photo_updated_at=None, invite_code=None, size='md', link=None) %}
+{% macro user_avatar(user_id, display_name, photo_updated_at=None, invite_code=None, size='md', link=None, ai_agent_key=none) %}
 {% set code = invite_code or session.invite_code %}
-{% set has_photo = user_has_avatar(user_id, photo_updated_at, display_name) %}
-{% set url = user_avatar_url(code, user_id, photo_updated_at, display_name) if code and has_photo else none %}
+{% set has_photo = user_has_avatar(user_id, photo_updated_at, display_name, ai_agent_key) %}
+{% set url = user_avatar_url(code, user_id, photo_updated_at, display_name, ai_agent_key) if code and has_photo else none %}
 {% set initial = user_initial(display_name) %}
 {% set tag = 'a' if link else 'span' %}
 <{{ tag }} class="user-avatar user-avatar-{{ size }}{% if link %} user-avatar-link{% endif %}"{% if link %} href="{{ link }}"{% endif %}>

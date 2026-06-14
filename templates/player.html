@@ -10,7 +10,7 @@
   <div class="profile-hero-main">
     {{ user_avatar(player.id, player.display_name, player.photo_updated_at, pool.invite_code, 'lg') }}
     <div>
-      <h1 style="text-align: left; margin: 0">{{ player.display_name }}{% if is_you %} (you){% endif %}{{ render_ai_badge(player.display_name) }}</h1>
+      <h1 style="text-align: left; margin: 0">{{ player.display_name }}{% if is_you %} (you){% endif %}{{ render_ai_badge(player.display_name, player.ai_agent_key) }}</h1>
       <p style="margin: 0.35rem 0 0; text-align: left">Season stats · {{ pool.name }}</p>
     </div>
   </div>

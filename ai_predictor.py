@@ -18,6 +18,8 @@ AI_AGENTS: list[dict] = [
 
 AI_AGENT_NAMES: set[str] = {a["display_name"] for a in AI_AGENTS}
 AI_AGENT_KEYS: set[str] = {a["key"] for a in AI_AGENTS}
+# Admin-renamed synced agents (still AI even if display_name changed before backfill).
+AI_EXTRA_DISPLAY_NAMES: frozenset[str] = frozenset({"Nostradamus"})
 
 # Weighted toward realistic results — fewer draws than before.
 SCORE_OPTIONS = [
@@ -137,11 +139,15 @@ def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = N
                 return agent
         if display_name == AI_DISPLAY_NAME:
             return {"badge": "Cursor", "avatar": AI_AGENTS[0].get("avatar")}
+    if display_name in AI_EXTRA_DISPLAY_NAMES:
+        return {"badge": "AI", "avatar": AI_AGENTS[0].get("avatar")}
     return None
 
 
 def is_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
     if ai_agent_key and ai_agent_key in AI_AGENT_KEYS:
+        return True
+    if display_name in AI_EXTRA_DISPLAY_NAMES:
         return True
     if display_name in AI_AGENT_NAMES or display_name == AI_DISPLAY_NAME:
         return True

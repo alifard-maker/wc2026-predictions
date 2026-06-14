@@ -82,7 +82,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.38"
+APP_VERSION = "Beta 3.39"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1652,8 +1652,12 @@ def match_watch_feed(invite_code, match_id):
     for p in preds:
         row = dict(p)
         row["avatar_url"] = user_avatar_url(
-            invite_code, p["user_id"], p.get("photo_updated_at"), p.get("display_name")
-        ) if user_has_avatar(p["user_id"], p.get("photo_updated_at"), p.get("display_name")) else None
+            invite_code, p["user_id"], p.get("photo_updated_at"), p.get("display_name"), p.get("ai_agent_key")
+        ) if user_has_avatar(
+            p["user_id"], p.get("photo_updated_at"), p.get("display_name"), p.get("ai_agent_key")
+        ) else None
+        row["is_ai"] = is_ai_agent(p.get("display_name"), p.get("ai_agent_key"))
+        row["ai_badge"] = ai_agent_badge(p.get("display_name"), p.get("ai_agent_key")) if row["is_ai"] else None
         preds_out.append(row)
     comments_out = []
     for c in db.get_pool_comments(pool["id"], match_id)[:20]:

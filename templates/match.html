@@ -97,10 +97,10 @@
       {% for p in all_predictions %}
       <tr class="{% if p.points and p.points >= 5 %}pick-exact{% elif p.points and p.points >= 2 %}pick-correct{% endif %}">
         <td class="player-cell-with-avatar">
-          {{ user_avatar(p.user_id, p.display_name, p.photo_updated_at, pool.invite_code, 'sm') }}
+          {{ user_avatar(p.user_id, p.display_name, p.photo_updated_at, pool.invite_code, 'sm', ai_agent_key=p.ai_agent_key) }}
           <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=p.user_id) }}" class="pick-player-link">{{ p.display_name }}</a>
           {% if p.user_id == session.user_id %} (you){% endif %}
-          {{ render_ai_badge(p.display_name) }}
+          {{ render_ai_badge(p.display_name, p.ai_agent_key) }}
           {% if p.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
         </td>
         <td>
@@ -245,6 +245,9 @@
         const pred = p.hidden
           ? '<span class="pick-hidden">🔒 Hidden</span>'
           : `<strong>${p.home_score} – ${p.away_score}</strong>`;
+        const aiBadge = p.is_ai
+          ? `<span class="ai-badge" title="${esc(p.display_name)}">${esc(p.ai_badge || 'AI')}</span>`
+          : '';
         const bold = p.is_bold ? ' <span class="bold-tag">BOLD</span>' : '';
         const pts = p.points != null ? p.points : '—';
         const avatar = p.avatar_url
@@ -253,7 +256,7 @@
         const name = p.user_id
           ? `<a href="${poolPlayerUrl(p.user_id)}" class="pick-player-link">${esc(p.display_name)}</a>`
           : esc(p.display_name);
-        return `<tr><td class="player-cell-with-avatar">${avatar}${name}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
+        return `<tr><td class="player-cell-with-avatar">${avatar}${name}${aiBadge}${bold}</td><td>${pred}</td><td>${pts}</td></tr>`;
       }).join('') || '<tr><td colspan="3" style="color:var(--muted)">No predictions yet</td></tr>';
     }
 
