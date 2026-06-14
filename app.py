@@ -82,7 +82,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.37"
+APP_VERSION = "Beta 3.38"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -147,7 +147,13 @@ def leaderboard_top_for_json(
                     r["id"],
                     r.get("photo_updated_at"),
                     r["display_name"],
-                ) if user_has_avatar(r["id"], r.get("photo_updated_at"), r["display_name"]) else None,
+                    r.get("ai_agent_key"),
+                ) if user_has_avatar(
+                    r["id"],
+                    r.get("photo_updated_at"),
+                    r["display_name"],
+                    r.get("ai_agent_key"),
+                ) else None,
             }
             for r in board[:3]
         ],
@@ -250,9 +256,10 @@ def user_avatar_url(
     user_id: int,
     photo_updated_at: str | None,
     display_name: str | None = None,
+    ai_agent_key: str | None = None,
 ) -> str | None:
-    if display_name and is_ai_agent(display_name):
-        avatar_file = ai_agent_avatar_file(display_name)
+    if display_name and is_ai_agent(display_name, ai_agent_key):
+        avatar_file = ai_agent_avatar_file(display_name, ai_agent_key)
         if avatar_file:
             version = APP_VERSION.replace(" ", "-")
             return url_for("static", filename=avatar_file) + f"?v={version}"
@@ -268,8 +275,9 @@ def user_has_avatar(
     user_id: int,
     photo_updated_at: str | None,
     display_name: str | None = None,
+    ai_agent_key: str | None = None,
 ) -> bool:
-    if display_name and is_ai_agent(display_name) and ai_agent_avatar_file(display_name):
+    if display_name and is_ai_agent(display_name, ai_agent_key) and ai_agent_avatar_file(display_name, ai_agent_key):
         return True
     return user_avatars.avatar_exists_for_user(user_id, photo_updated_at)
 
@@ -1877,6 +1885,9 @@ def admin_page(invite_code):
                     flash(f"Merged accounts: {result}", "success")
                 else:
                     flash("Nothing to merge (same account or not found).", "error")
+        elif action == "repair_ai_split" and session.get("admin_secret") == pool["admin_secret"]:
+            db.repair_split_merged_cursor_ai_accounts()
+            flash("Cursor AI accounts re-split and points recalculated.", "success")
         elif action == "rename_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 user_id = int(request.form.get("user_id", 0))

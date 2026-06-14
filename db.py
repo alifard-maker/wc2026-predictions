@@ -190,6 +190,8 @@ def init_db() -> None:
         user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
         if user_cols and "photo_updated_at" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN photo_updated_at TEXT")
+        if user_cols and "ai_agent_key" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN ai_agent_key TEXT")
 
         conn.execute(
             """
@@ -231,6 +233,8 @@ def init_db() -> None:
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
     repair_revert_nostradamus_rename()
+    repair_backfill_ai_agent_keys()
+    repair_split_merged_cursor_ai_accounts()
     ensure_admin_secrets()
 
 
@@ -250,6 +254,154 @@ def repair_revert_nostradamus_rename() -> None:
               )
             """,
         )
+
+
+def repair_backfill_ai_agent_keys() -> None:
+    """Tag synced AI pool users so renames do not break pick sync."""
+    from ai_predictor import AI_AGENTS
+
+    with db() as conn:
+        for agent in AI_AGENTS:
+            conn.execute(
+                """
+                UPDATE users
+                SET ai_agent_key = ?
+                WHERE display_name = ? AND (ai_agent_key IS NULL OR ai_agent_key = '')
+                """,
+                (agent["key"], agent["display_name"]),
+            )
+
+
+def repair_split_merged_cursor_ai_accounts() -> None:
+    """
+    Undo mistaken merge of Cursor AI + Cursor AI Prediction.
+
+    Cursor AI gets canonical synced picks; legacy keeps picks that differ.
+    """
+    from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, predict_score, predict_tournament_picks
+
+    legacy_names = (AI_DISPLAY_NAME, "Cursor AI Predictions", "Nostradamus")
+    cursor_agent = next(a for a in AI_AGENTS if a["key"] == "cursor")
+    legacy_placeholders = ", ".join("?" * len(legacy_names))
+
+    with db() as conn:
+        pool_ids = [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        matches = conn.execute(
+            "SELECT id, home_team, away_team, actual_home, actual_away FROM matches ORDER BY sort_order, id"
+        ).fetchall()
+
+        for pool_id in pool_ids:
+            legacy = conn.execute(
+                f"""
+                SELECT id, display_name FROM users
+                WHERE pool_id = ? AND display_name IN ({legacy_placeholders})
+                ORDER BY id
+                LIMIT 1
+                """,
+                (pool_id, *legacy_names),
+            ).fetchone()
+            if not legacy:
+                continue
+
+            legacy_id = legacy["id"]
+            cursor_row = conn.execute(
+                """
+                SELECT id FROM users
+                WHERE pool_id = ? AND ai_agent_key = 'cursor'
+                LIMIT 1
+                """,
+                (pool_id,),
+            ).fetchone()
+
+            if cursor_row and cursor_row["id"] != legacy_id:
+                cursor_id = cursor_row["id"]
+            else:
+                if cursor_row and cursor_row["id"] == legacy_id:
+                    conn.execute(
+                        "UPDATE users SET ai_agent_key = NULL WHERE id = ?",
+                        (legacy_id,),
+                    )
+                cursor_id = conn.execute(
+                    """
+                    INSERT INTO users (pool_id, display_name, ai_agent_key)
+                    VALUES (?, ?, 'cursor')
+                    """,
+                    (pool_id, cursor_agent["display_name"]),
+                ).lastrowid
+
+            for match in matches:
+                exp_home, exp_away = predict_score(
+                    match["home_team"], match["away_team"], match["id"], "cursor"
+                )
+                legacy_pred = conn.execute(
+                    """
+                    SELECT id, home_score, away_score, is_bold
+                    FROM predictions WHERE user_id = ? AND match_id = ?
+                    """,
+                    (legacy_id, match["id"]),
+                ).fetchone()
+                cursor_pred = conn.execute(
+                    """
+                    SELECT id, is_bold FROM predictions
+                    WHERE user_id = ? AND match_id = ?
+                    """,
+                    (cursor_id, match["id"]),
+                ).fetchone()
+
+                bold = bool(cursor_pred["is_bold"]) if cursor_pred else False
+                if (
+                    legacy_pred
+                    and legacy_pred["home_score"] == exp_home
+                    and legacy_pred["away_score"] == exp_away
+                ):
+                    bold = bold or bool(legacy_pred["is_bold"])
+                    conn.execute("DELETE FROM predictions WHERE id = ?", (legacy_pred["id"],))
+
+                points = calculate_points(
+                    exp_home,
+                    exp_away,
+                    match["actual_home"],
+                    match["actual_away"],
+                    bold,
+                )
+                conn.execute(
+                    """
+                    INSERT INTO predictions (user_id, match_id, home_score, away_score, points, is_bold)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, match_id) DO UPDATE SET
+                        home_score = excluded.home_score,
+                        away_score = excluded.away_score,
+                        points = excluded.points,
+                        is_bold = excluded.is_bold,
+                        submitted_at = datetime('now')
+                    """,
+                    (cursor_id, match["id"], exp_home, exp_away, points, 1 if bold else 0),
+                )
+
+            cursor_picks = predict_tournament_picks(pool_id, "cursor")
+            legacy_vote = conn.execute(
+                "SELECT * FROM tournament_votes WHERE user_id = ?",
+                (legacy_id,),
+            ).fetchone()
+            cursor_vote = conn.execute(
+                "SELECT id FROM tournament_votes WHERE user_id = ?",
+                (cursor_id,),
+            ).fetchone()
+            if legacy_vote and not cursor_vote:
+                lv = dict(legacy_vote)
+                if (
+                    lv.get("top_scorer") == cursor_picks["top_scorer"]
+                    and lv.get("winner") == cursor_picks["winner"]
+                    and lv.get("second_place") == cursor_picks["second_place"]
+                    and lv.get("third_place") == cursor_picks["third_place"]
+                ):
+                    conn.execute(
+                        "UPDATE tournament_votes SET user_id = ? WHERE user_id = ?",
+                        (cursor_id, legacy_id),
+                    )
+
+            recalculate_user_match_points(legacy_id, conn=conn)
+            recalculate_user_match_points(cursor_id, conn=conn)
 
 
 def repair_canonical_player_scores() -> None:
@@ -1831,17 +1983,29 @@ def update_match_live(
             )
 
 
-def ensure_ai_user(pool_id: int, display_name: str) -> int:
+def ensure_ai_user(pool_id: int, display_name: str, agent_key: str | None = None) -> int:
     with db() as conn:
+        if agent_key:
+            existing = conn.execute(
+                "SELECT id FROM users WHERE pool_id = ? AND ai_agent_key = ?",
+                (pool_id, agent_key),
+            ).fetchone()
+            if existing:
+                return existing["id"]
         existing = conn.execute(
             "SELECT id FROM users WHERE pool_id = ? AND display_name = ?",
             (pool_id, display_name),
         ).fetchone()
         if existing:
+            if agent_key:
+                conn.execute(
+                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+                    (agent_key, existing["id"]),
+                )
             return existing["id"]
         cur = conn.execute(
-            "INSERT INTO users (pool_id, display_name) VALUES (?, ?)",
-            (pool_id, display_name),
+            "INSERT INTO users (pool_id, display_name, ai_agent_key) VALUES (?, ?, ?)",
+            (pool_id, display_name, agent_key),
         )
         return cur.lastrowid
 
@@ -1849,7 +2013,7 @@ def ensure_ai_user(pool_id: int, display_name: str) -> int:
 def ensure_all_ai_users(pool_id: int) -> list[int]:
     from ai_predictor import AI_AGENTS
 
-    return [ensure_ai_user(pool_id, agent["display_name"]) for agent in AI_AGENTS]
+    return [ensure_ai_user(pool_id, agent["display_name"], agent["key"]) for agent in AI_AGENTS]
 
 
 def sync_ai_predictions(pool_id: int) -> int:
@@ -1859,7 +2023,7 @@ def sync_ai_predictions(pool_id: int) -> int:
     saved = 0
     matches = get_all_matches()
     for agent in AI_AGENTS:
-        ai_id = ensure_ai_user(pool_id, agent["display_name"])
+        ai_id = ensure_ai_user(pool_id, agent["display_name"], agent["key"])
         for m in matches:
             if not is_prediction_open(m["match_date"], m["match_time"]):
                 continue
@@ -1885,7 +2049,7 @@ def sync_ai_tournament_vote(pool_id: int) -> bool:
 
     changed = False
     for agent in AI_AGENTS:
-        ai_id = ensure_ai_user(pool_id, agent["display_name"])
+        ai_id = ensure_ai_user(pool_id, agent["display_name"], agent["key"])
         if get_tournament_vote(ai_id):
             continue
         picks = predict_tournament_picks(pool_id, agent["key"])
@@ -1961,7 +2125,7 @@ def get_leaderboard(pool_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.display_name, u.photo_updated_at,
+            SELECT u.id, u.display_name, u.photo_updated_at, u.ai_agent_key,
                    COALESCE(SUM(p.points), 0) AS match_points,
                    COUNT(p.id) AS predictions_made,
                    SUM(CASE WHEN p.points >= 5 THEN 1 ELSE 0 END) AS exact_scores,
@@ -2066,7 +2230,7 @@ def get_pool_members_with_stats(pool_id: int) -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT u.id, u.display_name, u.photo_updated_at,
+            SELECT u.id, u.display_name, u.photo_updated_at, u.ai_agent_key,
                    (SELECT COUNT(*) FROM predictions WHERE user_id = u.id) AS prediction_count,
                    (SELECT COUNT(*) FROM comments WHERE user_id = u.id) AS comment_count
             FROM users u
@@ -2096,8 +2260,6 @@ def delete_user(user_id: int, pool_id: int) -> str | None:
 
 
 def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str:
-    from ai_predictor import is_ai_agent
-
     name = new_display_name.strip()
     if not name:
         return "Display name is required."
@@ -2111,8 +2273,6 @@ def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str
         ).fetchone()
         if not user:
             return "User not found in this pool."
-        if is_ai_agent(user["display_name"]):
-            return "Cannot rename AI pool members."
 
         conflict = conn.execute(
             "SELECT id, display_name FROM users WHERE pool_id = ? AND id != ?",

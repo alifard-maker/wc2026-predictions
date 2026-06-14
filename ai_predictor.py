@@ -17,6 +17,7 @@ AI_AGENTS: list[dict] = [
 ]
 
 AI_AGENT_NAMES: set[str] = {a["display_name"] for a in AI_AGENTS}
+AI_AGENT_KEYS: set[str] = {a["key"] for a in AI_AGENTS}
 
 # Weighted toward realistic results — fewer draws than before.
 SCORE_OPTIONS = [
@@ -125,24 +126,34 @@ def predict_tournament_picks(pool_id: int, agent_key: str = "cursor") -> dict[st
     }
 
 
-def is_ai_agent(display_name: str) -> bool:
-    return display_name in AI_AGENT_NAMES or display_name == AI_DISPLAY_NAME
-
-
-def ai_agent_badge(display_name: str) -> str:
-    for agent in AI_AGENTS:
-        if agent["display_name"] == display_name:
-            return agent["badge"]
-    if display_name == AI_DISPLAY_NAME:
-        return "Cursor"
-    return "AI"
-
-
-def ai_agent_avatar_file(display_name: str) -> str | None:
-    """Static image path under /static for this AI agent, if any."""
-    for agent in AI_AGENTS:
-        if agent["display_name"] == display_name:
-            return agent.get("avatar")
-    if display_name == AI_DISPLAY_NAME:
-        return AI_AGENTS[0].get("avatar")
+def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = None) -> dict | None:
+    if ai_agent_key:
+        for agent in AI_AGENTS:
+            if agent["key"] == ai_agent_key:
+                return agent
+    if display_name:
+        for agent in AI_AGENTS:
+            if agent["display_name"] == display_name:
+                return agent
+        if display_name == AI_DISPLAY_NAME:
+            return {"badge": "Cursor", "avatar": AI_AGENTS[0].get("avatar")}
     return None
+
+
+def is_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
+    if ai_agent_key and ai_agent_key in AI_AGENT_KEYS:
+        return True
+    if display_name in AI_AGENT_NAMES or display_name == AI_DISPLAY_NAME:
+        return True
+    return False
+
+
+def ai_agent_badge(display_name: str | None = None, ai_agent_key: str | None = None) -> str:
+    agent = _agent_profile(display_name, ai_agent_key)
+    return agent["badge"] if agent else "AI"
+
+
+def ai_agent_avatar_file(display_name: str | None = None, ai_agent_key: str | None = None) -> str | None:
+    """Static image path under /static for this AI agent, if any."""
+    agent = _agent_profile(display_name, ai_agent_key)
+    return agent.get("avatar") if agent else None

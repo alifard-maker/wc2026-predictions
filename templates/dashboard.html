@@ -92,7 +92,7 @@
         <td>{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</td>
         <td class="player-cell-with-avatar">
           {{ user_avatar(row.id, row.display_name, row.photo_updated_at, pool.invite_code, 'sm') }}
-          <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>{% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name) }}
+          <a href="{{ url_for('player_page', invite_code=pool.invite_code, user_id=row.id) }}">{{ row.display_name }}</a>{% if row.id == session.user_id %} (you){% endif %}{{ render_ai_badge(row.display_name, row.ai_agent_key) }}
         </td>
         <td><strong>{{ row.total_points }}</strong></td>
         <td>{{ row.exact_scores }}</td>

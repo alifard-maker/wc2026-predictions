@@ -57,7 +57,16 @@
 </div>
 
 <h2 class="section-title">Member management</h2>
-<p style="color: var(--muted)">Rename members, remove users, edit their picks after deadlines, or moderate comments when someone reaches out.</p>
+<p style="color: var(--muted)">Rename members (including AI agents), remove users, edit picks after deadlines, or moderate comments.</p>
+
+<div class="card" style="margin-bottom: 1rem">
+  <h3>AI accounts</h3>
+  <p class="muted-inline" style="margin: 0 0 0.75rem">Re-split <strong>Cursor AI</strong> and <strong>Cursor AI Prediction</strong> if their points were accidentally merged.</p>
+  <form method="post">
+    <input type="hidden" name="action" value="repair_ai_split">
+    <button type="submit" class="btn btn-secondary btn-sm">Repair Cursor AI split &amp; recalc</button>
+  </form>
+</div>
 
 <div class="card" style="margin-bottom: 2rem">
   <h3>Pool members ({{ members|length }})</h3>
@@ -75,30 +84,38 @@
       <tr>
         <td>
           <strong>{{ m.display_name }}</strong>
-          {% if is_ai_agent(m.display_name) %}<span class="badge">AI</span>{% endif %}
+          {% if is_ai_agent(m.display_name, m.ai_agent_key) %}<span class="badge">AI</span>{% endif %}
         </td>
         <td>{{ m.prediction_count }}</td>
         <td>{{ m.comment_count }}</td>
         <td class="admin-member-actions">
-          {% if not is_ai_agent(m.display_name) %}
           <form method="post" class="admin-rename-form">
             <input type="hidden" name="action" value="rename_user">
             <input type="hidden" name="user_id" value="{{ m.id }}">
             <input type="text" name="new_display_name" value="{{ m.display_name }}" maxlength="40" required>
             <button type="submit" class="btn btn-secondary btn-sm">Rename</button>
           </form>
+          {% if not is_ai_agent(m.display_name, m.ai_agent_key) %}
           <a href="{{ url_for('admin_page', invite_code=pool.invite_code, user_id=m.id) }}#edit-picks" class="btn btn-secondary btn-sm">Edit picks</a>
           <form method="post" class="admin-merge-form" onsubmit="return confirm('Merge {{ m.display_name }} into the selected account? Predictions are combined; clashes keep the keeper\\'s pick.')">
             <input type="hidden" name="action" value="merge_user">
             <input type="hidden" name="dup_user_id" value="{{ m.id }}">
             <select name="keeper_user_id" required aria-label="Merge {{ m.display_name }} into">
               <option value="">Merge into…</option>
-              {% for other in members if other.id != m.id and not is_ai_agent(other.display_name) %}
+              {% for other in members if other.id != m.id and not is_ai_agent(other.display_name, other.ai_agent_key) %}
               <option value="{{ other.id }}">{{ other.display_name }}</option>
               {% endfor %}
             </select>
             <button type="submit" class="btn btn-secondary btn-sm">Merge</button>
           </form>
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete {{ m.display_name }}? This removes all their predictions, comments, and tournament picks.')">
+            <input type="hidden" name="action" value="delete_user">
+            <input type="hidden" name="user_id" value="{{ m.id }}">
+            <button type="submit" class="btn-link btn-link-danger">Delete user</button>
+          </form>
+          {% else %}
+          <span style="color: var(--muted); font-size: 0.85rem">Synced AI picks{% if m.ai_agent_key %} ({{ m.ai_agent_key }}){% endif %}</span>
+          {% endif %}
           <form method="post" style="display:inline">
             <input type="hidden" name="action" value="recalculate_user">
             <input type="hidden" name="user_id" value="{{ m.id }}">
@@ -110,14 +127,6 @@
             <input type="hidden" name="user_id" value="{{ m.id }}">
             <button type="submit" class="btn-link btn-link-danger">Clear comments</button>
           </form>
-          {% endif %}
-          <form method="post" style="display:inline" onsubmit="return confirm('Delete {{ m.display_name }}? This removes all their predictions, comments, and tournament picks.')">
-            <input type="hidden" name="action" value="delete_user">
-            <input type="hidden" name="user_id" value="{{ m.id }}">
-            <button type="submit" class="btn-link btn-link-danger">Delete user</button>
-          </form>
-          {% else %}
-          <span style="color: var(--muted); font-size: 0.85rem">AI member</span>
           {% endif %}
         </td>
       </tr>
