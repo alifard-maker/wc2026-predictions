@@ -85,7 +85,7 @@
     <span id="tournament-vote-deadline" class="countdown-match"></span>
   </a>
   <a href="{{ url_for('leaderboard_page', invite_code=session.invite_code) }}" class="leaderboard-ticker" id="leaderboard-ticker" title="View full leaderboard">
-    <span class="ticker-label">🏆 Top 5</span>
+    <span class="ticker-label">🏆 Top 3</span>
     <div class="leaderboard-ticker-body" id="leaderboard-ticker-body">
       {% if top_leaderboard %}
       {% for row in top_leaderboard %}

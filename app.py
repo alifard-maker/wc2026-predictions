@@ -82,7 +82,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.31"
+APP_VERSION = "Beta 3.32"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -149,7 +149,7 @@ def leaderboard_top_for_json(
                     r["display_name"],
                 ) if user_has_avatar(r["id"], r.get("photo_updated_at"), r["display_name"]) else None,
             }
-            for r in board[:5]
+            for r in board[:3]
         ],
     }
 
@@ -200,7 +200,7 @@ def inject_public_url():
             ctx["live_commentaries"][0] if ctx["live_commentaries"] else None
         )
         lb = db.get_leaderboard(pool_id)
-        ctx["top_leaderboard"] = lb[:5]
+        ctx["top_leaderboard"] = lb[:3]
         ctx["leader_message"] = db.get_leader_message(lb)
         next_k = next_scheduled_kickoff(raw_matches, now)
         ctx["next_kickoff"] = next_k
@@ -762,7 +762,6 @@ def pool_dashboard(invite_code):
     next_prediction = find_next_prediction_needed(enriched)
     bold_by_day = db.get_user_bold_by_day(user_id)
     bold_locked_days = compute_bold_locked_days(bold_by_day)
-    recaps = list_matchday_recaps(pool["id"])[:3]
 
     return render_template(
         "dashboard.html",
@@ -778,8 +777,6 @@ def pool_dashboard(invite_code):
         tournament_vote=get_tournament_vote_status(user_id),
         bold_by_day=bold_by_day,
         bold_locked_days=bold_locked_days,
-        recaps=recaps,
-        wc_news=get_wc_news(),
         is_admin=session.get("admin_secret") == pool["admin_secret"],
         invite_url=invite_url_for(invite_code),
     )

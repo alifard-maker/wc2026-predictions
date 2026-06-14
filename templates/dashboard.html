@@ -68,23 +68,6 @@
   </div>
 </div>
 
-<div class="card wc-news-card" id="wc-news" style="margin-bottom: 2rem">
-  <div class="wc-news-header">
-    <h3>📰 World Cup news</h3>
-    <span class="wc-news-updated" id="wc-news-updated">{% if wc_news %}Auto-updates every 10 min{% endif %}</span>
-  </div>
-  <ul class="wc-news-list" id="wc-news-list">
-    {% for item in wc_news %}
-    <li>
-      <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
-      <span class="wc-news-meta">{{ item.source }}{% if item.published_display %} · {{ item.published_display }}{% endif %}</span>
-    </li>
-    {% else %}
-    <li class="wc-news-empty">Headlines will appear here when news feeds are available.</li>
-    {% endfor %}
-  </ul>
-</div>
-
 {% if finished_count > 0 %}
 <a href="{{ url_for('finished_matches_page', invite_code=pool.invite_code) }}" class="card finished-matches-link-card">
   <span class="finished-matches-link-label">✓ {{ finished_count }} finished match{{ 'es' if finished_count != 1 else '' }}</span>
@@ -93,7 +76,7 @@
 {% endif %}
 
 <div class="card" style="margin-bottom: 2rem">
-  <h3>Top 5</h3>
+  <h3>Top 3</h3>
   {% if leader_message %}
   <p style="color: var(--accent-2); font-size: 0.9rem; margin: 0 0 1rem">🏆 {{ leader_message }}</p>
   {% elif leaderboard %}
@@ -104,7 +87,7 @@
       <tr><th>#</th><th>Player</th><th>Points</th><th>Exact</th></tr>
     </thead>
     <tbody>
-      {% for row in leaderboard[:5] %}
+      {% for row in leaderboard[:3] %}
       <tr class="{% if row.rank and row.rank <= 3 %}rank-{{ row.rank }}{% endif %}">
         <td>{% if row.rank %}{{ row.rank }}{% else %}—{% endif %}</td>
         <td class="player-cell-with-avatar">
@@ -122,21 +105,6 @@
   <a href="{{ url_for('leaderboard_page', invite_code=pool.invite_code) }}" style="display: inline-block; margin-top: 1rem">Full leaderboard →</a>
   <a href="{{ url_for('my_stats_page', invite_code=pool.invite_code) }}" style="display: inline-block; margin-top: 1rem; margin-left: 1rem">My season stats →</a>
 </div>
-
-{% if recaps %}
-<div class="card" style="margin-bottom: 2rem">
-  <h3>📰 Latest matchday recaps</h3>
-  {% for r in recaps %}
-  <div class="recap-teaser">
-    <strong>MD{{ r.matchday }}</strong>
-    {% if r.pick_party.hive_mind %}· 🤝 {{ r.pick_party.hive_mind.pct }}% on {{ r.pick_party.hive_mind.score }}{% endif %}
-    {% if r.pick_party.boldest %}· 🎰 {{ r.pick_party.boldest.player }}{% endif %}
-    {% if r.top_player %}· 👑 {{ r.top_player.name }}{% endif %}
-  </div>
-  {% endfor %}
-  <a href="{{ url_for('recaps_page', invite_code=pool.invite_code) }}" style="display: inline-block; margin-top: 0.75rem">All recaps →</a>
-</div>
-{% endif %}
 
 <h2 class="section-title" id="matches">The Book — All Matches</h2>
 <p class="muted-inline" style="margin: -0.5rem 0 1rem">🎰 Mark one <strong>bold pick</strong> per calendar day (ET) for 2× points (5→10, 2→4)</p>
@@ -337,46 +305,5 @@
   }
   setInterval(refreshLiveScores, 15000);
   refreshLiveScores();
-
-  (function() {
-    const listEl = document.getElementById('wc-news-list');
-    const updatedEl = document.getElementById('wc-news-updated');
-    const feedUrl = "{{ url_for('wc_news_feed', invite_code=pool.invite_code) }}";
-    if (!listEl || !feedUrl) return;
-
-    function esc(s) {
-      const d = document.createElement('div');
-      d.textContent = s;
-      return d.innerHTML;
-    }
-
-    function renderNews(data) {
-      if (!data.items || !data.items.length) {
-        listEl.innerHTML = '<li class="wc-news-empty">No headlines right now — check back soon.</li>';
-        return;
-      }
-      listEl.innerHTML = data.items.map(item =>
-        `<li><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` +
-        `<span class="wc-news-meta">${esc(item.source || '')}` +
-        (item.published_display ? ` · ${esc(item.published_display)}` : '') +
-        `</span></li>`
-      ).join('');
-      if (updatedEl) {
-        updatedEl.textContent = data.fetched_at
-          ? `Updated ${new Date(data.fetched_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · every 10 min`
-          : 'Auto-updates every 10 min';
-      }
-    }
-
-    async function refreshNews() {
-      try {
-        const res = await fetch(feedUrl, { cache: 'no-store' });
-        if (!res.ok) return;
-        renderNews(await res.json());
-      } catch (_) {}
-    }
-
-    setInterval(refreshNews, 600000);
-  })();
 </script>
 {% endblock %}
