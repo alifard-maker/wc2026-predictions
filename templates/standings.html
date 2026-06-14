@@ -56,11 +56,21 @@
 
 <h2 class="section-title" id="groups-section-title">Group stage</h2>
 <p class="standings-legend" id="standings-legend">
-  <span class="legend-dot legend-qualified"></span> Qualified / leading
-  <span class="legend-dot legend-contending"></span> 3rd-place race
-  <span class="legend-dot legend-eliminated"></span> Out / bottom
-  <span class="legend-live-note{% if not view.has_live_standings %} hidden{% endif %}" id="standings-live-legend">
-    <span class="legend-dot legend-live"></span> Live match — provisional points
+  <span class="legend-item">
+    <span class="legend-dot legend-qualified"></span>
+    <span>Qualified / leading</span>
+  </span>
+  <span class="legend-item">
+    <span class="legend-dot legend-contending"></span>
+    <span>3rd-place race</span>
+  </span>
+  <span class="legend-item">
+    <span class="legend-dot legend-eliminated"></span>
+    <span>Out / bottom</span>
+  </span>
+  <span class="legend-item legend-live-note{% if not view.has_live_standings %} hidden{% endif %}" id="standings-live-legend">
+    <span class="legend-dot legend-live"></span>
+    <span>Live match — provisional points</span>
   </span>
 </p>
 
