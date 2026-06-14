@@ -230,7 +230,52 @@ def init_db() -> None:
     merge_duplicate_users()
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
+    repair_rename_cursor_ai_agent()
     ensure_admin_secrets()
+
+
+def repair_rename_cursor_ai_agent() -> None:
+    """Rename legacy Cursor AI pool users to Nostradamus and merge duplicates."""
+    from ai_predictor import CURSOR_AGENT_DISPLAY_NAME, CURSOR_LEGACY_NAMES
+
+    legacy = tuple(CURSOR_LEGACY_NAMES)
+    placeholders = ", ".join("?" * len(legacy))
+    with db() as conn:
+        pool_ids = [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        for pool_id in pool_ids:
+            rows = conn.execute(
+                f"""
+                SELECT id, display_name FROM users
+                WHERE pool_id = ? AND display_name IN ({placeholders}, ?)
+                ORDER BY id
+                """,
+                (pool_id, *legacy, CURSOR_AGENT_DISPLAY_NAME),
+            ).fetchall()
+            if not rows:
+                continue
+
+            keeper = next(
+                (row for row in rows if row["display_name"] == CURSOR_AGENT_DISPLAY_NAME),
+                rows[0],
+            )
+            keeper_id = keeper["id"]
+            if keeper["display_name"] != CURSOR_AGENT_DISPLAY_NAME:
+                conn.execute(
+                    "UPDATE users SET display_name = ? WHERE id = ?",
+                    (CURSOR_AGENT_DISPLAY_NAME, keeper_id),
+                )
+            for dup in rows:
+                if dup["id"] == keeper_id:
+                    continue
+                _merge_user_records(
+                    conn,
+                    keeper_id,
+                    dup["id"],
+                    keeper_label=CURSOR_AGENT_DISPLAY_NAME,
+                    dup_label=dup["display_name"],
+                    pool_id=pool_id,
+                )
+            recalculate_user_match_points(keeper_id, conn=conn)
 
 
 def repair_canonical_player_scores() -> None:
