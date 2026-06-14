@@ -1990,6 +1990,47 @@ textarea:focus {
   width: 100%;
 }
 
+.match-score-stack-finished {
+  gap: 0.2rem;
+}
+
+.match-score-stack-finished .match-actual-row {
+  padding-top: 0;
+  border-top: none;
+}
+
+.match-result-scoreline,
+.fixture-prediction-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+}
+
+.match-pick-inline,
+.fixture-pick-inline {
+  font-size: 0.92em;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.fixture-finished-inline .fixture-prediction-row {
+  display: none;
+}
+
+.fixture-finished-inline .fixture-actual-row {
+  gap: 0.35rem;
+}
+
+.fixture-prediction-meta {
+  font-size: 0.85rem;
+}
+
+.fixture-prediction-meta .points-earned {
+  margin: 0;
+}
+
 .match-pick-row,
 .match-actual-row {
   display: flex;

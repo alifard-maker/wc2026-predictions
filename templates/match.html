@@ -39,19 +39,31 @@
     <span class="match-matchup-team team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
   </div>
 
-  <div class="match-score-stack">
+  <div class="match-score-stack{% if match.is_finished %} match-score-stack-finished{% endif %}">
+    {% if match.is_live %}
     {% if match.prediction %}
     <div class="match-pick-row" id="match-pick-row">
       <span class="fixture-result-label">Your prediction</span>
       <span class="match-pick-score">{{ match.prediction.home_score }} – {{ match.prediction.away_score }}</span>
       {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
-      {% if match.prediction.points is not none %}<span class="points-earned">+{{ match.prediction.points }} pts</span>{% endif %}
     </div>
     {% endif %}
-    {% if match.is_live or match.is_finished %}
     <div class="match-actual-row">
-      <span class="fixture-result-label">{% if match.is_live %}Live{% else %}Result{% endif %}</span>
+      <span class="fixture-result-label">Live</span>
       <span id="match-score" class="match-matchup-score">{{ match.display_home }} – {{ match.display_away }}</span>
+    </div>
+    {% elif match.is_finished %}
+    <div class="match-actual-row match-result-inline">
+      <span class="fixture-result-label">Result</span>
+      <div class="match-result-scoreline">
+        <span id="match-score" class="match-matchup-score">
+          <span class="match-actual-score">{{ match.display_home }} – {{ match.display_away }}</span>{% if match.prediction %}<span class="match-pick-inline"> ({{ match.prediction.home_score }} – {{ match.prediction.away_score }})</span>{% endif %}
+        </span>
+        {% if match.prediction %}
+        {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
+        {% if match.prediction.points is not none %}<span class="points-earned">+{{ match.prediction.points }} pts</span>{% endif %}
+        {% endif %}
+      </div>
     </div>
     {% endif %}
   </div>
