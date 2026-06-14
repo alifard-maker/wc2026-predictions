@@ -26,13 +26,19 @@
   <a href="{{ match_detail_url(pool.invite_code, m.id) }}" class="fixture-match-link" style="margin-left: auto">View match →</a>
 </div>
 
+{% if not m.show_result %}
 <div class="team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</div>
+{% endif %}
 
 {% if m.show_result %}
 <div class="fixture-result-stack live-score-display" data-live-score="{{ m.id }}" data-kickoff="{{ m.kickoff.isoformat() }}">
   <div class="fixture-actual-row">
     <span class="fixture-result-label">{% if m.is_live %}Live{% else %}Result{% endif %}</span>
-    <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">{{ m.display_home }} – {{ m.display_away }}</span>
+    <div class="fixture-matchup-line">
+      <span class="fixture-matchup-team team home">{{ team_with_flag(m.home_team, pool.invite_code) }}</span>
+      <span class="fixture-result-score" data-live-actual-score="{{ m.id }}">{{ m.display_home }} – {{ m.display_away }}</span>
+      <span class="fixture-matchup-team team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
+    </div>
     <div class="fixture-result-events" data-live-events="{{ m.id }}">{{ render_match_events(m.goals, m.cards, m.home_team, m.away_team, compact=true) }}</div>
   </div>
   {% if m.prediction %}
@@ -87,6 +93,8 @@
 <div class="prediction-done" style="color: var(--muted)">—</div>
 {% endif %}
 
+{% if not m.show_result %}
 <div class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</div>
 <div></div>
+{% endif %}
 {% endmacro %}

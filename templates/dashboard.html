@@ -124,7 +124,7 @@
 <form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
   <div class="fixture-list fixture-list-active" id="active-fixtures">
     {% for m in active_matches %}
-    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if m.show_result %} fixture-has-result{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
       {{ render_fixture_content(m, false) }}
     </div>
     {% endfor %}
@@ -232,7 +232,11 @@
     }
     return `<div class="fixture-actual-row">
       <span class="fixture-result-label">${actualLabel}</span>
-      <span class="fixture-result-score" data-live-actual-score="${m.id}">${m.display_home} – ${m.display_away}</span>
+      <div class="fixture-matchup-line">
+        <span class="fixture-matchup-team team home">${esc(m.home_team)}</span>
+        <span class="fixture-result-score" data-live-actual-score="${m.id}">${m.display_home} – ${m.display_away}</span>
+        <span class="fixture-matchup-team team away">${esc(m.away_team)}</span>
+      </div>
       <div class="fixture-result-events" data-live-events="${m.id}">${eventsHtml}</div>
     </div>${predHtml}`;
   }
@@ -296,13 +300,17 @@
       } else if ((m.is_finished || m.show_result) && !score) {
         const fixture = document.getElementById(`match-${m.id}`);
         const homeTeam = fixture?.querySelector('.team.home');
-        if (fixture && homeTeam) {
+        if (fixture && !fixture.querySelector('[data-live-score]')) {
+          fixture.classList.add('fixture-has-result');
+          fixture.querySelectorAll(':scope > .team.home, :scope > .team.away').forEach(el => el.remove());
           const wrap = document.createElement('div');
           wrap.className = 'fixture-result-stack live-score-display';
           wrap.dataset.liveScore = String(m.id);
           if (m.kickoff_iso) wrap.dataset.kickoff = m.kickoff_iso;
           wrap.innerHTML = renderFixtureResultInnerHtml(m);
-          homeTeam.insertAdjacentElement('afterend', wrap);
+          const meta = fixture.querySelector('.fixture-meta');
+          if (meta) meta.insertAdjacentElement('afterend', wrap);
+          else fixture.appendChild(wrap);
         }
       }
     });

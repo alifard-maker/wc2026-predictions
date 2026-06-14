@@ -139,7 +139,11 @@
     }
     return `<div class="fixture-actual-row">
       <span class="fixture-result-label">${actualLabel}</span>
-      <span class="fixture-result-score" data-live-actual-score="${m.id}">${m.display_home} – ${m.display_away}</span>
+      <div class="fixture-matchup-line">
+        <span class="fixture-matchup-team team home">${m.home_team}</span>
+        <span class="fixture-result-score" data-live-actual-score="${m.id}">${m.display_home} – ${m.display_away}</span>
+        <span class="fixture-matchup-team team away">${m.away_team}</span>
+      </div>
       <div class="fixture-result-events" data-live-events="${m.id}">${eventsHtml}</div>
     </div>${predHtml}`;
   }

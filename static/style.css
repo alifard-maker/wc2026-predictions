@@ -460,6 +460,15 @@ select:focus {
   opacity: 1;
 }
 
+.fixture.fixture-has-result {
+  grid-template-columns: 1fr;
+}
+
+.fixture.fixture-has-result .goal-column-title,
+.fixture.fixture-has-result .card-column-title {
+  display: none;
+}
+
 .fixture-body {
   display: contents;
 }
@@ -2151,6 +2160,27 @@ textarea:focus {
   gap: 0.2rem;
 }
 
+.fixture-matchup-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  width: 100%;
+}
+
+.fixture-matchup-team.home {
+  text-align: right;
+}
+
+.fixture-matchup-team.away {
+  text-align: left;
+}
+
+.fixture-matchup-line .fixture-result-score {
+  flex-shrink: 0;
+}
+
 .fixture-prediction-row {
   padding-top: 0.55rem;
   border-top: 1px solid var(--border);
@@ -3529,6 +3559,15 @@ a.bracket-match:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .fixture-matchup-line {
+    gap: 0.35rem 0.5rem;
+  }
+
+  .fixture-matchup-team.home,
+  .fixture-matchup-team.away {
+    text-align: center;
   }
 
   .finished-match-toggle {
