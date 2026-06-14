@@ -61,10 +61,10 @@
 
 <div class="card" style="margin-bottom: 1rem">
   <h3>AI accounts</h3>
-  <p class="muted-inline" style="margin: 0 0 0.75rem">Merge <strong>Cursor AI</strong> into <strong>Nostradamus</strong>: Cursor's picks move over, but Cursor's points are discarded. Nostradamus keeps its own picks and points on clashes.</p>
+  <p class="muted-inline" style="margin: 0 0 0.75rem">Generate <strong>Cursor AI</strong> picks for every <strong>remaining match</strong> and add them to <strong>Nostradamus</strong> where a pick is missing. Existing Nostradamus picks are kept. The separate Cursor AI account is removed.</p>
   <form method="post" style="display:inline-block">
-    <input type="hidden" name="action" value="repair_ai_merge">
-    <button type="submit" class="btn btn-secondary btn-sm">Merge Cursor AI into Nostradamus</button>
+    <input type="hidden" name="action" value="fill_nostradamus_picks">
+    <button type="submit" class="btn btn-secondary btn-sm">Fill Nostradamus from Cursor AI</button>
   </form>
 </div>
 

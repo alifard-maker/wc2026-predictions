@@ -237,7 +237,6 @@ def init_db() -> None:
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
     repair_backfill_ai_agent_keys()
-    repair_merge_cursor_into_nostradamus()
     repair_split_merged_cursor_ai_accounts()
     ensure_admin_secrets()
 
@@ -295,37 +294,6 @@ def repair_backfill_ai_agent_keys() -> None:
                     "UPDATE users SET ai_agent_key = ? WHERE id = ?",
                     (key, row["id"]),
                 )
-
-
-def _merge_cursor_preds_into_keeper(
-    conn,
-    keeper_id: int,
-    cursor_id: int,
-) -> list[int]:
-    """Move Cursor AI picks onto Nostradamus; clashes keep Nostradamus. Returns unscored match ids."""
-    transferred_match_ids: list[int] = []
-    preds = conn.execute(
-        "SELECT id, match_id FROM predictions WHERE user_id = ?",
-        (cursor_id,),
-    ).fetchall()
-    for pred in preds:
-        clash = conn.execute(
-            "SELECT id FROM predictions WHERE user_id = ? AND match_id = ?",
-            (keeper_id, pred["match_id"]),
-        ).fetchone()
-        if clash:
-            conn.execute("DELETE FROM predictions WHERE id = ?", (pred["id"],))
-        else:
-            conn.execute(
-                """
-                UPDATE predictions
-                SET user_id = ?, points = NULL, points_excluded = 1
-                WHERE id = ?
-                """,
-                (keeper_id, pred["id"]),
-            )
-            transferred_match_ids.append(pred["match_id"])
-    return transferred_match_ids
 
 
 def _find_nostradamus_keeper(conn, pool_id: int):
@@ -389,99 +357,69 @@ def _find_cursor_ai_user(conn, pool_id: int, exclude_id: int | None):
     return max(candidates, key=cursor_score)
 
 
-def repair_merge_cursor_into_nostradamus(pool_id: int | None = None) -> list[str]:
-    """
-    Merge synced Cursor AI into Nostradamus (ex Cursor AI Predictions).
-
-    - Cursor AI predictions move to Nostradamus (fills gaps only)
-    - Clashes keep Nostradamus's pick
-    - Points from Cursor AI picks are never counted
-    - Cursor AI pool member is removed
-    """
-    from ai_predictor import LEGACY_PREDICTIONS_AGENT_KEY
-
-    actions: list[str] = []
+def fill_nostradamus_cursor_picks(pool_id: int) -> str:
+    """Generate Cursor AI picks for remaining fixtures and assign them to Nostradamus."""
+    from ai_predictor import LEGACY_PREDICTIONS_AGENT_KEY, predict_score
 
     with db() as conn:
-        pool_ids = (
-            [pool_id]
-            if pool_id is not None
-            else [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        keeper = _find_nostradamus_keeper(conn, pool_id)
+        if not keeper:
+            return "Nostradamus not found in this pool."
+
+        keeper_id = keeper["id"]
+        conn.execute(
+            "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+            (LEGACY_PREDICTIONS_AGENT_KEY, keeper_id),
         )
 
-        for pid in pool_ids:
-            keeper = _find_nostradamus_keeper(conn, pid)
-            if not keeper:
-                actions.append(f"Pool {pid}: Nostradamus not found")
-                continue
+        cursor_user = _find_cursor_ai_user(conn, pool_id, keeper_id)
+        if cursor_user:
+            conn.execute("DELETE FROM users WHERE id = ?", (cursor_user["id"],))
 
-            keeper_id = keeper["id"]
-            if keeper["ai_agent_key"] == "cursor":
-                conn.execute(
-                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
-                    (LEGACY_PREDICTIONS_AGENT_KEY, keeper_id),
-                )
+        matches = conn.execute(
+            """
+            SELECT id, home_team, away_team
+            FROM matches
+            WHERE actual_home IS NULL
+            ORDER BY sort_order, id
+            """
+        ).fetchall()
 
-            cursor_user = _find_cursor_ai_user(conn, pid, keeper_id)
-            if not cursor_user:
-                conn.execute(
-                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
-                    (LEGACY_PREDICTIONS_AGENT_KEY, keeper_id),
-                )
-                actions.append(
-                    f'Pool {pid}: no separate Cursor AI account (keeper: {keeper["display_name"]})'
-                )
-                continue
-
-            cursor_id = cursor_user["id"]
-            cursor_pred_count = _user_prediction_count(conn, cursor_id)
-            transferred = _merge_cursor_preds_into_keeper(conn, keeper_id, cursor_id)
-
-            dup_vote = conn.execute(
-                "SELECT id FROM tournament_votes WHERE user_id = ?",
-                (cursor_id,),
+        assigned = 0
+        skipped = 0
+        for match in matches:
+            existing = conn.execute(
+                "SELECT id FROM predictions WHERE user_id = ? AND match_id = ?",
+                (keeper_id, match["id"]),
             ).fetchone()
-            if dup_vote:
-                keeper_vote = conn.execute(
-                    "SELECT id FROM tournament_votes WHERE user_id = ?",
-                    (keeper_id,),
-                ).fetchone()
-                if keeper_vote:
-                    conn.execute("DELETE FROM tournament_votes WHERE user_id = ?", (cursor_id,))
-                else:
-                    conn.execute(
-                        "UPDATE tournament_votes SET user_id = ? WHERE user_id = ?",
-                        (keeper_id, cursor_id),
-                    )
+            if existing:
+                skipped += 1
+                continue
 
-            conn.execute(
-                "UPDATE comments SET user_id = ? WHERE user_id = ?",
-                (keeper_id, cursor_id),
+            home, away = predict_score(
+                match["home_team"], match["away_team"], match["id"], "cursor"
             )
-            conn.execute("DELETE FROM users WHERE id = ?", (cursor_id,))
             conn.execute(
-                "UPDATE users SET ai_agent_key = ? WHERE id = ?",
-                (LEGACY_PREDICTIONS_AGENT_KEY, keeper_id),
-            )
-            recalculate_user_match_points(keeper_id, conn=conn)
-            for match_id in transferred:
-                conn.execute(
-                    """
-                    UPDATE predictions
-                    SET points = NULL, points_excluded = 1
-                    WHERE user_id = ? AND match_id = ?
-                    """,
-                    (keeper_id, match_id),
+                """
+                INSERT INTO predictions (
+                    user_id, match_id, home_score, away_score, points, is_bold, points_excluded
                 )
-
-            overlap = cursor_pred_count - len(transferred)
-            overlap_note = f", {overlap} overlapped" if overlap else ""
-            actions.append(
-                f'Pool {pid}: merged {cursor_user["display_name"]} → {keeper["display_name"]} — '
-                f"{len(transferred)} pick(s) moved{overlap_note}, Cursor points discarded"
+                VALUES (?, ?, ?, ?, NULL, 0, 0)
+                """,
+                (keeper_id, match["id"], home, away),
             )
+            assigned += 1
 
-    return actions
+        recalculate_user_match_points(keeper_id, conn=conn)
+
+        keeper_name = keeper["display_name"]
+        cursor_name = cursor_user["display_name"] if cursor_user else None
+
+    removed = f' Removed synced account "{cursor_name}".' if cursor_name else ""
+    return (
+        f"Added {assigned} Cursor pick(s) to {keeper_name} for remaining matches"
+        f" ({skipped} already had picks).{removed}"
+    )
 
 
 def repair_split_merged_cursor_ai_accounts() -> None:
