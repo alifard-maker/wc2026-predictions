@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.87"
+APP_VERSION = "Beta 3.88"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1648,6 +1648,19 @@ def match_detail(invite_code, match_id):
         flash("Match not found.", "error")
         return redirect(url_for("pool_dashboard", invite_code=invite_code))
 
+    match_row = dict(match)
+    live_score_sync.sync_live_scores()
+    try:
+        import espn_live_sync
+
+        espn_live_sync.refresh_match_goal_flags(
+            match_id,
+            match_row,
+            set(db.get_distinct_teams()),
+        )
+    except Exception:
+        pass
+
     user_id = session["user_id"]
     enriched = enrich_matches([match], db.get_user_predictions(user_id))[0]
     bold_by_day = db.get_user_bold_by_day(user_id)
@@ -1710,7 +1723,19 @@ def match_watch_feed(invite_code, match_id):
     if not match:
         return jsonify({"error": "not_found"}), 404
 
+    match_row = dict(match)
     live_score_sync.sync_live_scores()
+    try:
+        import espn_live_sync
+
+        espn_live_sync.refresh_match_goal_flags(
+            match_id,
+            match_row,
+            set(db.get_distinct_teams()),
+        )
+    except Exception:
+        pass
+
     enriched = enrich_matches([match])[0]
     raw_preds = db.get_pool_predictions_summary(pool["id"], match_id)
     preds = filter_predictions_for_display(raw_preds, session["user_id"], dict(match))

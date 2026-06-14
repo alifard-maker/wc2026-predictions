@@ -543,6 +543,89 @@ def _competitor_teams(
     return home_name, away_name, team_by_id
 
 
+def _fetch_competition_for_event(event_id: str, match_date: str | None = None) -> dict | None:
+    dates: list[str | None] = []
+    if match_date:
+        dates.append(match_date.replace("-", ""))
+    dates.append(None)
+    for dates_slug in dates:
+        payload = _fetch_scoreboard(dates_slug)
+        if not payload:
+            continue
+        for event in payload.get("events") or []:
+            if str(event.get("id") or "") != event_id:
+                continue
+            competitions = event.get("competitions") or []
+            if competitions:
+                return competitions[0]
+    return None
+
+
+def _sync_regulation_goals_from_competition(
+    match_id: int,
+    db_match: dict,
+    competition: dict,
+    team_by_id: dict[str, str],
+    *,
+    in_shootout: bool = False,
+) -> int:
+    """Refresh goal rows (including penalty flags) from ESPN play-by-play."""
+    updated = 0
+    for detail in competition.get("details") or []:
+        type_text = ((detail.get("type") or {}).get("text") or "").strip()
+        player = None
+        athletes = detail.get("athletesInvolved") or []
+        if athletes:
+            player = (athletes[0].get("displayName") or athletes[0].get("fullName") or "").strip()
+        if not player:
+            continue
+
+        team_id = str((detail.get("team") or {}).get("id") or "")
+        team_name = team_by_id.get(team_id)
+        if not team_name:
+            continue
+
+        minute, injury = _parse_espn_minute((detail.get("clock") or {}).get("displayValue"))
+        if not _is_goal_event(type_text, detail):
+            continue
+        if minute is None:
+            continue
+        if in_shootout and detail.get("penaltyKick"):
+            continue
+        if team_name == db_match["home_team"]:
+            side = "home"
+        elif team_name == db_match["away_team"]:
+            side = "away"
+        else:
+            continue
+        is_pen = bool(detail.get("penaltyKick"))
+        if db.upsert_match_goal(match_id, side, player, minute, injury, is_pen):
+            updated += 1
+    return updated
+
+
+def refresh_match_goal_flags(
+    match_id: int,
+    db_match: dict,
+    our_teams: set[str] | None = None,
+) -> int:
+    """Backfill is_penalty on stored goals from ESPN (e.g. finished matches)."""
+    our_teams = our_teams or set(db.get_distinct_teams())
+    event_id = find_espn_event_id(db_match, our_teams)
+    if not event_id:
+        return 0
+    competition = _fetch_competition_for_event(event_id, db_match.get("match_date"))
+    if not competition:
+        return 0
+    _, _, team_by_id = _competitor_teams(competition, our_teams)
+    return _sync_regulation_goals_from_competition(
+        match_id,
+        db_match,
+        competition,
+        team_by_id,
+    )
+
+
 def _freeze_regulation_score(match_id: int, home_score: int, away_score: int) -> tuple[int, int]:
     """Keep 90'/ET score during penalty shootout; pens do not change live goals."""
     meta_key = f"regulation_score_{match_id}"

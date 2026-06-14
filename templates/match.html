@@ -229,7 +229,8 @@
 <script>
 (function() {
   const feedUrl = "{{ url_for('match_watch_feed', invite_code=pool.invite_code, match_id=match.id) }}";
-  const isLive = {{ 'true' if match.is_live or not match.is_finished else 'false' }};
+  const pollLive = {{ 'true' if match.is_live else 'false' }};
+  const hydrateEvents = {{ 'true' if match.is_live or match.is_finished else 'false' }};
 
   function esc(s) {
     const d = document.createElement('div');
@@ -403,8 +404,10 @@
     }
   }
 
-  if (isLive) {
+  if (hydrateEvents) {
     refresh();
+  }
+  if (pollLive) {
     scheduleMatchPoll();
   }
 })();
