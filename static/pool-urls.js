@@ -60,6 +60,9 @@
     }
     // Trust server-synced minute from ESPN/API polling, but never ahead of kickoff wall clock.
     if (cleaned && cleaned !== 'LIVE' && cleaned !== 'Soon' && cleaned.endsWith("'")) {
+      if (/^\d+\+\d+'$/.test(cleaned)) {
+        return cleaned;
+      }
       const derived = deriveLiveMinuteFromKickoff(kickoffIso);
       if (derived && derived !== 'HT') {
         const shown = parseInt(cleaned, 10);

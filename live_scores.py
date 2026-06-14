@@ -54,7 +54,7 @@ def normalize_stoppage_minute(
 
 
 def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
-    """Clock label for the banner plus optional red added-time suffix."""
+    """Clock label for the banner plus optional red announced-added-time suffix."""
     status = match.get("status")
     if status == "halftime":
         kickoff = match.get("kickoff")
@@ -73,27 +73,32 @@ def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
         except (TypeError, ValueError):
             injury = None
 
-    parsed = re.match(r"^(\d+)\+(\d+)'?$", label)
-    if parsed:
-        return f"{parsed.group(1)}'", f"+{parsed.group(2)} min added"
-
-    if minute is not None:
+    if re.match(r"^\d+\+\d+'?$", label):
+        base = label if label.endswith("'") else f"{label}'"
+    elif minute is not None:
         minute, injury = normalize_stoppage_minute(minute, injury)
         if injury:
-            return f"{minute}'", f"+{injury} min added"
+            base = f"{minute}+{injury}'"
+        elif label and label.endswith("'"):
+            base = label
+        else:
+            base = f"{minute}'"
+    elif label and label.endswith("'"):
+        base = label
+    else:
+        base = label or "LIVE"
 
     announced = match.get("announced_added_time")
-    if announced and minute is not None:
+    added_time_label = None
+    if announced is not None:
         try:
             announced = int(announced)
         except (TypeError, ValueError):
             announced = None
         if announced and announced > 0:
-            threshold = 88 if (minute or 0) > FIRST_HALF_MINUTES else 40
-            if minute >= threshold:
-                return label if label.endswith("'") else f"{label}'", f"+{announced} min added"
+            added_time_label = f"+{announced} min added"
 
-    return label, None
+    return base, added_time_label
 
 
 def sanitize_goal_minute_label(label: str | None) -> str:
