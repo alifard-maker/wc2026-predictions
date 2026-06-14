@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.63"
+APP_VERSION = "Beta 3.64"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1933,11 +1933,11 @@ def admin_page(invite_code):
             db.repair_split_merged_cursor_ai_accounts()
             flash("Cursor AI accounts re-split and points recalculated.", "success")
         elif action == "repair_ai_merge" and session.get("admin_secret") == pool["admin_secret"]:
-            actions = db.repair_merge_cursor_into_nostradamus()
+            actions = db.repair_merge_cursor_into_nostradamus(pool["id"])
             if actions:
-                flash("; ".join(actions), "success")
+                flash("; ".join(actions), "success" if any("merged" in a for a in actions) else "info")
             else:
-                flash("Nothing to merge — Cursor AI already removed or Nostradamus not found.", "info")
+                flash("Merge failed — no pool found.", "error")
         elif action == "rename_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 user_id = int(request.form.get("user_id", 0))

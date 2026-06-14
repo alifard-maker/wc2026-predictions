@@ -328,7 +328,68 @@ def _merge_cursor_preds_into_keeper(
     return transferred_match_ids
 
 
-def repair_merge_cursor_into_nostradamus() -> list[str]:
+def _find_nostradamus_keeper(conn, pool_id: int):
+    from ai_predictor import LEGACY_PREDICTIONS_AGENT_KEY, RENAMED_LEGACY_AI_NAMES
+
+    legacy_names = tuple(RENAMED_LEGACY_AI_NAMES | frozenset({"Cursor AI Predictions"}))
+    placeholders = ", ".join("?" * len(legacy_names))
+    rows = conn.execute(
+        f"""
+        SELECT id, display_name, ai_agent_key FROM users
+        WHERE pool_id = ? AND display_name != 'Cursor AI' AND (
+            display_name IN ({placeholders})
+            OR ai_agent_key = ?
+        )
+        """,
+        (pool_id, *legacy_names, LEGACY_PREDICTIONS_AGENT_KEY),
+    ).fetchall()
+    if not rows:
+        return None
+
+    def keeper_score(user) -> tuple:
+        return (
+            user["display_name"] in RENAMED_LEGACY_AI_NAMES,
+            user["display_name"] == "Cursor AI Predictions",
+            _user_prediction_count(conn, user["id"]),
+            _user_match_points(conn, user["id"]),
+            -user["id"],
+        )
+
+    return max(rows, key=keeper_score)
+
+
+def _find_cursor_ai_user(conn, pool_id: int, exclude_id: int | None):
+    rows = conn.execute(
+        """
+        SELECT id, display_name, ai_agent_key FROM users
+        WHERE pool_id = ?
+          AND (? IS NULL OR id != ?)
+          AND (
+            display_name = 'Cursor AI'
+            OR (ai_agent_key = 'cursor' AND display_name NOT IN ('Nostradamus', 'Cursor AI Predictions', 'Cursor AI Prediction'))
+          )
+        """,
+        (pool_id, exclude_id, exclude_id),
+    ).fetchall()
+    if not rows:
+        return None
+
+    def cursor_score(user) -> tuple:
+        return (
+            user["display_name"] == "Cursor AI",
+            user["ai_agent_key"] == "cursor",
+            user["display_name"] != "Nostradamus",
+            _user_prediction_count(conn, user["id"]),
+            -user["id"],
+        )
+
+    candidates = [u for u in rows if u["id"] != exclude_id]
+    if not candidates:
+        return None
+    return max(candidates, key=cursor_score)
+
+
+def repair_merge_cursor_into_nostradamus(pool_id: int | None = None) -> list[str]:
     """
     Merge synced Cursor AI into Nostradamus (ex Cursor AI Predictions).
 
@@ -337,51 +398,43 @@ def repair_merge_cursor_into_nostradamus() -> list[str]:
     - Points from Cursor AI picks are never counted
     - Cursor AI pool member is removed
     """
-    from ai_predictor import LEGACY_PREDICTIONS_AGENT_KEY, RENAMED_LEGACY_AI_NAMES
+    from ai_predictor import LEGACY_PREDICTIONS_AGENT_KEY
 
-    legacy_names = tuple(RENAMED_LEGACY_AI_NAMES | frozenset({"Cursor AI Predictions"}))
-    legacy_placeholders = ", ".join("?" * len(legacy_names))
     actions: list[str] = []
 
     with db() as conn:
-        pool_ids = [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        pool_ids = (
+            [pool_id]
+            if pool_id is not None
+            else [row["id"] for row in conn.execute("SELECT id FROM pools").fetchall()]
+        )
 
-        for pool_id in pool_ids:
-            keeper = conn.execute(
-                f"""
-                SELECT id, display_name FROM users
-                WHERE pool_id = ? AND (
-                    display_name IN ({legacy_placeholders})
-                    OR ai_agent_key = ?
-                )
-                ORDER BY id
-                LIMIT 1
-                """,
-                (pool_id, *legacy_names, LEGACY_PREDICTIONS_AGENT_KEY),
-            ).fetchone()
+        for pid in pool_ids:
+            keeper = _find_nostradamus_keeper(conn, pid)
             if not keeper:
-                continue
-
-            cursor_user = conn.execute(
-                """
-                SELECT id, display_name FROM users
-                WHERE pool_id = ? AND (
-                    ai_agent_key = 'cursor' OR display_name = 'Cursor AI'
-                )
-                ORDER BY id
-                LIMIT 1
-                """,
-                (pool_id,),
-            ).fetchone()
-            if not cursor_user or cursor_user["id"] == keeper["id"]:
-                conn.execute(
-                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
-                    (LEGACY_PREDICTIONS_AGENT_KEY, keeper["id"]),
-                )
+                actions.append(f"Pool {pid}: Nostradamus not found")
                 continue
 
             keeper_id = keeper["id"]
+            if keeper["ai_agent_key"] == "cursor":
+                conn.execute(
+                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+                    (LEGACY_PREDICTIONS_AGENT_KEY, keeper_id),
+                )
+
+            cursor_user = _find_cursor_ai_user(conn, pid, keeper_id)
+            if not cursor_user:
+                conn.execute(
+                    "UPDATE users SET ai_agent_key = ? WHERE id = ?",
+                    (LEGACY_PREDICTIONS_AGENT_KEY, keeper_id),
+                )
+                actions.append(
+                    f'Pool {pid}: no separate Cursor AI account (keeper: {keeper["display_name"]})'
+                )
+                continue
+
             cursor_id = cursor_user["id"]
+            cursor_pred_count = _user_prediction_count(conn, cursor_id)
             transferred = _merge_cursor_preds_into_keeper(conn, keeper_id, cursor_id)
 
             dup_vote = conn.execute(
@@ -421,9 +474,11 @@ def repair_merge_cursor_into_nostradamus() -> list[str]:
                     (keeper_id, match_id),
                 )
 
+            overlap = cursor_pred_count - len(transferred)
+            overlap_note = f", {overlap} overlapped" if overlap else ""
             actions.append(
-                f'Merged {cursor_user["display_name"]} → {keeper["display_name"]}: '
-                f"{len(transferred)} pick(s) moved, Cursor points discarded (pool {pool_id})"
+                f'Pool {pid}: merged {cursor_user["display_name"]} → {keeper["display_name"]} — '
+                f"{len(transferred)} pick(s) moved{overlap_note}, Cursor points discarded"
             )
 
     return actions
