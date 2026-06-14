@@ -2147,12 +2147,18 @@ def get_leaderboard(pool_id: int) -> list[dict]:
             ),
         )
 
-        # Rank number ties on total points only; sort order uses exact scores above.
-        rank = 1
-        for i, entry in enumerate(leaderboard):
-            if i > 0 and entry["total_points"] < leaderboard[i - 1]["total_points"]:
-                rank = i + 1
-            entry["rank"] = rank if entry["total_points"] > 0 else None
+        # Dense rank: tied players share a number; next distinct score is always +1 (6, 6, 7 — not 6, 6, 8).
+        rank = 0
+        prev_points = None
+        for entry in leaderboard:
+            pts = entry["total_points"]
+            if pts <= 0:
+                entry["rank"] = None
+                continue
+            if prev_points is None or pts < prev_points:
+                rank += 1
+            entry["rank"] = rank
+            prev_points = pts
 
         return leaderboard
 
