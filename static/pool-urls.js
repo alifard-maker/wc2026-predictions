@@ -129,8 +129,8 @@
         return `<div class="card-event card-${c.card_type}"><span class="card-icon">${icon}</span><span class="goal-minute">${sanitizeGoalMinute(c.minute_label)}</span><span class="card-player">${c.player_name}</span></div>`;
       })
       .join('');
-    const homeTitle = homeTeam ? `<div class="card-column-title">${homeTeam}</div>` : '';
-    const awayTitle = awayTeam ? `<div class="card-column-title">${awayTeam}</div>` : '';
+    const homeTitle = !compact && homeTeam ? `<div class="card-column-title">${homeTeam}</div>` : '';
+    const awayTitle = !compact && awayTeam ? `<div class="card-column-title">${awayTeam}</div>` : '';
     return `<div class="match-cards${compactClass}" data-match-cards><div class="card-column card-home">${homeTitle}${renderCol('home')}</div><div class="card-column card-away">${awayTitle}${renderCol('away')}</div></div>`;
   };
 

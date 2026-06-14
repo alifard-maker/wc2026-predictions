@@ -6,7 +6,7 @@
 {% if cards %}
 <div class="match-cards{% if compact %} match-cards-compact{% endif %}" data-match-cards>
   <div class="card-column card-home">
-    <div class="card-column-title">{{ home_team }}</div>
+    {% if not compact %}<div class="card-column-title">{{ home_team }}</div>{% endif %}
     {% for c in cards if c.team_side == 'home' or c.team == home_team %}
     <div class="card-event card-{{ c.card_type }}">
       <span class="card-icon">{% if c.card_type == 'yellow' %}🟨{% else %}🟥{% endif %}</span>
@@ -16,7 +16,7 @@
     {% endfor %}
   </div>
   <div class="card-column card-away">
-    <div class="card-column-title">{{ away_team }}</div>
+    {% if not compact %}<div class="card-column-title">{{ away_team }}</div>{% endif %}
     {% for c in cards if c.team_side == 'away' or c.team == away_team %}
     <div class="card-event card-{{ c.card_type }}">
       <span class="card-icon">{% if c.card_type == 'yellow' %}🟨{% else %}🟥{% endif %}</span>

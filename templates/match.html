@@ -12,7 +12,7 @@
 <a href="{{ url_for('pool_dashboard', invite_code=pool.invite_code) }}">← Back to matches</a>
 
 <div class="card watch-party-card" style="margin-top: 1.5rem" id="watch-party">
-  <div class="fixture-meta" style="margin-bottom: 1rem">
+  <div class="fixture-meta watch-party-meta">
     {% if match.group_name %}
     <span class="badge badge-group">Group {{ match.group_name }}</span>
     {% endif %}
@@ -25,23 +25,21 @@
     {% else %}
     <span class="badge badge-closed" id="match-status-badge">Closed</span>
     {% endif %}
-    <span>{{ match.kickoff.strftime('%A %d %B %Y, %H:%M') }} ET</span>
+    <span>{{ match.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
     <span>{{ match.venue }}</span>
   </div>
 
-  <h1 style="text-align: center; margin: 1rem 0; display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap">
-    <span class="team home">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
-    <span id="match-score" style="color: var(--accent-2)">
+  <div class="match-matchup-line">
+    <span class="match-matchup-team team home">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
+    <span id="match-score" class="match-matchup-score">
       {% if match.is_live or match.is_finished %}{{ match.display_home }} – {{ match.display_away }}{% else %}vs{% endif %}
     </span>
-    <span class="team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
-  </h1>
+    <span class="match-matchup-team team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
+  </div>
 
-  <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label | live_minute }}</p>
+  {{ render_listen_live(listen_live_destinations, compact=true, wrap_id='listen-live-wrap', hidden=match.is_finished, active=match.is_live) }}
 
-  {{ render_listen_live(listen_live_destinations, wrap_id='listen-live-wrap', hidden=match.is_finished, active=match.is_live) }}
-
-  <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team) }}</div>
+  <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team, compact=true) }}</div>
 
   {{ render_game_stats(game_stats) }}
 
@@ -231,12 +229,7 @@
       scoreEl.textContent = `${m.display_home} – ${m.display_away}`;
     }
     const minEl = document.getElementById('match-minute');
-    if (minEl && m.is_live) {
-      minEl.style.display = '';
-      minEl.textContent = resolveLiveMinuteLabel(m.minute_label, data.match.kickoff_iso, m.status);
-    } else if (minEl) {
-      minEl.style.display = 'none';
-    }
+    if (minEl) minEl.remove();
     const badge = document.getElementById('match-status-badge');
     if (badge && m.is_live) {
       badge.className = 'badge badge-live';
@@ -270,7 +263,7 @@
       eventsEl.innerHTML = renderMatchEventsHtml(
         data.goals,
         data.cards,
-        false,
+        true,
         {{ match.home_team | tojson }},
         {{ match.away_team | tojson }}
       );

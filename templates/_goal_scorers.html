@@ -2,7 +2,7 @@
 {% if goals %}
 <div class="goal-scorers {% if compact %}goal-scorers-compact{% endif %}">
   <div class="goal-column goal-home">
-    <div class="goal-column-title">{{ home_team }}</div>
+    {% if not compact %}<div class="goal-column-title">{{ home_team }}</div>{% endif %}
     {% for g in goals if g.team_side == 'home' %}
     <div class="goal-event">
       <span class="goal-minute">{{ g.minute_label | goal_minute }}</span>
@@ -11,7 +11,7 @@
     {% endfor %}
   </div>
   <div class="goal-column goal-away">
-    <div class="goal-column-title">{{ away_team }}</div>
+    {% if not compact %}<div class="goal-column-title">{{ away_team }}</div>{% endif %}
     {% for g in goals if g.team_side == 'away' %}
     <div class="goal-event">
       <span class="goal-minute">{{ g.minute_label | goal_minute }}</span>
