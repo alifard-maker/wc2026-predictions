@@ -2947,7 +2947,11 @@ textarea:focus {
 }
 
 .group-row-live td {
-  box-shadow: inset 3px 0 0 #e74c3c;
+  border-left: 2px dotted #e74c3c;
+}
+
+.group-row-live td:last-child {
+  border-right: 2px dotted #e74c3c;
 }
 
 .group-status-tag {
