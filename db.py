@@ -227,6 +227,7 @@ def init_db() -> None:
     repair_canonical_player_scores()
     repair_rescinded_var_cards()
     ensure_admin_secrets()
+    repair_stale_live_matches()
 
 
 def repair_canonical_player_scores() -> None:
@@ -762,6 +763,34 @@ def clear_match_live_state(match_id: int) -> None:
             """,
             (match_id,),
         )
+
+
+def repair_stale_live_matches() -> int:
+    """Finalize matches stuck live after kickoff (e.g. ESPN never flips to FT)."""
+    from datetime import datetime
+
+    from live_scores import POST_MATCH_DISPLAY_MAX
+    from scoring import TIMEZONE, parse_match_datetime
+
+    now = datetime.now(TIMEZONE)
+    finalized = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, match_date, match_time, live_home, live_away
+            FROM matches
+            WHERE actual_home IS NULL AND status IN ('live', 'halftime')
+            """
+        ).fetchall()
+    for row in rows:
+        kickoff = parse_match_datetime(row["match_date"], row["match_time"])
+        if now < kickoff + POST_MATCH_DISPLAY_MAX:
+            continue
+        home = row["live_home"] if row["live_home"] is not None else 0
+        away = row["live_away"] if row["live_away"] is not None else 0
+        if update_match_result(row["id"], int(home), int(away)):
+            finalized += 1
+    return finalized
 
 
 def repair_live_display_data() -> None:

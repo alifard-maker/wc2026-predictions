@@ -816,12 +816,14 @@ def sync_live_scores(force: bool = False) -> dict:
 
     knockout = db.sync_knockout_stage()
     card_reconcile = reconcile_recorded_match_cards()
+    stale_finalized = db.repair_stale_live_matches()
 
     summary = {
         "ok": True,
         **totals,
         "knockout": knockout,
         "card_reconcile": card_reconcile,
+        "stale_finalized": stale_finalized,
         "synced_at": datetime.now(TIMEZONE).isoformat(),
     }
     db.set_sync_meta("live_sync_summary", json.dumps(summary))
