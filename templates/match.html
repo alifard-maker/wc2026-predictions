@@ -5,6 +5,7 @@
 {% from "_ai_badge.html" import render_ai_badge with context %}
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
 {% from "_listen_live.html" import render_listen_live %}
+{% from "_game_stats.html" import render_game_stats %}
 {% block title %}{{ match.home_team }} vs {{ match.away_team }}{% endblock %}
 
 {% block content %}
@@ -41,6 +42,8 @@
   {{ render_listen_live(listen_live_destinations, wrap_id='listen-live-wrap', hidden=match.is_finished, active=match.is_live) }}
 
   <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team) }}</div>
+
+  {{ render_game_stats(game_stats) }}
 
   {% if match.prediction %}
   <p style="text-align: center; color: var(--muted)">
@@ -184,6 +187,40 @@
     return d.innerHTML;
   }
 
+  function renderGameStats(stats) {
+    const wrap = document.getElementById('game-stats-wrap');
+    if (!wrap || !stats) return;
+    wrap.hidden = false;
+    const placeholder = document.getElementById('game-stats-placeholder');
+    const tableWrap = document.getElementById('game-stats-table-wrap');
+    const tbody = document.getElementById('game-stats-body');
+    if (!stats.available) {
+      if (placeholder) {
+        placeholder.hidden = false;
+        placeholder.textContent = stats.message || 'Stats appear once the match kicks off.';
+      }
+      if (tableWrap) tableWrap.hidden = true;
+      return;
+    }
+    if (placeholder) placeholder.hidden = true;
+    if (tableWrap) tableWrap.hidden = false;
+    if (!tbody) return;
+    tbody.innerHTML = stats.rows.map(row => {
+      const possessionBar = row.kind === 'possession'
+        ? `<div class="game-stats-possession-bar" aria-hidden="true"><span class="game-stats-possession-home" style="width:${row.home_pct}%"></span><span class="game-stats-possession-away" style="width:${row.away_pct}%"></span></div>`
+        : '';
+      const homeCell = row.kind === 'possession'
+        ? `<span class="game-stats-possession-pct">${esc(row.home)}</span>`
+        : esc(row.home);
+      const awayCell = row.kind === 'possession'
+        ? `<span class="game-stats-possession-pct">${esc(row.away)}</span>`
+        : esc(row.away);
+      const homeClass = row.kind === 'possession' ? ' possession-cell' : '';
+      const awayClass = row.kind === 'possession' ? ' possession-cell' : '';
+      return `<tr data-kind="${esc(row.kind)}"><td class="game-stats-value home${homeClass}">${homeCell}</td><td class="game-stats-label">${possessionBar}${esc(row.label)}</td><td class="game-stats-value away${awayClass}">${awayCell}</td></tr>`;
+    }).join('');
+  }
+
   async function refresh() {
     const res = await fetch(feedUrl);
     if (!res.ok) return;
@@ -238,6 +275,8 @@
         {{ match.away_team | tojson }}
       );
     }
+
+    renderGameStats(data.game_stats);
 
     const tbody = document.querySelector('#picks-table tbody');
     if (tbody && data.predictions) {

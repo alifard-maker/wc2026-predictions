@@ -294,6 +294,40 @@ def _find_db_match(
     return candidates[0]
 
 
+def find_espn_event_id(db_match: dict, our_teams: set[str] | None = None) -> str | None:
+    """Resolve ESPN event id for a database match (cached after live sync)."""
+    match_id = db_match["id"]
+    cached = db.get_sync_meta(f"espn_event_{match_id}")
+    if cached:
+        return cached
+
+    our_teams = our_teams or set(db.get_distinct_teams())
+    db_matches = [dict(db_match)]
+    dates_to_try: list[str | None] = []
+    if db_match.get("match_date"):
+        dates_to_try.append(db_match["match_date"].replace("-", ""))
+    dates_to_try.append(None)
+
+    for dates in dates_to_try:
+        payload = _fetch_scoreboard(dates)
+        if not payload:
+            continue
+        for event in payload.get("events") or []:
+            competitions = event.get("competitions") or []
+            if not competitions:
+                continue
+            competition = competitions[0]
+            home_name, away_name, _ = _competitor_teams(competition, our_teams)
+            kickoff_et = _espn_event_kickoff(event)
+            matched = _find_db_match(home_name, away_name, db_matches, our_teams, kickoff_et)
+            if matched and matched["id"] == match_id:
+                event_id = str(event.get("id") or "")
+                if event_id:
+                    db.set_sync_meta(f"espn_event_{match_id}", event_id)
+                return event_id or None
+    return None
+
+
 def _competitor_teams(
     competition: dict,
     our_teams: set[str],
@@ -355,6 +389,9 @@ def _sync_espn_event(
 
     result["matched"] = 1
     result["match_id"] = match_id
+    event_id = str(event.get("id") or "")
+    if event_id:
+        db.set_sync_meta(f"espn_event_{match_id}", event_id)
 
     home_score = away_score = 0
     for competitor in competition.get("competitors") or []:
@@ -391,7 +428,6 @@ def _sync_espn_event(
             live_minute = 45
             live_injury = None
         elif db_status == "live":
-            event_id = str(event.get("id") or "")
             hydration_active, hydration_minute = _hydration_break_state(event_id, match_id)
             if hydration_active:
                 db_status = "hydration_break"

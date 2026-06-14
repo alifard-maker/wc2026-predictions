@@ -47,6 +47,7 @@ from scoring import (
 )
 from player_stats import get_scorer_squads_data, get_scorer_status, resolve_scorer_pick_value
 from team_data import get_match_context
+from match_game_stats import get_match_game_stats
 from team_flags import get_flag_codes_for_js, get_flag_url
 import user_avatars
 from prediction_simulation import build_predicted_tournament_view
@@ -82,7 +83,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.40"
+APP_VERSION = "Beta 3.41"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1613,12 +1614,14 @@ def match_detail(invite_code, match_id):
     match_comments = db.get_pool_comments(pool["id"], match_id)
     picks_open = not picks_revealed(dict(match))
     leaderboard = db.get_leaderboard(pool["id"])
+    game_stats = get_match_game_stats(enriched)
 
     return render_template(
         "match.html",
         pool=pool,
         match=enriched,
         goals=goals,
+        game_stats=game_stats,
         all_predictions=all_preds,
         match_context=context,
         consensus=consensus,
@@ -1683,6 +1686,7 @@ def match_watch_feed(invite_code, match_id):
         "predictions": preds_out,
         "picks_revealed": picks_revealed(dict(match)),
         "comments": comments_out,
+        "game_stats": get_match_game_stats(enriched),
     })
 
 

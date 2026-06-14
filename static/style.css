@@ -1785,6 +1785,97 @@ textarea:focus {
   min-width: 2px;
 }
 
+.game-stats-card {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.game-stats-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.game-stats-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.game-stats-source {
+  font-size: 0.75rem;
+}
+
+.game-stats-placeholder {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.game-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.game-stats-table thead th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding-bottom: 0.35rem;
+}
+
+.game-stats-table tbody tr + tr td {
+  border-top: 1px solid var(--border);
+}
+
+.game-stats-value {
+  width: 28%;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0.45rem 0;
+}
+
+.game-stats-value.home {
+  text-align: left;
+}
+
+.game-stats-value.away {
+  text-align: right;
+}
+
+.game-stats-label {
+  width: 44%;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 0.45rem 0.35rem;
+}
+
+.game-stats-possession-bar {
+  display: flex;
+  height: 0.35rem;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 0 auto 0.35rem;
+  max-width: 9rem;
+}
+
+.game-stats-possession-home {
+  background: #2a6e3f;
+  min-width: 0;
+}
+
+.game-stats-possession-away {
+  background: #2a4a8e;
+  min-width: 0;
+}
+
+.game-stats-possession-pct {
+  font-size: 1rem;
+}
+
 .pick-hidden {
   color: var(--muted);
   font-style: italic;

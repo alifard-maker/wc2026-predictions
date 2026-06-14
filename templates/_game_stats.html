@@ -1,0 +1,51 @@
+{% macro render_game_stats(game_stats) %}
+<div class="game-stats-card" id="game-stats-wrap">
+  <div class="game-stats-header">
+    <span class="game-stats-title">Game stats</span>
+    <span class="muted-inline game-stats-source">via ESPN</span>
+  </div>
+  <p class="muted-inline game-stats-placeholder" id="game-stats-placeholder"{% if game_stats.available %} hidden{% endif %}>
+    {{ game_stats.message or 'Stats appear once the match kicks off.' }}
+  </p>
+  <div class="game-stats-table-wrap" id="game-stats-table-wrap"{% if not game_stats.available %} hidden{% endif %}>
+    <table class="game-stats-table" id="game-stats-table">
+      <thead>
+        <tr>
+          <th class="game-stats-team home">{{ game_stats.home_team }}</th>
+          <th class="game-stats-metric"></th>
+          <th class="game-stats-team away">{{ game_stats.away_team }}</th>
+        </tr>
+      </thead>
+      <tbody id="game-stats-body">
+        {% for row in game_stats.rows %}
+        <tr data-kind="{{ row.kind }}">
+          <td class="game-stats-value home{% if row.kind == 'possession' %} possession-cell{% endif %}">
+            {% if row.kind == 'possession' %}
+            <span class="game-stats-possession-pct">{{ row.home }}</span>
+            {% else %}
+            {{ row.home }}
+            {% endif %}
+          </td>
+          <td class="game-stats-label">
+            {% if row.kind == 'possession' %}
+            <div class="game-stats-possession-bar" aria-hidden="true">
+              <span class="game-stats-possession-home" style="width: {{ row.home_pct }}%"></span>
+              <span class="game-stats-possession-away" style="width: {{ row.away_pct }}%"></span>
+            </div>
+            {% endif %}
+            {{ row.label }}
+          </td>
+          <td class="game-stats-value away{% if row.kind == 'possession' %} possession-cell{% endif %}">
+            {% if row.kind == 'possession' %}
+            <span class="game-stats-possession-pct">{{ row.away }}</span>
+            {% else %}
+            {{ row.away }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endmacro %}
