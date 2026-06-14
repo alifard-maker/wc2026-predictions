@@ -428,8 +428,14 @@ def _espn_status(comp_status: dict | None) -> str | None:
     return None
 
 
-def _is_goal_event(type_text: str) -> bool:
-    return type_text == "Goal" or type_text.startswith("Goal ")
+def _is_goal_event(type_text: str, detail: dict | None = None) -> bool:
+    text = (type_text or "").strip()
+    if text == "Goal" or text.startswith("Goal "):
+        return True
+    if detail and detail.get("penaltyKick") and detail.get("scoringPlay"):
+        return True
+    lowered = text.lower()
+    return "penalty" in lowered and "goal" in lowered
 
 
 def _espn_event_kickoff(event: dict) -> datetime | None:
@@ -757,7 +763,7 @@ def _sync_espn_event(
             continue
 
         minute, injury = _parse_espn_minute((detail.get("clock") or {}).get("displayValue"))
-        if _is_goal_event(type_text):
+        if _is_goal_event(type_text, detail):
             if minute is None:
                 continue
             if in_shootout and detail.get("penaltyKick"):

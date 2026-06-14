@@ -73,7 +73,7 @@
     <tbody id="scorers-events-body">
       {% for e in events %}
       <tr>
-        <td><strong>{{ e.player_name }}</strong></td>
+        <td><strong>{{ e.player_name }}{% if e.is_penalty %} <span class="pen-tag">(pen)</span>{% endif %}</strong></td>
         <td>{{ e.team }}</td>
         <td>{{ e.minute_label }}</td>
         <td>{{ e.match_label }}</td>
@@ -117,9 +117,10 @@
       return `<tr${hl}><td>${esc(row.player_name)}${yours}</td><td>${esc(row.team)}</td><td><strong>${row.goals}</strong></td></tr>`;
     }).join('') || '<tr><td colspan="3" style="color: var(--muted)">No goals recorded yet</td></tr>';
 
-    evBody.innerHTML = (data.events || []).map(e =>
-      `<tr><td><strong>${esc(e.player_name)}</strong></td><td>${esc(e.team)}</td><td>${esc(e.minute_label)}</td><td>${esc(e.match_label)}</td><td style="color: var(--muted)">${esc(e.match_date)}</td></tr>`
-    ).join('') || '<tr><td colspan="5" style="color: var(--muted)">Goals appear here as matches are played</td></tr>';
+    evBody.innerHTML = (data.events || []).map(e => {
+      const pen = e.is_penalty ? ' <span class="pen-tag">(pen)</span>' : '';
+      return `<tr><td><strong>${esc(e.player_name)}${pen}</strong></td><td>${esc(e.team)}</td><td>${esc(e.minute_label)}</td><td>${esc(e.match_label)}</td><td style="color: var(--muted)">${esc(e.match_date)}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" style="color: var(--muted)">Goals appear here as matches are played</td></tr>';
   }
 
   refresh();

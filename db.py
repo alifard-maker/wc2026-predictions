@@ -1519,7 +1519,7 @@ def upsert_match_goal(
     with db() as conn:
         existing = conn.execute(
             """
-            SELECT id, scorer_name FROM match_goals
+            SELECT id, scorer_name, is_penalty FROM match_goals
             WHERE match_id = ? AND team_side = ? AND minute = ?
                   AND COALESCE(injury_minute, 0) = COALESCE(?, 0)
             """,
@@ -1527,6 +1527,7 @@ def upsert_match_goal(
         ).fetchone()
         if existing:
             old_name = (existing["scorer_name"] or "").strip()
+            penalty_flag = 1 if is_penalty else 0
             if (
                 name != "Unknown scorer"
                 and old_name in {"", "Unknown scorer"}
@@ -1537,7 +1538,13 @@ def upsert_match_goal(
                     SET scorer_name = ?, is_penalty = ?
                     WHERE id = ?
                     """,
-                    (name, 1 if is_penalty else 0, existing["id"]),
+                    (name, penalty_flag, existing["id"]),
+                )
+                return True
+            if is_penalty and not bool(existing["is_penalty"]):
+                conn.execute(
+                    "UPDATE match_goals SET is_penalty = 1 WHERE id = ?",
+                    (existing["id"],),
                 )
                 return True
             return False
@@ -1855,6 +1862,7 @@ def get_match_goals(match_id: int) -> list[dict]:
             d = dict(r)
             d["team_name"] = r["home_team"] if r["team_side"] == "home" else r["away_team"]
             d["minute_label"] = format_goal_minute(r["minute"], r["injury_minute"])
+            d["is_penalty"] = bool(r["is_penalty"])
             result.append(d)
         return result
 
@@ -1969,7 +1977,7 @@ def get_tournament_scorer_events() -> list[dict]:
             """
             SELECT g.id, g.scorer_name AS player_name,
                    CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
-                   g.minute, g.injury_minute, m.home_team, m.away_team, m.match_date
+                   g.minute, g.injury_minute, g.is_penalty, m.home_team, m.away_team, m.match_date
             FROM match_goals g
             JOIN matches m ON m.id = g.match_id
             ORDER BY m.match_date ASC, g.minute ASC, g.id ASC
@@ -1980,6 +1988,7 @@ def get_tournament_scorer_events() -> list[dict]:
             d = dict(r)
             d["minute_label"] = format_goal_minute(r["minute"], r["injury_minute"])
             d["match_label"] = f"{r['home_team']} vs {r['away_team']}"
+            d["is_penalty"] = bool(r["is_penalty"])
             result.append(d)
         return result
 
