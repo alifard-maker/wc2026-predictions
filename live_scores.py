@@ -123,6 +123,19 @@ def format_shootout_scoreline(
     return f"{home_team} {home_goals}–{away_goals} {away_team} ({pen_home}–{pen_away} pens)"
 
 
+def in_announced_added_time_window(minute: int | None, status: str | None = None) -> bool:
+    """Referee announced stoppage is only relevant at the end of each half."""
+    if status in ("halftime", "hydration_break", "finished", "penalty_shootout"):
+        return False
+    if minute is None:
+        return False
+    if minute >= 90:
+        return True
+    if FIRST_HALF_MINUTES <= minute < 50:
+        return True
+    return False
+
+
 def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
     """Clock label for the banner plus optional red announced-added-time suffix."""
     status = match.get("status")
@@ -167,7 +180,7 @@ def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
 
     announced = match.get("announced_added_time")
     added_time_label = None
-    if announced is not None:
+    if announced is not None and in_announced_added_time_window(minute, status):
         try:
             announced = int(announced)
         except (TypeError, ValueError):

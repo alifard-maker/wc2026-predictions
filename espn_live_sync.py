@@ -17,6 +17,7 @@ except ImportError:
 
 import db
 from live_score_sync import canonical_team_name, _db_kickoff_et, _kickoffs_align, _match_started
+from live_scores import FIRST_HALF_MINUTES, in_announced_added_time_window
 from scoring import TIMEZONE
 
 logger = logging.getLogger(__name__)
@@ -252,7 +253,7 @@ def _hydration_break_state(event_id: str, match_id: int) -> tuple[bool, int | No
     return False, None
 
 
-def _announced_added_time_from_summary(event_id: str) -> int | None:
+def _announced_added_time_from_summary(event_id: str, live_minute: int | None = None) -> int | None:
     commentary = _summary_commentary(event_id)
     for item in reversed(commentary):
         text = (item.get("text") or "").strip()
@@ -261,20 +262,34 @@ def _announced_added_time_from_summary(event_id: str) -> int | None:
         match = ADDED_TIME_RE.search(text)
         if not match:
             continue
+        item_minute = _parse_commentary_minute(item.get("time"))
+        if live_minute is not None and item_minute is not None:
+            if live_minute >= 90 and item_minute < 46:
+                continue
+            if FIRST_HALF_MINUTES <= live_minute < 50 and item_minute >= 46:
+                continue
         for group in match.groups():
             if group:
                 return int(group)
     return None
 
 
-def _sync_announced_added_time(event_id: str, match_id: int, db_status: str) -> None:
+def _sync_announced_added_time(
+    event_id: str,
+    match_id: int,
+    db_status: str,
+    live_minute: int | None,
+) -> None:
     meta_key = f"announced_added_time_{match_id}"
     if db_status in ("halftime", "finished"):
         db.set_sync_meta(meta_key, "")
         return
+    if not in_announced_added_time_window(live_minute, db_status):
+        db.set_sync_meta(meta_key, "")
+        return
     if not event_id:
         return
-    minutes = _announced_added_time_from_summary(event_id)
+    minutes = _announced_added_time_from_summary(event_id, live_minute)
     if minutes:
         db.set_sync_meta(meta_key, str(minutes))
 
@@ -710,7 +725,7 @@ def _sync_espn_event(
         if live_minute is not None and live_minute <= 0:
             live_minute = None
         if event_id:
-            _sync_announced_added_time(event_id, match_id, db_status)
+            _sync_announced_added_time(event_id, match_id, db_status, live_minute)
         db.update_match_live(
             match_id,
             home_score,
