@@ -13,7 +13,7 @@
   <span>{{ m.kickoff.strftime('%a %d %b %Y, %H:%M') }} ET</span>
   <span>{{ m.venue }}</span>
   {% if m.is_live %}
-  <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'penalty_shootout' %}Pens{% elif m.status == 'extra_time' %}ET {{ m.minute_label | live_minute }}{% elif m.status == 'halftime' %}{{ m.minute_label | live_minute }}{% elif m.status == 'hydration_break' %}{{ m.minute_label | live_minute }}{% else %}LIVE {{ m.minute_label | live_minute }}{% endif %} · {{ m.display_home }}–{{ m.display_away }}</span>
+  <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'penalty_shootout' %}Pens{% elif m.status == 'extra_time' %}ET {{ m.minute_base or (m.minute_label | live_minute) }}{% if m.added_time_label %} <span class="live-added-time">{{ m.added_time_label }}</span>{% endif %}{% elif m.status == 'halftime' %}{{ m.minute_base or (m.minute_label | live_minute) }}{% elif m.status == 'hydration_break' %}{{ m.minute_base or (m.minute_label | live_minute) }}{% else %}LIVE {{ m.minute_base or (m.minute_label | live_minute) }}{% if m.added_time_label %} <span class="live-added-time">{{ m.added_time_label }}</span>{% endif %}{% endif %}</span>
   {% elif is_finished_row %}
   <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
   {% elif m.open %}

@@ -335,17 +335,7 @@
       const badge = document.querySelector(`[data-live-badge="${m.id}"]`);
       if (m.is_live && badge) {
         badge.className = 'badge badge-live';
-        let clock;
-        if (m.status === 'penalty_shootout') {
-          clock = 'Pens';
-        } else if (m.status === 'halftime' || m.status === 'hydration_break' || (m.minute_label || '').startsWith('HT')) {
-          clock = resolveLiveMinuteLabel(m.minute_base || m.minute_label, m.kickoff_iso, m.status === 'hydration_break' ? 'hydration_break' : 'halftime');
-        } else if (m.status === 'extra_time') {
-          clock = resolveLiveMinuteLabel(m.minute_base || m.minute_label, m.kickoff_iso, 'extra_time');
-        } else {
-          clock = `LIVE ${resolveLiveMinuteLabel(m.minute_base || m.minute_label, m.kickoff_iso, m.status)}`;
-        }
-        badge.textContent = `${clock} · ${m.display_home}–${m.display_away}`;
+        badge.innerHTML = formatMatchStatusBadge(m, null, m.kickoff_iso);
       } else if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
         badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
