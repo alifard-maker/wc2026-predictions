@@ -1,0 +1,18 @@
+{% macro render_listen_live(destinations, compact=false, wrap_id='', hidden=false) %}
+{% if destinations %}
+<div class="listen-live-bar{% if compact %} listen-live-bar-compact{% endif %}"{% if wrap_id %} id="{{ wrap_id }}"{% endif %}{% if hidden %} hidden{% endif %}>
+  <span class="listen-live-label">Listen live</span>
+  <div class="listen-live-links">
+    {% for dest in destinations %}
+    <a href="{{ dest.url }}" class="listen-live-link" target="_blank" rel="noopener noreferrer" title="{{ dest.subtitle }}" onclick="event.stopPropagation()">
+      <span class="listen-live-icon" aria-hidden="true">{{ dest.icon }}</span>
+      <span class="listen-live-text">
+        <span class="listen-live-name">{{ dest.label }}</span>
+        {% if not compact %}<span class="listen-live-sub">{{ dest.subtitle }}</span>{% endif %}
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}

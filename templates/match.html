@@ -4,6 +4,7 @@
 {% from "_user_avatar.html" import user_avatar with context %}
 {% from "_ai_badge.html" import render_ai_badge with context %}
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
+{% from "_listen_live.html" import render_listen_live %}
 {% block title %}{{ match.home_team }} vs {{ match.away_team }}{% endblock %}
 
 {% block content %}
@@ -36,6 +37,8 @@
   </h1>
 
   <p id="match-minute" style="text-align: center; color: var(--accent-2); font-weight: 600; {% if not match.is_live %}display:none{% endif %}">{{ match.minute_label | live_minute }}</p>
+
+  {{ render_listen_live(listen_live_destinations, wrap_id='listen-live-wrap', hidden=not match.is_live) }}
 
   <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team) }}</div>
 
@@ -205,6 +208,11 @@
     } else if (badge && m.is_finished) {
       badge.className = 'badge badge-done';
       badge.textContent = 'Full time';
+    }
+
+    const listenWrap = document.getElementById('listen-live-wrap');
+    if (listenWrap) {
+      listenWrap.hidden = !m.is_live;
     }
 
     const eventsEl = document.getElementById('match-events-wrap');

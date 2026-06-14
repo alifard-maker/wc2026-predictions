@@ -23,6 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import db
 from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_avatar_file, ai_agent_badge, is_ai_agent
 import live_score_sync
+from listen_live import LISTEN_LIVE_DESTINATIONS
 from live_scores import (
     apply_live_state,
     next_scheduled_kickoff,
@@ -81,7 +82,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.28"
+APP_VERSION = "Beta 3.29"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -182,6 +183,7 @@ def inject_public_url():
         "user_initial": user_avatars.user_initial,
         "current_user_photo": None,
         "team_slugs_json": json.dumps({t: team_slug(t) for t in get_all_teams()}),
+        "listen_live_destinations": LISTEN_LIVE_DESTINATIONS,
     }
     pool_id = session.get("pool_id")
     if session.get("user_id"):
