@@ -309,15 +309,44 @@ def _espn_authoritative_for_cards(match_id: int, db_match: dict) -> bool:
     return bool(db.get_sync_meta(f"espn_live_source_{match_id}"))
 
 
-def _espn_controls_match(match_id: int) -> bool:
-    raw = db.get_sync_meta(f"espn_live_source_{match_id}")
-    if not raw:
-        return False
-    try:
-        when = datetime.fromisoformat(raw)
-    except ValueError:
-        return False
-    return (datetime.now(TIMEZONE) - when).total_seconds() < 6 * 3600
+def _espn_recently_synced(match_id: int) -> bool:
+    return bool(db.get_sync_meta(f"espn_live_source_{match_id}"))
+
+
+def _crosscheck_live_scores(
+    db_match: dict,
+    fd_home: int,
+    fd_away: int,
+) -> tuple[int, int, dict]:
+    """Compare football-data.org scores with ESPN-synced DB state; correct on disagreement."""
+    match_id = db_match["id"]
+    espn_home = db_match.get("live_home")
+    espn_away = db_match.get("live_away")
+    meta = {
+        "match_id": match_id,
+        "home_team": db_match.get("home_team"),
+        "away_team": db_match.get("away_team"),
+        "football_data": [fd_home, fd_away],
+    }
+    if not _espn_recently_synced(match_id) or espn_home is None or espn_away is None:
+        meta["result"] = "football_data_only"
+        meta["espn"] = [espn_home, espn_away]
+        return fd_home, fd_away, meta
+
+    espn_home = int(espn_home)
+    espn_away = int(espn_away)
+    meta["espn"] = [espn_home, espn_away]
+    if espn_home == fd_home and espn_away == fd_away:
+        meta["result"] = "agreed"
+        return fd_home, fd_away, meta
+
+    meta["result"] = "corrected"
+    meta["used"] = "football_data"
+    db.set_sync_meta(
+        f"score_crosscheck_{match_id}",
+        json.dumps({**meta, "at": datetime.now(TIMEZONE).isoformat()}),
+    )
+    return fd_home, fd_away, meta
 
 
 def _track_second_half_start(match_id: int, api_status: str) -> None:
@@ -691,8 +720,6 @@ def _process_api_match(
     api_match: dict,
     db_matches: list[dict],
     our_teams: set[str],
-    *,
-    skip_live_update: bool = False,
 ) -> dict:
     status = api_match.get("status") or "SCHEDULED"
     if not _should_sync_match(api_match):
@@ -726,27 +753,32 @@ def _process_api_match(
     }
 
     if status == FINISHED_API_STATUS:
+        final_home, final_away, check = _crosscheck_live_scores(db_match, home_score, away_score)
+        result["crosscheck"] = check
         if (
             db_match["actual_home"] is None
             and _match_started(db_match)
             and _kickoffs_align(kickoff, db_match)
-            and db.update_match_result(match_id, home_score, away_score)
+            and db.update_match_result(match_id, final_home, final_away)
         ):
             result["finished"] = 1
             db.set_sync_meta(f"regulation_score_{match_id}", "")
-    elif (
-        in_window
-        and db_match.get("actual_home") is None
-        and not skip_live_update
-        and not _espn_controls_match(match_id)
-    ):
+    elif in_window and db_match.get("actual_home") is None:
         _track_second_half_start(match_id, status)
         live_minute, live_injury = _resolve_live_clock(api_match, db_match)
         db_status = _db_status(status)
         if db_status == "penalty_shootout":
             home_score, away_score = _freeze_regulation_score(match_id, home_score, away_score)
             _store_shootout_score(match_id, api_match)
-        elif db_status == "extra_time" and live_minute is not None and live_minute <= 90:
+            check = {
+                "match_id": match_id,
+                "result": "skipped_shootout",
+                "football_data": [home_score, away_score],
+            }
+        else:
+            home_score, away_score, check = _crosscheck_live_scores(db_match, home_score, away_score)
+        result["crosscheck"] = check
+        if db_status == "extra_time" and live_minute is not None and live_minute <= 90:
             live_minute = max(live_minute, 91)
         if db_status == "halftime" and kickoff:
             from live_scores import is_halftime_break
@@ -818,7 +850,6 @@ def sync_live_scores(force: bool = False) -> dict:
     our_teams = set(db.get_distinct_teams())
     db_matches = [dict(m) for m in db.get_all_matches()]
     espn = _run_espn_sync(db_matches, our_teams)
-    espn_skip_live = set(espn.get("matched_match_ids") or [])
     db_matches = [dict(m) for m in db.get_all_matches()]
 
     if not is_enabled():
@@ -854,19 +885,27 @@ def sync_live_scores(force: bool = False) -> dict:
         "api_bookings_seen": 0,
         "api_minute": None,
         "stored_minute": None,
+        "crosscheck_agreed": 0,
+        "crosscheck_corrected": 0,
+        "crosscheck_football_data_only": 0,
     }
+    crosscheck_rows: list[dict] = []
 
     for api_match in api_matches:
         api_match = _richest_match(api_match, details)
 
         db_match = _find_db_match(api_match, db_matches, our_teams)
-        skip_live = bool(db_match and db_match["id"] in espn_skip_live)
-        row = _process_api_match(
-            api_match,
-            db_matches,
-            our_teams,
-            skip_live_update=skip_live,
-        )
+        row = _process_api_match(api_match, db_matches, our_teams)
+        check = row.get("crosscheck")
+        if check:
+            crosscheck_rows.append(check)
+            result_key = check.get("result")
+            if result_key == "agreed":
+                totals["crosscheck_agreed"] += 1
+            elif result_key == "corrected":
+                totals["crosscheck_corrected"] += 1
+            elif result_key == "football_data_only":
+                totals["crosscheck_football_data_only"] += 1
         for key in totals:
             totals[key] += row.get(key, 0)
 
@@ -877,9 +916,12 @@ def sync_live_scores(force: bool = False) -> dict:
     knockout = db.sync_knockout_stage()
     card_reconcile = reconcile_recorded_match_cards()
 
+    disagreements = [c for c in crosscheck_rows if c.get("result") == "corrected"]
     summary = {
         "ok": True,
         **totals,
+        "crosschecks": crosscheck_rows[-8:],
+        "crosscheck_disagreements": disagreements[-5:],
         "knockout": knockout,
         "card_reconcile": card_reconcile,
         "synced_at": datetime.now(TIMEZONE).isoformat(),

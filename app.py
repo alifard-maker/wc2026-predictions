@@ -84,7 +84,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.74"
+APP_VERSION = "Beta 3.75"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -611,6 +611,7 @@ def health():
             "halftime_countdown": True,
             "wc_competition_sync": True,
             "espn_events_sync": True,
+            "dual_source_crosscheck": True,
         },
     }
     try:
@@ -623,9 +624,17 @@ def health():
         espn_raw = db.get_sync_meta("espn_sync_summary")
         payload["espn_sync"] = json.loads(espn_raw) if espn_raw else None
         payload["espn_sync_error"] = db.get_sync_meta("espn_sync_error") or None
+        last_summary = (payload.get("live_sync") or {}).get("last_summary") or {}
+        payload["score_crosscheck"] = {
+            "agreed": last_summary.get("crosscheck_agreed", 0),
+            "corrected": last_summary.get("crosscheck_corrected", 0),
+            "football_data_only": last_summary.get("crosscheck_football_data_only", 0),
+            "recent": last_summary.get("crosscheck_disagreements") or [],
+        }
     except Exception:
         payload["espn_sync"] = None
         payload["espn_sync_error"] = None
+        payload["score_crosscheck"] = None
     try:
         from datetime import datetime
 
