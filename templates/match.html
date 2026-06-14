@@ -31,10 +31,29 @@
 
   <div class="match-matchup-line">
     <span class="match-matchup-team team home">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
-    <span id="match-score" class="match-matchup-score">
-      {% if match.is_live or match.is_finished %}{{ match.display_home }} – {{ match.display_away }}{% else %}vs{% endif %}
-    </span>
+    {% if not match.is_live and not match.is_finished %}
+    <span class="match-matchup-score">vs</span>
+    {% else %}
+    <span class="match-matchup-vs" aria-hidden="true">·</span>
+    {% endif %}
     <span class="match-matchup-team team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
+  </div>
+
+  <div class="match-score-stack">
+    {% if match.prediction %}
+    <div class="match-pick-row" id="match-pick-row">
+      <span class="fixture-result-label">Your prediction</span>
+      <span class="match-pick-score">{{ match.prediction.home_score }} – {{ match.prediction.away_score }}</span>
+      {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
+      {% if match.prediction.points is not none %}<span class="points-earned">+{{ match.prediction.points }} pts</span>{% endif %}
+    </div>
+    {% endif %}
+    {% if match.is_live or match.is_finished %}
+    <div class="match-actual-row">
+      <span class="fixture-result-label">{% if match.is_live %}Live{% else %}Result{% endif %}</span>
+      <span id="match-score" class="match-matchup-score">{{ match.display_home }} – {{ match.display_away }}</span>
+    </div>
+    {% endif %}
   </div>
 
   {{ render_listen_live(listen_live_destinations, compact=true, wrap_id='listen-live-wrap', hidden=match.is_finished, active=match.is_live) }}
@@ -42,14 +61,6 @@
   <div id="match-events-wrap">{{ render_match_events(goals, match.cards, match.home_team, match.away_team, compact=true) }}</div>
 
   {{ render_game_stats(game_stats) }}
-
-  {% if match.prediction %}
-  <p style="text-align: center; color: var(--muted)">
-    Your prediction: <strong>{{ match.prediction.home_score }} – {{ match.prediction.away_score }}</strong>
-    {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
-    {% if match.prediction.points is not none %} · <span class="points-earned">+{{ match.prediction.points }} pts</span>{% endif %}
-  </p>
-  {% endif %}
 
   {% if can_bold %}
   <form method="post" action="{{ url_for('set_bold_pick_route', invite_code=pool.invite_code) }}" class="bold-pick-form">

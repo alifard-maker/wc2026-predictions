@@ -1948,6 +1948,52 @@ textarea:focus {
   line-height: 1.2;
 }
 
+.match-matchup-vs {
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.match-score-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.65rem;
+  width: 100%;
+}
+
+.match-pick-row,
+.match-actual-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.match-score-stack .match-actual-row {
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+}
+
+.match-score-stack .match-pick-row:only-child,
+.match-score-stack .match-actual-row:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.match-pick-row .bold-tag,
+.match-pick-row .points-earned {
+  margin-top: 0.1rem;
+}
+
+.match-pick-score {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
 .watch-party-card .goal-scorers,
 .watch-party-card .goal-scorers-compact {
   margin-top: 0.5rem;
