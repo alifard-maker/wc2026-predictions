@@ -15,6 +15,13 @@ MEDIA_PREDICTORS: list[dict] = [
         "avatar": "images/media/bbc-sport.svg",
         "data_file": "chris_sutton_wc2026.json",
     },
+    {
+        "key": "ryan_ohanlon",
+        "display_name": "Ryan O'Hanlon — ESPN",
+        "badge": "ESPN",
+        "avatar": "images/media/espn.svg",
+        "data_file": "ryan_ohanlon_wc2026.json",
+    },
 ]
 
 MEDIA_AGENT_KEYS: set[str] = {p["key"] for p in MEDIA_PREDICTORS}
@@ -30,6 +37,8 @@ TEAM_ALIASES: dict[str, str] = {
     "Curacao": "Curaçao",
     "Ivory Coast": "Côte d'Ivoire",
     "Turkey": "Türkiye",
+    "United States": "USA",
+    "USMNT": "USA",
 }
 
 
@@ -81,6 +90,9 @@ def get_media_match_predictions(agent_key: str) -> dict[tuple[str, str], tuple[i
         return {}
     out: dict[tuple[str, str], tuple[int, int]] = {}
     for row in data.get("match_predictions", []):
+        key = match_pair_key(row["home"], row["away"])
+        out[key] = (int(row["home_score"]), int(row["away_score"]))
+    for row in data.get("knockout_predictions", []):
         key = match_pair_key(row["home"], row["away"])
         out[key] = (int(row["home_score"]), int(row["away_score"]))
     return out
