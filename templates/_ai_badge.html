@@ -1,5 +1,5 @@
 {% macro render_ai_badge(display_name, ai_agent_key=none) %}
-{% if is_ai_agent(display_name, ai_agent_key) %}
+{% if is_agent_badge(display_name, ai_agent_key) %}
 <span class="ai-badge" title="{{ display_name }}">{{ ai_agent_badge(display_name, ai_agent_key) }}</span>
 {% endif %}
 {% endmacro %}

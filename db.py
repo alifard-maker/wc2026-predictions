@@ -832,7 +832,7 @@ def _merge_user_records(
 
 def merge_canonical_player_accounts(pool_id: int | None = None) -> list[str]:
     """Merge known typo accounts into one canonical player name per pool."""
-    from ai_predictor import is_ai_agent
+    from ai_predictor import is_agent_badge
 
     merged: list[str] = []
     with db() as conn:
@@ -843,14 +843,14 @@ def merge_canonical_player_accounts(pool_id: int | None = None) -> list[str]:
         )
         for pid in pool_ids:
             users = conn.execute(
-                "SELECT id, display_name FROM users WHERE pool_id = ? ORDER BY id",
+                "SELECT id, display_name, ai_agent_key FROM users WHERE pool_id = ? ORDER BY id",
                 (pid,),
             ).fetchall()
             for canonical, aliases in PLAYER_ACCOUNT_ALIASES.items():
                 group = [
                     user
                     for user in users
-                    if not is_ai_agent(user["display_name"])
+                    if not is_agent_badge(user["display_name"], user["ai_agent_key"])
                     and _user_matches_alias(user["display_name"], aliases)
                 ]
                 if len(group) < 2:
@@ -969,7 +969,7 @@ def merge_users_named(display_name: str, pool_id: int | None = None) -> list[str
 
 def merge_duplicate_users(pool_id: int | None = None) -> list[str]:
     """Merge pool members that share the same normalized display name."""
-    from ai_predictor import is_ai_agent
+    from ai_predictor import is_agent_badge
 
     merged: list[str] = []
     with db() as conn:
@@ -980,12 +980,12 @@ def merge_duplicate_users(pool_id: int | None = None) -> list[str]:
 
         for pid in pool_ids:
             users = conn.execute(
-                "SELECT id, display_name FROM users WHERE pool_id = ? ORDER BY id",
+                "SELECT id, display_name, ai_agent_key FROM users WHERE pool_id = ? ORDER BY id",
                 (pid,),
             ).fetchall()
             groups: dict[str, list] = defaultdict(list)
             for user in users:
-                if is_ai_agent(user["display_name"]):
+                if is_agent_badge(user["display_name"], user["ai_agent_key"]):
                     continue
                 groups[normalize_display_name(user["display_name"])].append(user)
 
@@ -2350,6 +2350,69 @@ def sync_ai_tournament_vote(pool_id: int) -> bool:
     return changed
 
 
+def ensure_all_media_users(pool_id: int) -> list[int]:
+    from media_predictors import MEDIA_PREDICTORS
+
+    ids = []
+    for agent in MEDIA_PREDICTORS:
+        ids.append(ensure_ai_user(pool_id, agent["display_name"], agent["key"]))
+    return ids
+
+
+def sync_media_predictions(pool_id: int) -> int:
+    from media_predictors import MEDIA_PREDICTORS, get_media_match_predictions
+
+    saved = 0
+    matches = get_all_matches()
+    for agent in MEDIA_PREDICTORS:
+        user_id = ensure_ai_user(pool_id, agent["display_name"], agent["key"])
+        picks = get_media_match_predictions(agent["key"])
+        if not picks:
+            continue
+        for match in matches:
+            key = (match["home_team"], match["away_team"])
+            score = picks.get(key)
+            if not score:
+                continue
+            home, away = score
+            pred = get_prediction(user_id, match["id"])
+            if pred and pred["home_score"] == home and pred["away_score"] == away:
+                continue
+            upsert_prediction(user_id, match["id"], home, away)
+            saved += 1
+    return saved
+
+
+def sync_media_tournament_vote(pool_id: int) -> bool:
+    from media_predictors import MEDIA_PREDICTORS, get_media_tournament_picks
+
+    changed = False
+    for agent in MEDIA_PREDICTORS:
+        picks = get_media_tournament_picks(agent["key"])
+        if not picks:
+            continue
+        user_id = ensure_ai_user(pool_id, agent["display_name"], agent["key"])
+        result = upsert_tournament_vote(
+            user_id,
+            picks["top_scorer"],
+            picks["winner"],
+            picks["second_place"],
+            picks["third_place"],
+        )
+        if not isinstance(result, str):
+            changed = True
+    return changed
+
+
+def ensure_media_in_all_pools() -> None:
+    with db() as conn:
+        pools = conn.execute("SELECT id FROM pools").fetchall()
+    for pool in pools:
+        ensure_all_media_users(pool["id"])
+        sync_media_predictions(pool["id"])
+        sync_media_tournament_vote(pool["id"])
+
+
 def ensure_ai_in_all_pools() -> None:
     with db() as conn:
         pools = conn.execute("SELECT id FROM pools").fetchall()
@@ -2357,6 +2420,9 @@ def ensure_ai_in_all_pools() -> None:
         ensure_all_ai_users(pool["id"])
         sync_ai_predictions(pool["id"])
         sync_ai_tournament_vote(pool["id"])
+        ensure_all_media_users(pool["id"])
+        sync_media_predictions(pool["id"])
+        sync_media_tournament_vote(pool["id"])
 
 
 def add_knockout_match(
@@ -2536,6 +2602,7 @@ def get_pool_members_with_stats(pool_id: int) -> list[dict]:
 
 def delete_user(user_id: int, pool_id: int) -> str | None:
     from ai_predictor import is_synced_ai_agent
+    from media_predictors import is_media_agent
 
     with db() as conn:
         user = conn.execute(
@@ -2546,13 +2613,15 @@ def delete_user(user_id: int, pool_id: int) -> str | None:
             return "User not found in this pool."
         if is_synced_ai_agent(user["display_name"], user["ai_agent_key"]):
             return "Cannot delete AI pool members."
+        if is_media_agent(user["display_name"], user["ai_agent_key"]):
+            return "Cannot delete media pundit pool members."
 
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     return None
 
 
 def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str:
-    from ai_predictor import infer_ai_agent_key, is_ai_agent, is_synced_ai_agent
+    from ai_predictor import infer_ai_agent_key, is_agent_badge, is_ai_agent, is_synced_ai_agent
 
     name = new_display_name.strip()
     if not name:
@@ -2578,13 +2647,13 @@ def rename_user(user_id: int, pool_id: int, new_display_name: str) -> dict | str
                 return f'Another member already uses the name "{row["display_name"]}".'
 
         agent_key = user["ai_agent_key"] or infer_ai_agent_key(user["display_name"])
-        if not agent_key and is_ai_agent(user["display_name"], user["ai_agent_key"]):
+        if not agent_key and is_agent_badge(user["display_name"], user["ai_agent_key"]):
             agent_key = infer_ai_agent_key(name)
         conn.execute(
             "UPDATE users SET display_name = ? WHERE id = ?",
             (name, user_id),
         )
-        if agent_key and is_ai_agent(user["display_name"], agent_key):
+        if agent_key and is_agent_badge(user["display_name"], agent_key):
             conn.execute(
                 "UPDATE users SET ai_agent_key = ? WHERE id = ?",
                 (agent_key, user_id),

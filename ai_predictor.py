@@ -137,12 +137,17 @@ def predict_tournament_picks(pool_id: int, agent_key: str = "cursor") -> dict[st
 
 
 def infer_ai_agent_key(display_name: str | None = None) -> str | None:
+    from media_predictors import infer_media_agent_key
+
     if not display_name:
         return None
     if display_name in RENAMED_LEGACY_AI_NAMES or display_name == "Cursor AI Predictions":
         return LEGACY_PREDICTIONS_AGENT_KEY
     if display_name in CURSOR_LEGACY_DISPLAY_NAMES:
         return LEGACY_PREDICTIONS_AGENT_KEY
+    media_key = infer_media_agent_key(display_name)
+    if media_key:
+        return media_key
     for agent in AI_AGENTS:
         if agent["display_name"] == display_name:
             return agent["key"]
@@ -151,16 +156,28 @@ def infer_ai_agent_key(display_name: str | None = None) -> str | None:
 
 def is_synced_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
     """True for pool members that receive automated pick sync."""
+    from media_predictors import is_media_agent
+
+    if is_media_agent(display_name, ai_agent_key):
+        return False
     key = ai_agent_key or infer_ai_agent_key(display_name)
     return bool(key and key in AI_AGENT_KEYS and key not in REMOVED_SYNC_AGENTS)
 
 
 def _agent_profile(display_name: str | None = None, ai_agent_key: str | None = None) -> dict | None:
+    from media_predictors import MEDIA_PREDICTORS
+
     if ai_agent_key:
+        for agent in MEDIA_PREDICTORS:
+            if agent["key"] == ai_agent_key:
+                return agent
         for agent in AI_AGENTS:
             if agent["key"] == ai_agent_key:
                 return agent
     if display_name:
+        for agent in MEDIA_PREDICTORS:
+            if agent["display_name"] == display_name:
+                return agent
         for agent in AI_AGENTS:
             if agent["display_name"] == display_name:
                 return agent
@@ -183,6 +200,13 @@ def is_ai_agent(display_name: str | None = None, ai_agent_key: str | None = None
     if display_name in AI_AGENT_NAMES or display_name == AI_DISPLAY_NAME:
         return True
     return False
+
+
+def is_agent_badge(display_name: str | None = None, ai_agent_key: str | None = None) -> bool:
+    """True for AI and media pundits that show a source badge in the UI."""
+    from media_predictors import is_media_agent
+
+    return is_ai_agent(display_name, ai_agent_key) or is_media_agent(display_name, ai_agent_key)
 
 
 def ai_agent_badge(display_name: str | None = None, ai_agent_key: str | None = None) -> str:

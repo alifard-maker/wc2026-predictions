@@ -84,7 +84,7 @@
       <tr>
         <td>
           <strong>{{ m.display_name }}</strong>
-          {% if is_ai_agent(m.display_name, m.ai_agent_key) %}<span class="badge">AI</span>{% endif %}
+          {% if is_agent_badge(m.display_name, m.ai_agent_key) %}<span class="badge">{{ ai_agent_badge(m.display_name, m.ai_agent_key) }}</span>{% endif %}
         </td>
         <td>{{ m.prediction_count }}</td>
         <td>{{ m.comment_count }}</td>
@@ -95,14 +95,14 @@
             <input type="text" name="new_display_name" value="{{ m.display_name }}" maxlength="40" required>
             <button type="submit" class="btn btn-secondary btn-sm">Rename</button>
           </form>
-          {% if not is_ai_agent(m.display_name, m.ai_agent_key) %}
+          {% if not is_agent_badge(m.display_name, m.ai_agent_key) %}
           <a href="{{ url_for('admin_page', invite_code=pool.invite_code, user_id=m.id) }}#edit-picks" class="btn btn-secondary btn-sm">Edit picks</a>
           <form method="post" class="admin-merge-form" onsubmit="return confirm('Merge {{ m.display_name }} into the selected account? Predictions are combined; clashes keep the keeper\\'s pick.')">
             <input type="hidden" name="action" value="merge_user">
             <input type="hidden" name="dup_user_id" value="{{ m.id }}">
             <select name="keeper_user_id" required aria-label="Merge {{ m.display_name }} into">
               <option value="">Merge into…</option>
-              {% for other in members if other.id != m.id and not is_ai_agent(other.display_name, other.ai_agent_key) %}
+              {% for other in members if other.id != m.id and not is_agent_badge(other.display_name, other.ai_agent_key) %}
               <option value="{{ other.id }}">{{ other.display_name }}</option>
               {% endfor %}
             </select>

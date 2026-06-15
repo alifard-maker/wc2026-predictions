@@ -21,7 +21,16 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
-from ai_predictor import AI_AGENTS, AI_DISPLAY_NAME, ai_agent_avatar_file, ai_agent_badge, is_ai_agent, is_synced_ai_agent
+from ai_predictor import (
+    AI_AGENTS,
+    AI_DISPLAY_NAME,
+    ai_agent_avatar_file,
+    ai_agent_badge,
+    is_agent_badge,
+    is_ai_agent,
+    is_synced_ai_agent,
+)
+from media_predictors import is_media_agent
 import live_score_sync
 from listen_live import LISTEN_LIVE_DESTINATIONS
 from live_scores import (
@@ -84,7 +93,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.88"
+APP_VERSION = "Beta 3.90"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -176,6 +185,8 @@ def inject_public_url():
         "ai_display_name": AI_DISPLAY_NAME,
         "ai_agents": AI_AGENTS,
         "is_ai_agent": is_ai_agent,
+        "is_agent_badge": is_agent_badge,
+        "is_media_agent": is_media_agent,
         "ai_agent_badge": ai_agent_badge,
         "team_slug": team_slug,
         "flag_url": get_flag_url,
@@ -259,7 +270,7 @@ def user_avatar_url(
     display_name: str | None = None,
     ai_agent_key: str | None = None,
 ) -> str | None:
-    if display_name and is_ai_agent(display_name, ai_agent_key):
+    if display_name and is_agent_badge(display_name, ai_agent_key):
         avatar_file = ai_agent_avatar_file(display_name, ai_agent_key)
         if avatar_file:
             version = APP_VERSION.replace(" ", "-")
@@ -278,7 +289,7 @@ def user_has_avatar(
     display_name: str | None = None,
     ai_agent_key: str | None = None,
 ) -> bool:
-    if display_name and is_ai_agent(display_name, ai_agent_key) and ai_agent_avatar_file(display_name, ai_agent_key):
+    if display_name and is_agent_badge(display_name, ai_agent_key) and ai_agent_avatar_file(display_name, ai_agent_key):
         return True
     return user_avatars.avatar_exists_for_user(user_id, photo_updated_at)
 
@@ -710,6 +721,9 @@ def create_pool():
     db.ensure_all_ai_users(pool["id"])
     db.sync_ai_predictions(pool["id"])
     db.sync_ai_tournament_vote(pool["id"])
+    db.ensure_all_media_users(pool["id"])
+    db.sync_media_predictions(pool["id"])
+    db.sync_media_tournament_vote(pool["id"])
     session.clear()
     session["pool_id"] = pool["id"]
     session["invite_code"] = pool["invite_code"]
@@ -2057,6 +2071,8 @@ def admin_page(invite_code):
                     flash("User not found in this pool.", "error")
                 elif is_synced_ai_agent(user["display_name"], user["ai_agent_key"]):
                     flash("Use the AI sync tools for synced AI members — not manual override.", "error")
+                elif is_media_agent(user["display_name"], user["ai_agent_key"]):
+                    flash("Media pundit picks sync from published sources — not manual override.", "error")
                 else:
                     saved = 0
                     for key in request.form:
@@ -2112,6 +2128,8 @@ def admin_page(invite_code):
                     flash("User not found in this pool.", "error")
                 elif is_synced_ai_agent(user["display_name"], user["ai_agent_key"]):
                     flash("Use the AI sync tools for synced AI members — not manual override.", "error")
+                elif is_media_agent(user["display_name"], user["ai_agent_key"]):
+                    flash("Media pundit picks sync from published sources — not manual override.", "error")
                 else:
                     top_scorer = resolve_scorer_pick_value(
                         request.form.get("top_scorer", ""),
