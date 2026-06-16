@@ -21,7 +21,7 @@ GROUP_FIXTURES = [
     {"matchday": 1, "group": "I", "home": "France", "away": "Senegal", "date": "2026-06-16", "time": "15:00", "venue": "New York New Jersey Stadium"},
     {"matchday": 1, "group": "I", "home": "Iraq", "away": "Norway", "date": "2026-06-16", "time": "18:00", "venue": "Boston Stadium"},
     {"matchday": 1, "group": "J", "home": "Argentina", "away": "Algeria", "date": "2026-06-16", "time": "21:00", "venue": "Kansas City Stadium"},
-    {"matchday": 1, "group": "J", "home": "Austria", "away": "Jordan", "date": "2026-06-16", "time": "21:00", "venue": "San Francisco Bay Area Stadium"},
+    {"matchday": 1, "group": "J", "home": "Austria", "away": "Jordan", "date": "2026-06-17", "time": "00:00", "venue": "San Francisco Bay Area Stadium"},
     {"matchday": 1, "group": "L", "home": "Ghana", "away": "Panama", "date": "2026-06-17", "time": "19:00", "venue": "Toronto Stadium"},
     {"matchday": 1, "group": "L", "home": "England", "away": "Croatia", "date": "2026-06-17", "time": "16:00", "venue": "Dallas Stadium"},
     {"matchday": 1, "group": "K", "home": "Portugal", "away": "Congo DR", "date": "2026-06-17", "time": "13:00", "venue": "Houston Stadium"},
