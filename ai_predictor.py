@@ -29,28 +29,60 @@ LEGACY_PREDICTIONS_AGENT_KEY = "cursor_predictions"
 LEGACY_AI_AGENT_KEYS: frozenset[str] = frozenset({LEGACY_PREDICTIONS_AGENT_KEY})
 RENAMED_LEGACY_AI_NAMES: frozenset[str] = frozenset({"Nostradamus"})
 
-# Weighted toward realistic results — fewer draws than before.
-SCORE_OPTIONS = [
-    (1, 0), (2, 0), (2, 1), (3, 0), (3, 1), (3, 2),
-    (0, 1), (0, 2), (1, 2), (0, 3), (1, 3), (2, 3),
-    (1, 1), (2, 2), (0, 0),
-]
+# Bump when predict_score logic changes — triggers refresh of open AI picks on deploy.
+AI_PREDICTOR_VERSION = 2
 
 AGENT_DRAW_BIAS = {
     "cursor": 0.35,
-    "chatgpt": 0.25,
-    "gemini": 0.20,
-    "grok": 0.15,
-    "claude": 0.30,
+    "chatgpt": 0.28,
+    "gemini": 0.22,
+    "grok": 0.18,
+    "claude": 0.32,
 }
 
 AGENT_UPSET_BIAS = {
     "cursor": 0.0,
-    "chatgpt": 0.05,
-    "gemini": 0.08,
-    "grok": 0.12,
-    "claude": 0.04,
+    "chatgpt": 0.06,
+    "gemini": 0.10,
+    "grok": 0.14,
+    "claude": 0.05,
 }
+
+# Score pools by strength gap (0 = even match, higher = bigger favourite).
+_SCORE_POOLS: list[tuple[float, dict[str, list[tuple[int, int]]]]] = [
+    (
+        0.12,
+        {
+            "home": [(1, 0), (2, 1), (1, 0), (2, 0), (2, 1), (1, 0)],
+            "away": [(0, 1), (1, 2), (0, 1), (0, 2), (1, 2), (0, 1)],
+            "draw": [(1, 1), (0, 0), (2, 2), (1, 1), (0, 0)],
+        },
+    ),
+    (
+        0.22,
+        {
+            "home": [(2, 1), (1, 0), (2, 0), (2, 1), (1, 0), (2, 1)],
+            "away": [(1, 2), (0, 1), (0, 2), (1, 2), (0, 1), (1, 2)],
+            "draw": [(1, 1), (0, 0), (1, 1)],
+        },
+    ),
+    (
+        0.35,
+        {
+            "home": [(2, 0), (2, 1), (1, 0), (3, 1), (2, 1), (2, 0)],
+            "away": [(0, 2), (1, 2), (0, 1), (1, 3), (1, 2), (0, 2)],
+            "draw": [(1, 1), (0, 0)],
+        },
+    ),
+    (
+        1.0,
+        {
+            "home": [(2, 0), (3, 0), (3, 1), (2, 0), (2, 1), (3, 0)],
+            "away": [(0, 2), (0, 3), (1, 3), (0, 2), (1, 2), (0, 3)],
+            "draw": [(1, 1)],
+        },
+    ),
+]
 
 
 def _team_strength(team: str) -> float:
@@ -67,39 +99,45 @@ def _seed(agent_key: str, match_id: int, home: str, away: str) -> int:
     return int(hashlib.md5(raw).hexdigest()[:8], 16)
 
 
+def _score_pool_for_gap(gap: float) -> dict[str, list[tuple[int, int]]]:
+    for threshold, pools in _SCORE_POOLS:
+        if gap <= threshold:
+            return pools
+    return _SCORE_POOLS[-1][1]
+
+
 def predict_score(home: str, away: str, match_id: int, agent_key: str = "cursor") -> tuple[int, int]:
-    """Deterministic AI prediction — favours wins over draws."""
+    """Deterministic AI prediction with realistic score variety."""
     home_s = _team_strength(home)
     away_s = _team_strength(away)
     seed = _seed(agent_key, match_id, home, away)
-    home_prob = home_s / (home_s + away_s)
-    draw_bias = AGENT_DRAW_BIAS.get(agent_key, 0.3)
-    upset = AGENT_UPSET_BIAS.get(agent_key, 0.0)
 
-    # Slight agent-specific nudge to home/away balance
-    if seed % 100 < int(upset * 100):
-        home_prob = 1.0 - home_prob
+    closeness = min(home_s, away_s) / max(home_s, away_s)
+    gap = 1.0 - closeness
+    home_edge = home_s / (home_s + away_s)
+    home_edge = min(0.90, max(0.10, home_edge + 0.04))  # slight home advantage
 
-    best = (1, 0)
-    best_val = -1.0
-    for i, (h, a) in enumerate(SCORE_OPTIONS):
-        closeness = min(home_s, away_s) / max(home_s, away_s)
-        if h > a:
-            margin = h - a
-            val = home_prob * (2.2 + margin * 0.3)
-        elif h < a:
-            margin = a - h
-            val = (1.0 - home_prob) * (2.2 + margin * 0.3)
-        else:
-            if closeness < 0.88:
-                val = 0.15
-            else:
-                val = draw_bias * closeness * (2.0 if h == 1 else 1.4)
-        val += ((seed + i) % 11) * 0.008
-        if val > best_val:
-            best_val = val
-            best = (h, a)
-    return best
+    draw_bias = AGENT_DRAW_BIAS.get(agent_key, 0.25)
+    upset_chance = AGENT_UPSET_BIAS.get(agent_key, 0.0) * closeness
+    if seed % 100 < int(upset_chance * 100):
+        home_edge = 1.0 - home_edge
+
+    draw_threshold = int(draw_bias * closeness * 340)
+    if closeness < 0.82:
+        draw_threshold = int(draw_threshold * (0.55 + closeness * 0.35))
+
+    roll = seed % 1000
+    home_threshold = draw_threshold + int((1000 - draw_threshold) * home_edge)
+
+    if roll < draw_threshold:
+        outcome = "draw"
+    elif roll < home_threshold:
+        outcome = "home"
+    else:
+        outcome = "away"
+
+    pool = _score_pool_for_gap(gap)[outcome]
+    return pool[(seed // 7 + match_id) % len(pool)]
 
 
 TOP_SCORER_PICKS = [

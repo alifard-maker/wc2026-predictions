@@ -2414,6 +2414,12 @@ def ensure_media_in_all_pools() -> None:
 
 
 def ensure_ai_in_all_pools() -> None:
+    from ai_predictor import AI_PREDICTOR_VERSION
+
+    version_key = "ai_predictor_version"
+    if get_sync_meta(version_key) != str(AI_PREDICTOR_VERSION):
+        set_sync_meta(version_key, str(AI_PREDICTOR_VERSION))
+
     with db() as conn:
         pools = conn.execute("SELECT id FROM pools").fetchall()
     for pool in pools:
