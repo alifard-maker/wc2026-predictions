@@ -338,15 +338,22 @@ def _crosscheck_live_scores(
     meta["espn"] = [espn_home, espn_away]
     if espn_home == fd_home and espn_away == fd_away:
         meta["result"] = "agreed"
-        return fd_home, fd_away, meta
+        home, away = fd_home, fd_away
+    else:
+        meta["result"] = "corrected"
+        meta["used"] = "football_data"
+        db.set_sync_meta(
+            f"score_crosscheck_{match_id}",
+            json.dumps({**meta, "at": datetime.now(TIMEZONE).isoformat()}),
+        )
+        home, away = fd_home, fd_away
 
-    meta["result"] = "corrected"
-    meta["used"] = "football_data"
-    db.set_sync_meta(
-        f"score_crosscheck_{match_id}",
-        json.dumps({**meta, "at": datetime.now(TIMEZONE).isoformat()}),
-    )
-    return fd_home, fd_away, meta
+    from db import floor_live_score_from_goals
+
+    home, away = floor_live_score_from_goals(match_id, home, away)
+    if home != fd_home or away != fd_away:
+        meta["goal_floor"] = [home, away]
+    return home, away, meta
 
 
 def _track_second_half_start(match_id: int, api_status: str) -> None:
@@ -847,6 +854,8 @@ def _process_api_match(
     result["api_bookings"] = len(api_match.get("bookings") or [])
     result["api_goals"] = len(api_match.get("goals") or [])
     result["penalties_added"] = _sync_penalties(match_id, db_match, api_match, our_teams)
+    if db.reconcile_live_score_from_goals(match_id):
+        result["score_reconciled"] = 1
     return result
 
 
@@ -956,6 +965,7 @@ def sync_live_scores(force: bool = False) -> dict:
     knockout = db.sync_knockout_stage()
     card_reconcile = reconcile_recorded_match_cards()
     shootout_repair = db.repair_bogus_shootout_penalties()
+    goals_reconciled = db.reconcile_all_live_scores_from_goals()
 
     disagreements = [c for c in crosscheck_rows if c.get("result") == "corrected"]
     summary = {
@@ -966,6 +976,7 @@ def sync_live_scores(force: bool = False) -> dict:
         "knockout": knockout,
         "card_reconcile": card_reconcile,
         "shootout_repair_removed": shootout_repair,
+        "goals_reconciled": goals_reconciled,
         "synced_at": datetime.now(TIMEZONE).isoformat(),
         "cooldown_seconds": cooldown,
         "fast_poll": any(

@@ -2207,6 +2207,80 @@ def get_player_cards_table() -> list[dict]:
         return {"events": events, "summary": summary}
 
 
+def get_match_goal_counts(match_id: int) -> tuple[int, int]:
+    """Return (home_goals, away_goals) from synced match_goals rows."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT team_side, COUNT(*) AS n
+            FROM match_goals
+            WHERE match_id = ?
+            GROUP BY team_side
+            """,
+            (match_id,),
+        ).fetchall()
+    home = away = 0
+    for row in rows:
+        if row["team_side"] == "home":
+            home = int(row["n"])
+        elif row["team_side"] == "away":
+            away = int(row["n"])
+    return home, away
+
+
+def floor_live_score_from_goals(match_id: int, home: int, away: int) -> tuple[int, int]:
+    """Never publish a live score below goals already recorded in the feed."""
+    goal_home, goal_away = get_match_goal_counts(match_id)
+    if goal_home == 0 and goal_away == 0:
+        return home, away
+    return max(int(home), goal_home), max(int(away), goal_away)
+
+
+def reconcile_live_score_from_goals(match_id: int) -> bool:
+    """Raise live_home/live_away to match recorded goals when APIs undercount."""
+    with db() as conn:
+        match = conn.execute(
+            "SELECT live_home, live_away, actual_home FROM matches WHERE id = ?",
+            (match_id,),
+        ).fetchone()
+        if not match or match["actual_home"] is not None:
+            return False
+        goal_home, goal_away = get_match_goal_counts(match_id)
+        if goal_home == 0 and goal_away == 0:
+            return False
+        live_home = int(match["live_home"] or 0)
+        live_away = int(match["live_away"] or 0)
+        new_home, new_away = max(live_home, goal_home), max(live_away, goal_away)
+        if new_home == live_home and new_away == live_away:
+            return False
+        conn.execute(
+            """
+            UPDATE matches
+            SET live_home = ?, live_away = ?
+            WHERE id = ? AND actual_home IS NULL
+            """,
+            (new_home, new_away, match_id),
+        )
+        return True
+
+
+def reconcile_all_live_scores_from_goals() -> int:
+    """Fix live scores for all in-play matches after a sync pass."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id FROM matches
+            WHERE actual_home IS NULL
+              AND status IN ('live', 'halftime', 'hydration_break', 'extra_time', 'penalty_shootout')
+            """
+        ).fetchall()
+    fixed = 0
+    for row in rows:
+        if reconcile_live_score_from_goals(row["id"]):
+            fixed += 1
+    return fixed
+
+
 def update_match_live(
     match_id: int,
     live_home: int,
@@ -2228,6 +2302,7 @@ def update_match_live(
             kickoff = parse_match_datetime(row["match_date"], row["match_time"])
             if datetime.now(TIMEZONE) < kickoff:
                 return
+        live_home, live_away = floor_live_score_from_goals(match_id, live_home, live_away)
         if live_minute is not None and live_minute > 0:
             if live_injury_minute is not None:
                 conn.execute(

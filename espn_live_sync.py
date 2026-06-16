@@ -887,6 +887,10 @@ def _sync_espn_event(
         if removed:
             result["cards_removed"] = removed
 
+    if result.get("matched"):
+        if db.reconcile_live_score_from_goals(match_id):
+            result["score_reconciled"] = 1
+
     return result
 
 
