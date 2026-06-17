@@ -184,6 +184,10 @@ def init_db() -> None:
         goal_cols = {row[1] for row in conn.execute("PRAGMA table_info(match_goals)").fetchall()}
         if goal_cols and "is_penalty" not in goal_cols:
             conn.execute("ALTER TABLE match_goals ADD COLUMN is_penalty INTEGER NOT NULL DEFAULT 0")
+        if goal_cols and "goal_source" not in goal_cols:
+            conn.execute(
+                "ALTER TABLE match_goals ADD COLUMN goal_source TEXT NOT NULL DEFAULT 'sync'"
+            )
 
         card_cols = {row[1] for row in conn.execute("PRAGMA table_info(player_cards)").fetchall()}
         if card_cols and "card_source" not in card_cols:
@@ -1052,6 +1056,46 @@ def align_match_schedule(match_id: int, kickoff_et) -> bool:
     return True
 
 
+def _goal_event_key(team_side: str, minute: int, injury_minute: int | None) -> tuple[str, int, int]:
+    return (team_side, minute, 0 if injury_minute is None else int(injury_minute))
+
+
+def reconcile_synced_goals(
+    match_id: int,
+    expected: list[tuple[str, int, int | None]],
+    *,
+    authoritative: bool = False,
+) -> int:
+    """Drop feed-synced goals removed by the API (e.g. VAR offside)."""
+    normalized = {_goal_event_key(side, minute, injury) for side, minute, injury in expected}
+    removed = 0
+    with db() as conn:
+        if authoritative:
+            rows = conn.execute(
+                """
+                SELECT id, team_side, minute, injury_minute
+                FROM match_goals
+                WHERE match_id = ?
+                """,
+                (match_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, team_side, minute, injury_minute
+                FROM match_goals
+                WHERE match_id = ? AND COALESCE(goal_source, 'sync') = 'sync'
+                """,
+                (match_id,),
+            ).fetchall()
+        for row in rows:
+            key = _goal_event_key(row["team_side"], row["minute"], row["injury_minute"])
+            if key not in normalized:
+                conn.execute("DELETE FROM match_goals WHERE id = ?", (row["id"],))
+                removed += 1
+    return removed
+
+
 def reconcile_synced_cards(
     match_id: int,
     expected: list[tuple[str, str, str]],
@@ -1587,8 +1631,8 @@ def upsert_match_goal(
 
         conn.execute(
             """
-            INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty, goal_source)
+            VALUES (?, ?, ?, ?, ?, ?, 'sync')
             """,
             (match_id, team_side, name, minute, injury_minute, 1 if is_penalty else 0),
         )
@@ -1933,8 +1977,8 @@ def add_match_goal(
 
         cur = conn.execute(
             """
-            INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO match_goals (match_id, team_side, scorer_name, minute, injury_minute, is_penalty, goal_source)
+            VALUES (?, ?, ?, ?, ?, ?, 'admin')
             """,
             (match_id, team_side, name, minute, injury_minute, 1 if is_penalty else 0),
         )
@@ -1961,12 +2005,7 @@ def delete_match_goal(goal_id: int) -> str | None:
         conn.execute("DELETE FROM match_goals WHERE id = ?", (goal_id,))
 
         if goal["actual_home"] is None:
-            col = "live_home" if goal["team_side"] == "home" else "live_away"
-            current = goal[col] if goal[col] is not None else 0
-            conn.execute(
-                f"UPDATE matches SET {col} = ? WHERE id = ?",
-                (max(0, current - 1), goal["match_id"]),
-            )
+            reconcile_live_score_from_goals(goal["match_id"])
         return None
 
 
@@ -2237,7 +2276,7 @@ def floor_live_score_from_goals(match_id: int, home: int, away: int) -> tuple[in
 
 
 def reconcile_live_score_from_goals(match_id: int) -> bool:
-    """Raise live_home/live_away to match recorded goals when APIs undercount."""
+    """Align live score with the goal events on the board (supports VAR removals)."""
     with db() as conn:
         match = conn.execute(
             "SELECT live_home, live_away, actual_home FROM matches WHERE id = ?",
@@ -2246,12 +2285,11 @@ def reconcile_live_score_from_goals(match_id: int) -> bool:
         if not match or match["actual_home"] is not None:
             return False
         goal_home, goal_away = get_match_goal_counts(match_id)
-        if goal_home == 0 and goal_away == 0:
+        if goal_home + goal_away == 0:
             return False
         live_home = int(match["live_home"] or 0)
         live_away = int(match["live_away"] or 0)
-        new_home, new_away = max(live_home, goal_home), max(live_away, goal_away)
-        if new_home == live_home and new_away == live_away:
+        if goal_home == live_home and goal_away == live_away:
             return False
         conn.execute(
             """
@@ -2259,7 +2297,7 @@ def reconcile_live_score_from_goals(match_id: int) -> bool:
             SET live_home = ?, live_away = ?
             WHERE id = ? AND actual_home IS NULL
             """,
-            (new_home, new_away, match_id),
+            (goal_home, goal_away, match_id),
         )
         return True
 

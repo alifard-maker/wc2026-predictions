@@ -430,11 +430,24 @@ def _espn_status(comp_status: dict | None) -> str | None:
 
 def _is_goal_event(type_text: str, detail: dict | None = None) -> bool:
     text = (type_text or "").strip()
+    lowered = text.lower()
+    if any(
+        marker in lowered
+        for marker in (
+            "disallowed",
+            "ruled out",
+            "ruled offside",
+            "no goal",
+            "overturned",
+            "cancelled",
+            "canceled",
+        )
+    ):
+        return False
     if text == "Goal" or text.startswith("Goal "):
         return True
     if detail and detail.get("penaltyKick") and detail.get("scoringPlay"):
         return True
-    lowered = text.lower()
     return "penalty" in lowered and "goal" in lowered
 
 
@@ -830,6 +843,7 @@ def _sync_espn_event(
         db.set_sync_meta(f"espn_live_source_{match_id}", datetime.now(TIMEZONE).isoformat())
 
     expected_cards: list[tuple[str, str, str]] = []
+    expected_goals: list[tuple[str, int, int | None]] = []
     in_shootout = db_status == "penalty_shootout"
     for detail in competition.get("details") or []:
         type_text = ((detail.get("type") or {}).get("text") or "").strip()
@@ -858,6 +872,7 @@ def _sync_espn_event(
             else:
                 continue
             is_pen = bool(detail.get("penaltyKick"))
+            expected_goals.append((side, minute, injury))
             if db.upsert_match_goal(match_id, side, player, minute, injury, is_pen):
                 result["goals_added"] += 1
         elif type_text == "Yellow Card":
@@ -879,6 +894,13 @@ def _sync_espn_event(
 
     if result["matched"]:
         finished = db_match.get("actual_home") is not None
+        goals_removed = db.reconcile_synced_goals(
+            match_id,
+            expected_goals,
+            authoritative=finished,
+        )
+        if goals_removed:
+            result["goals_removed"] = goals_removed
         removed = db.reconcile_synced_cards(
             match_id,
             expected_cards,

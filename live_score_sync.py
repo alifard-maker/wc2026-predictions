@@ -641,6 +641,7 @@ def _goal_scorer_name(goal: dict) -> str:
 
 def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> int:
     added = 0
+    expected: list[tuple[str, int, int | None]] = []
     for goal in api_match.get("goals") or []:
         parsed = _parse_goal_minute(goal)
         if parsed is None:
@@ -657,8 +658,10 @@ def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[s
             continue
         scorer = _goal_scorer_name(goal)
         is_pen = (goal.get("type") or "").upper() == "PENALTY"
+        expected.append((side, minute, injury))
         if db.upsert_match_goal(match_id, side, scorer, minute, injury, is_pen):
             added += 1
+    db.reconcile_synced_goals(match_id, expected)
     return added
 
 
