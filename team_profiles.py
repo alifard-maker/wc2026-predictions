@@ -101,10 +101,27 @@ def get_wc_titles(name: str) -> int:
 def get_team_profile(name: str) -> dict | None:
     if name not in TEAM_PROFILES:
         return None
+    from wc_appearance_years import (
+        format_wc_years,
+        get_wc_appearance_highlights,
+        get_wc_appearance_years,
+    )
+
     p = TEAM_PROFILES[name].copy()
     p["name"] = name
     p["slug"] = team_slug(name)
     p["honour"] = TEAM_FACTS.get(name, {}).get("honour", "")
+
+    wc_years = get_wc_appearance_years(name)
+    if wc_years:
+        p["wc_years"] = wc_years
+        p["appearances"] = len(wc_years)
+        p["first"] = wc_years[0]
+        p["history_years"] = format_wc_years(wc_years)
+        p["history_highlights"] = get_wc_appearance_highlights(name)
+        # Legacy field used in templates — now the full year list.
+        p["history"] = [format_wc_years(wc_years)]
+
     total = p["wc_w"] + p["wc_d"] + p["wc_l"]
     p["wc_played"] = total
     p["wc_win_pct"] = round(100 * p["wc_w"] / total, 1) if total else 0

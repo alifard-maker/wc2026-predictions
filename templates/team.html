@@ -182,8 +182,18 @@
       <li><strong>Matches played:</strong> {{ profile.wc_played }} ({{ profile.wc_win_pct }}% wins)</li>
       <li><strong>Won:</strong> {{ profile.wc_w }} · <strong>Drawn:</strong> {{ profile.wc_d }} · <strong>Lost:</strong> {{ profile.wc_l }}</li>
     </ul>
-    <p style="color: var(--muted); margin: 1rem 0 0.5rem; font-size: 0.9rem">Tournament appearances:</p>
-    <p style="margin: 0">{{ profile.history | join(' · ') }}</p>
+    <p style="color: var(--muted); margin: 1rem 0 0.5rem; font-size: 0.9rem">
+      World Cup appearances ({{ profile.appearances }}):
+    </p>
+    <p style="margin: 0">{{ profile.history_years }}</p>
+    {% if profile.history_highlights %}
+    <p style="color: var(--muted); margin: 1rem 0 0.5rem; font-size: 0.9rem">Notable finishes:</p>
+    <ul class="rules compact-list" style="margin: 0">
+      {% for note in profile.history_highlights %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   </div>
 
   <div class="card">
