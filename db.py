@@ -2005,7 +2005,7 @@ def delete_match_goal(goal_id: int) -> str | None:
         conn.execute("DELETE FROM match_goals WHERE id = ?", (goal_id,))
 
         if goal["actual_home"] is None:
-            reconcile_live_score_from_goals(goal["match_id"])
+            reconcile_live_score_from_goals(goal["match_id"], goals_removed=1)
         return None
 
 
@@ -2267,16 +2267,16 @@ def get_match_goal_counts(match_id: int) -> tuple[int, int]:
     return home, away
 
 
-def floor_live_score_from_goals(match_id: int, home: int, away: int) -> tuple[int, int]:
-    """Never publish a live score below goals already recorded in the feed."""
-    goal_home, goal_away = get_match_goal_counts(match_id)
-    if goal_home == 0 and goal_away == 0:
-        return home, away
-    return max(int(home), goal_home), max(int(away), goal_away)
+def reconcile_live_score_from_goals(
+    match_id: int,
+    *,
+    goals_removed: int = 0,
+) -> bool:
+    """Adjust live score from goal events without overriding a higher API score.
 
-
-def reconcile_live_score_from_goals(match_id: int) -> bool:
-    """Align live score with the goal events on the board (supports VAR removals)."""
+    After VAR disallows a goal (goals_removed > 0), trust the goal tally.
+    When goal events lead the published score, raise to match.
+    """
     with db() as conn:
         match = conn.execute(
             "SELECT live_home, live_away, actual_home FROM matches WHERE id = ?",
@@ -2285,11 +2285,16 @@ def reconcile_live_score_from_goals(match_id: int) -> bool:
         if not match or match["actual_home"] is not None:
             return False
         goal_home, goal_away = get_match_goal_counts(match_id)
-        if goal_home + goal_away == 0:
-            return False
         live_home = int(match["live_home"] or 0)
         live_away = int(match["live_away"] or 0)
-        if goal_home == live_home and goal_away == live_away:
+        if goals_removed > 0:
+            new_home, new_away = goal_home, goal_away
+        elif goal_home > live_home or goal_away > live_away:
+            new_home = max(live_home, goal_home)
+            new_away = max(live_away, goal_away)
+        else:
+            return False
+        if new_home == live_home and new_away == live_away:
             return False
         conn.execute(
             """
@@ -2297,13 +2302,13 @@ def reconcile_live_score_from_goals(match_id: int) -> bool:
             SET live_home = ?, live_away = ?
             WHERE id = ? AND actual_home IS NULL
             """,
-            (goal_home, goal_away, match_id),
+            (new_home, new_away, match_id),
         )
         return True
 
 
 def reconcile_all_live_scores_from_goals() -> int:
-    """Fix live scores for all in-play matches after a sync pass."""
+    """Raise live scores that lag behind recorded goal events."""
     with db() as conn:
         rows = conn.execute(
             """
@@ -2340,7 +2345,6 @@ def update_match_live(
             kickoff = parse_match_datetime(row["match_date"], row["match_time"])
             if datetime.now(TIMEZONE) < kickoff:
                 return
-        live_home, live_away = floor_live_score_from_goals(match_id, live_home, live_away)
         if live_minute is not None and live_minute > 0:
             if live_injury_minute is not None:
                 conn.execute(

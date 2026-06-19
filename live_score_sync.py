@@ -348,11 +348,6 @@ def _crosscheck_live_scores(
         )
         home, away = fd_home, fd_away
 
-    from db import floor_live_score_from_goals
-
-    home, away = floor_live_score_from_goals(match_id, home, away)
-    if home != fd_home or away != fd_away:
-        meta["goal_floor"] = [home, away]
     return home, away, meta
 
 
@@ -639,7 +634,7 @@ def _goal_scorer_name(goal: dict) -> str:
     return "Unknown scorer"
 
 
-def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> int:
+def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[str]) -> tuple[int, int]:
     added = 0
     expected: list[tuple[str, int, int | None]] = []
     for goal in api_match.get("goals") or []:
@@ -661,8 +656,8 @@ def _sync_goals(match_id: int, db_match: dict, api_match: dict, our_teams: set[s
         expected.append((side, minute, injury))
         if db.upsert_match_goal(match_id, side, scorer, minute, injury, is_pen):
             added += 1
-    db.reconcile_synced_goals(match_id, expected)
-    return added
+    removed = db.reconcile_synced_goals(match_id, expected)
+    return added, removed
 
 
 def _booking_player_name(booking: dict) -> str | None:
@@ -847,7 +842,10 @@ def _process_api_match(
             result["updated_live"] = 1
             result["stored_minute"] = live_minute
 
-    result["goals_added"] = _sync_goals(match_id, db_match, api_match, our_teams)
+    goals_added, goals_removed = _sync_goals(match_id, db_match, api_match, our_teams)
+    result["goals_added"] = goals_added
+    if goals_removed:
+        result["goals_removed"] = goals_removed
     result["cards_added"] = _sync_bookings(
         match_id,
         api_match,
@@ -857,7 +855,7 @@ def _process_api_match(
     result["api_bookings"] = len(api_match.get("bookings") or [])
     result["api_goals"] = len(api_match.get("goals") or [])
     result["penalties_added"] = _sync_penalties(match_id, db_match, api_match, our_teams)
-    if db.reconcile_live_score_from_goals(match_id):
+    if db.reconcile_live_score_from_goals(match_id, goals_removed=goals_removed):
         result["score_reconciled"] = 1
     return result
 

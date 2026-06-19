@@ -446,6 +446,9 @@ def _is_goal_event(type_text: str, detail: dict | None = None) -> bool:
         return False
     if text == "Goal" or text.startswith("Goal "):
         return True
+    if detail and detail.get("scoringPlay"):
+        if "goal" in lowered or text == "Goal":
+            return True
     if detail and detail.get("penaltyKick") and detail.get("scoringPlay"):
         return True
     return "penalty" in lowered and "goal" in lowered
@@ -910,7 +913,10 @@ def _sync_espn_event(
             result["cards_removed"] = removed
 
     if result.get("matched"):
-        if db.reconcile_live_score_from_goals(match_id):
+        if db.reconcile_live_score_from_goals(
+            match_id,
+            goals_removed=result.get("goals_removed", 0),
+        ):
             result["score_reconciled"] = 1
 
     return result
