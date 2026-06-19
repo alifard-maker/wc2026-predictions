@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_team_flag.html" import wc_stars with context %}
+{% from "_team_flag.html" import wc_stars, team_with_flag with context %}
 {% from "_person_row.html" import person_row %}
 {% block title %}{{ profile.name }} — Team Profile{% endblock %}
 
@@ -44,6 +44,18 @@
 <div class="card team-live-stats-card" id="team-live-stats">
   <div class="stats-row" id="team-discipline-stats">
     <div class="stat">
+      <div class="value" data-stat="gf">{{ live_stats.tournament_record.gf }}</div>
+      <div class="label">⚽ Goals for</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="ga">{{ live_stats.tournament_record.ga }}</div>
+      <div class="label">Goals against</div>
+    </div>
+    <div class="stat">
+      <div class="value" data-stat="record">{{ live_stats.tournament_record.w }}-{{ live_stats.tournament_record.d }}-{{ live_stats.tournament_record.l }}</div>
+      <div class="label">Record (W-D-L)</div>
+    </div>
+    <div class="stat">
       <div class="value" data-stat="yellow">{{ live_stats.yellow_cards }}</div>
       <div class="label">🟨 Yellow cards</div>
     </div>
@@ -70,7 +82,7 @@
   </div>
   {% if live_stats.matches_played %}
   <p class="muted-inline" style="margin-top: 0.75rem" id="team-record-line">
-    Tournament record: {{ live_stats.tournament_record.w }}-{{ live_stats.tournament_record.d }}-{{ live_stats.tournament_record.l }}
+    {{ live_stats.matches_played }} match{{ 'es' if live_stats.matches_played != 1 else '' }} completed
     · {{ live_stats.tournament_record.gf }} scored · {{ live_stats.tournament_record.ga }} conceded
   </p>
   {% endif %}
@@ -99,6 +111,43 @@
     </ul>
     {% endif %}
   </div>
+</div>
+
+<h2 class="section-title">2026 tournament results</h2>
+<div class="card" id="team-tournament-results">
+  <table class="leaderboard-table">
+    <thead>
+      <tr><th>Date</th><th>Opponent</th><th>Score</th><th>Result</th><th>Stage</th><th>Venue</th></tr>
+    </thead>
+    <tbody id="team-results-body">
+      {% for m in live_stats.match_results %}
+      <tr>
+        <td>{{ m.match_date }} {{ m.match_time }} ET</td>
+        <td>
+          <a href="{{ match_detail_url(pool.invite_code, m.match_id) }}" class="team-result-link">
+            {% if m.is_home %}vs{% else %}@{% endif %}
+            {{ team_with_flag(m.opponent, pool.invite_code, link=false) }}
+          </a>
+        </td>
+        <td>
+          {% if m.scoreline %}
+            <strong>{{ m.scoreline }}</strong>{% if m.is_live %} <span class="badge-live">LIVE</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if m.result == 'W' %}<span class="team-result team-result-w">W</span>
+          {% elif m.result == 'D' %}<span class="team-result team-result-d">D</span>
+          {% elif m.result == 'L' %}<span class="team-result team-result-l">L</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ m.stage_label }}</td>
+        <td style="color: var(--muted)">{{ m.venue }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="color: var(--muted)">No results yet — matches appear here as the tournament progresses.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 
 {% if group_preview %}
@@ -362,29 +411,6 @@
   </div>
 </div>
 {% endif %}
-
-<h2 class="section-title">Matches in this tournament</h2>
-<div class="card">
-  <table class="leaderboard-table">
-    <thead>
-      <tr><th>Date</th><th>Match</th><th>Group</th><th>Venue</th></tr>
-    </thead>
-    <tbody>
-      {% for m in team_matches %}
-      <tr>
-        <td>{{ m.match_date }} {{ m.match_time }} ET</td>
-        <td>
-          <a href="{{ match_detail_url(pool.invite_code, m.id) }}">
-            {{ m.home_team }} vs {{ m.away_team }}
-          </a>
-        </td>
-        <td>{% if m.group_name %}Group {{ m.group_name }}{% else %}—{% endif %}</td>
-        <td style="color: var(--muted)">{{ m.venue }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -402,6 +428,13 @@
   }
 
   function renderStats(data) {
+    const r = data.tournament_record || {};
+    const gfEl = root.querySelector('[data-stat="gf"]');
+    const gaEl = root.querySelector('[data-stat="ga"]');
+    const recEl = root.querySelector('[data-stat="record"]');
+    if (gfEl) gfEl.textContent = r.gf ?? 0;
+    if (gaEl) gaEl.textContent = r.ga ?? 0;
+    if (recEl) recEl.textContent = `${r.w ?? 0}-${r.d ?? 0}-${r.l ?? 0}`;
     root.querySelector('[data-stat="yellow"]').textContent = data.yellow_cards;
     root.querySelector('[data-stat="red"]').textContent = data.red_cards;
     const p = data.penalties || {};
@@ -412,8 +445,7 @@
 
     const recordEl = document.getElementById('team-record-line');
     if (data.matches_played) {
-      const r = data.tournament_record;
-      const text = `Tournament record: ${r.w}-${r.d}-${r.l} · ${r.gf} scored · ${r.ga} conceded`;
+      const text = `${data.matches_played} match${data.matches_played === 1 ? '' : 'es'} completed · ${r.gf} scored · ${r.ga} conceded`;
       if (recordEl) recordEl.textContent = text;
       else {
         const p = document.createElement('p');
@@ -423,6 +455,36 @@
         p.textContent = text;
         document.getElementById('team-discipline-stats').after(p);
       }
+    } else if (recordEl) {
+      recordEl.remove();
+    }
+
+    const resultsBody = document.getElementById('team-results-body');
+    if (resultsBody && data.match_results) {
+      const inviteCode = {{ pool.invite_code | tojson }};
+      resultsBody.innerHTML = data.match_results.map(m => {
+        const oppFlag = m.opponent;
+        const venue = esc(m.venue || '');
+        const stage = esc(m.stage_label || '');
+        const date = esc(`${m.match_date} ${m.match_time} ET`);
+        const prefix = m.is_home ? 'vs' : '@';
+        const score = m.scoreline
+          ? `<strong>${esc(m.scoreline)}</strong>${m.is_live ? ' <span class="badge-live">LIVE</span>' : ''}`
+          : '—';
+        let result = '—';
+        if (m.result === 'W') result = '<span class="team-result team-result-w">W</span>';
+        else if (m.result === 'D') result = '<span class="team-result team-result-d">D</span>';
+        else if (m.result === 'L') result = '<span class="team-result team-result-l">L</span>';
+        const matchUrl = `/pool/${encodeURIComponent(inviteCode)}/match/${m.match_id}`;
+        return `<tr>
+          <td>${date}</td>
+          <td><a href="${matchUrl}" class="team-result-link">${prefix} ${esc(m.opponent)}</a></td>
+          <td>${score}</td>
+          <td>${result}</td>
+          <td>${stage}</td>
+          <td style="color: var(--muted)">${venue}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" style="color: var(--muted)">No results yet — matches appear here as the tournament progresses.</td></tr>';
     }
 
     const penLog = document.getElementById('team-penalty-log');

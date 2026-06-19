@@ -35,6 +35,77 @@ def _perspective(team_name: str, match: dict, home_score: int, away_score: int) 
     return gf, ga, outcome
 
 
+def _stage_label(match: dict) -> str:
+    stage = match.get("stage") or "group"
+    if stage == "group":
+        group = match.get("group_name")
+        return f"Group {group}" if group else "Group stage"
+    labels = {
+        "round_of_32": "Round of 32",
+        "round_of_16": "Round of 16",
+        "quarter_final": "Quarter-finals",
+        "semi_final": "Semi-finals",
+        "third_place": "Third place",
+        "final": "Final",
+    }
+    return labels.get(stage, stage.replace("_", " ").title())
+
+
+def get_team_tournament_results(team_name: str) -> list[dict]:
+    """Per-match World Cup results from this team's perspective."""
+    from live_scores import apply_live_state
+
+    rows: list[dict] = []
+    for match in sorted(_team_matches(team_name), key=lambda m: (m["match_date"], m["match_time"])):
+        enriched = apply_live_state(dict(match))
+        is_home = match["home_team"] == team_name
+        opponent = match["away_team"] if is_home else match["home_team"]
+        home = enriched.get("display_home")
+        away = enriched.get("display_away")
+        has_score = home is not None and away is not None
+        is_live = bool(enriched.get("is_live"))
+        is_finished = bool(enriched.get("is_finished"))
+
+        gf = ga = None
+        result = None
+        scoreline = None
+        if has_score and (is_finished or is_live):
+            gf = home if is_home else away
+            ga = away if is_home else home
+            scoreline = f"{gf}–{ga}"
+            if is_finished:
+                if gf > ga:
+                    result = "W"
+                elif gf < ga:
+                    result = "L"
+                else:
+                    result = "D"
+
+        rows.append(
+            {
+                "match_id": match["id"],
+                "match_date": match["match_date"],
+                "match_time": match["match_time"],
+                "opponent": opponent,
+                "is_home": is_home,
+                "home_team": match["home_team"],
+                "away_team": match["away_team"],
+                "group_name": match.get("group_name"),
+                "stage": match.get("stage"),
+                "stage_label": _stage_label(match),
+                "venue": match.get("venue"),
+                "goals_for": gf,
+                "goals_against": ga,
+                "scoreline": scoreline,
+                "result": result,
+                "is_live": is_live,
+                "is_finished": is_finished,
+                "status": enriched.get("status"),
+            }
+        )
+    return rows
+
+
 def get_team_pool_prediction_stats(pool_id: int, team_name: str) -> dict:
     matches = _team_matches(team_name)
     human_preds: list[dict] = []
@@ -134,17 +205,6 @@ def get_team_live_tournament_stats(team_name: str) -> dict:
         ).fetchall()
         cards = _rows_to_dicts(cards)
 
-        results = conn.execute(
-            """
-            SELECT id, home_team, away_team, actual_home, actual_away, match_date, group_name
-            FROM matches
-            WHERE (home_team = ? OR away_team = ?)
-              AND actual_home IS NOT NULL
-            ORDER BY match_date
-            """,
-            (team_name, team_name),
-        ).fetchall()
-
         penalties = conn.execute(
             """
             SELECT p.*, m.home_team, m.away_team, m.match_date
@@ -217,25 +277,28 @@ def get_team_live_tournament_stats(team_name: str) -> dict:
             elif p["outcome"] == "missed":
                 pen_stats["missed_against"] += 1
 
+    match_results = get_team_tournament_results(team_name)
     match_record = {"w": 0, "d": 0, "l": 0, "gf": 0, "ga": 0}
-    for m in results:
-        is_home = m["home_team"] == team_name
-        gf = m["actual_home"] if is_home else m["actual_away"]
-        ga = m["actual_away"] if is_home else m["actual_home"]
-        match_record["gf"] += gf
-        match_record["ga"] += ga
-        if gf > ga:
-            match_record["w"] += 1
-        elif gf < ga:
-            match_record["l"] += 1
-        else:
-            match_record["d"] += 1
+    matches_played = 0
+    for m in match_results:
+        if m["goals_for"] is None or m["goals_against"] is None:
+            continue
+        match_record["gf"] += m["goals_for"]
+        match_record["ga"] += m["goals_against"]
+        if m["is_finished"]:
+            matches_played += 1
+            if m["result"] == "W":
+                match_record["w"] += 1
+            elif m["result"] == "L":
+                match_record["l"] += 1
+            elif m["result"] == "D":
+                match_record["d"] += 1
 
     yellow_cards = sum(1 for c in cards if c["card_type"] == "yellow")
     red_cards = sum(1 for c in cards if c["card_type"] == "red")
 
     return {
-        "has_data": bool(goals or cards or results or penalties),
+        "has_data": bool(goals or cards or match_results or penalties),
         "goals": goal_list,
         "top_scorers": [{"name": n, "goals": c} for n, c in scorer_counts.most_common(5)],
         "cards": [
@@ -253,7 +316,8 @@ def get_team_live_tournament_stats(team_name: str) -> dict:
         "penalties": pen_stats,
         "penalty_events": penalty_events,
         "tournament_record": match_record,
-        "matches_played": len(results),
+        "matches_played": matches_played,
+        "match_results": match_results,
     }
 
 

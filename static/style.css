@@ -4502,3 +4502,34 @@ a.bracket-match:hover {
     grid-template-columns: 1fr;
   }
 }
+
+.team-result {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.team-result-w {
+  background: rgba(46, 204, 113, 0.18);
+  color: #2ecc71;
+}
+
+.team-result-d {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.team-result-l {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+}
+
+.team-result-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

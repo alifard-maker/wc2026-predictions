@@ -93,7 +93,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.97"
+APP_VERSION = "Beta 3.98"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1530,7 +1530,6 @@ def team_page(invite_code, team_slug_name):
         return redirect(url_for("pool_dashboard", invite_code=invite_code))
 
     profile = get_team_profile(team_name)
-    matches = [m for m in db.get_all_matches() if m["home_team"] == team_name or m["away_team"] == team_name]
 
     group_preview = get_group_preview(team_name)
     opponents = group_preview["opponents"] if group_preview else []
@@ -1547,7 +1546,6 @@ def team_page(invite_code, team_slug_name):
         "team.html",
         pool=pool,
         profile=profile,
-        team_matches=matches,
         group_preview=group_preview,
         history=history,
         coach_wc_record=coach_wc_record,

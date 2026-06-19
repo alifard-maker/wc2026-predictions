@@ -1890,19 +1890,43 @@ def get_tournament_cards_by_team() -> list[dict]:
 
 
 def get_tournament_goals_by_team(*, sort_by_team: bool = False) -> list[dict]:
-    with db() as conn:
-        order = "team ASC" if sort_by_team else "goals DESC, team ASC"
-        rows = conn.execute(
-            f"""
-            SELECT CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
-                   COUNT(*) AS goals
-            FROM match_goals g
-            JOIN matches m ON m.id = g.match_id
-            GROUP BY team
-            ORDER BY {order}
-            """
-        ).fetchall()
-        return [dict(r) for r in rows]
+    """Goals scored and conceded per nation from match scorelines."""
+    from collections import defaultdict
+
+    from live_scores import apply_live_state
+
+    totals: dict[str, dict[str, int]] = defaultdict(lambda: {"gf": 0, "ga": 0})
+
+    for row in get_all_matches():
+        match = apply_live_state(dict(row))
+        home = match.get("display_home")
+        away = match.get("display_away")
+        if home is None or away is None:
+            continue
+        if not match.get("is_finished") and not match.get("is_live"):
+            continue
+        home_team = row["home_team"]
+        away_team = row["away_team"]
+        totals[home_team]["gf"] += int(home)
+        totals[home_team]["ga"] += int(away)
+        totals[away_team]["gf"] += int(away)
+        totals[away_team]["ga"] += int(home)
+
+    teams = sorted(totals.keys()) if sort_by_team else sorted(
+        totals.keys(),
+        key=lambda t: (-totals[t]["gf"], totals[t]["ga"], t),
+    )
+    return [
+        {
+            "team": team,
+            "goals": totals[team]["gf"],
+            "gf": totals[team]["gf"],
+            "ga": totals[team]["ga"],
+            "gd": totals[team]["gf"] - totals[team]["ga"],
+        }
+        for team in teams
+        if totals[team]["gf"] or totals[team]["ga"]
+    ]
 
 
 def get_match_goals(match_id: int) -> list[dict]:

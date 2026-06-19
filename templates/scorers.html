@@ -26,16 +26,18 @@
 <div class="card" style="margin-bottom: 2rem">
   <table class="leaderboard-table">
     <thead>
-      <tr><th>Team</th><th>Goals</th></tr>
+      <tr><th>Team</th><th>GF</th><th>GA</th><th>GD</th></tr>
     </thead>
     <tbody id="scorers-team-summary-body">
       {% for t in team_summary %}
       <tr>
         <td><strong>{{ t.team }}</strong></td>
-        <td><strong>{{ t.goals }}</strong></td>
+        <td><strong>{{ t.gf }}</strong></td>
+        <td>{{ t.ga }}</td>
+        <td>{% if t.gd > 0 %}+{% endif %}{{ t.gd }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="2" style="color: var(--muted)">No goals recorded yet</td></tr>
+      <tr><td colspan="4" style="color: var(--muted)">No goals recorded yet</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -105,9 +107,11 @@
     if (!res.ok) return;
     const data = await res.json();
     if (teamBody) {
-      teamBody.innerHTML = (data.team_summary || []).map(t =>
-        `<tr><td><strong>${esc(t.team)}</strong></td><td><strong>${t.goals}</strong></td></tr>`
-      ).join('') || '<tr><td colspan="2" style="color: var(--muted)">No goals recorded yet</td></tr>';
+      teamBody.innerHTML = (data.team_summary || []).map(t => {
+        const gd = t.gd ?? ((t.gf || 0) - (t.ga || 0));
+        const gdLabel = gd > 0 ? `+${gd}` : `${gd}`;
+        return `<tr><td><strong>${esc(t.team)}</strong></td><td><strong>${t.gf ?? t.goals ?? 0}</strong></td><td>${t.ga ?? 0}</td><td>${gdLabel}</td></tr>`;
+      }).join('') || '<tr><td colspan="4" style="color: var(--muted)">No goals recorded yet</td></tr>';
     }
 
     const pickName = (data.user_vote && data.user_vote.top_scorer || '').toLowerCase();
