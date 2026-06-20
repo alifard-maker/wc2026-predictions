@@ -85,6 +85,11 @@
         <td>
           <strong>{{ m.display_name }}</strong>
           {% if is_agent_badge(m.display_name, m.ai_agent_key) %}<span class="badge">{{ ai_agent_badge(m.display_name, m.ai_agent_key) }}</span>{% endif %}
+          {% if m.password_protected %}
+          <div class="muted-inline" style="font-size: 0.82rem; margin-top: 0.2rem">
+            🔒 Password {% if m.password_is_set %}enabled{% else %}not set yet{% endif %}
+          </div>
+          {% endif %}
         </td>
         <td>{{ m.prediction_count }}</td>
         <td>{{ m.comment_count }}</td>
@@ -97,6 +102,13 @@
           </form>
           {% if not is_agent_badge(m.display_name, m.ai_agent_key) %}
           <a href="{{ url_for('admin_page', invite_code=pool.invite_code, user_id=m.id) }}#edit-picks" class="btn btn-secondary btn-sm">Edit picks</a>
+          {% if m.password_protected %}
+          <form method="post" style="display:inline" onsubmit="return confirm('Reset password for {{ m.display_name }}? They will choose a new one on next sign-in.')">
+            <input type="hidden" name="action" value="reset_user_password">
+            <input type="hidden" name="user_id" value="{{ m.id }}">
+            <button type="submit" class="btn btn-secondary btn-sm">Reset password</button>
+          </form>
+          {% endif %}
           <form method="post" class="admin-merge-form" onsubmit="return confirm('Merge {{ m.display_name }} into the selected account? Predictions are combined; clashes keep the keeper\\'s pick.')">
             <input type="hidden" name="action" value="merge_user">
             <input type="hidden" name="dup_user_id" value="{{ m.id }}">

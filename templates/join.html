@@ -24,6 +24,19 @@
 </div>
 {% else %}
 <div class="card" style="max-width: 420px; margin: 0 auto">
+  {% if needs_password %}
+  <h2>Sign in</h2>
+  <p style="color: var(--muted)">Enter your password for <strong>{{ password_display_name }}</strong>.</p>
+  <form method="post">
+    <input type="hidden" name="display_name" value="{{ password_display_name }}">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="current-password" autofocus>
+    <button type="submit" class="btn btn-primary">Sign in</button>
+  </form>
+  <p style="margin-top: 1rem">
+    <a href="{{ url_for('pool_join', invite_code=pool.invite_code) }}">Use a different name</a>
+  </p>
+  {% else %}
   <h2>Join or return</h2>
   <p style="color: var(--muted)">Pick a <strong>unique name</strong> in this pool. Names are shared — if you enter a name that's already taken, you'll sign in as that player and see their predictions.</p>
   <p style="color: var(--muted); font-size: 0.9rem">Returning on a new device? Use your <strong>exact same name</strong> to restore your picks. New player? Add something unique (e.g. <em>Alex M.</em>).</p>
@@ -32,7 +45,8 @@
     <input type="text" id="display_name" name="display_name" placeholder="e.g. Alex" required maxlength="40" autofocus>
     <button type="submit" class="btn btn-primary">Continue</button>
   </form>
-  {% if existing_players %}
+  {% endif %}
+  {% if existing_players and not needs_password %}
   <p style="color: var(--muted); font-size: 0.9rem; margin-top: 1rem">
     Players in this pool: {{ existing_players | map(attribute='display_name') | join(', ') }}
   </p>

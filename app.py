@@ -20,6 +20,8 @@ from flask import (
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import user_passwords
+
 import db
 from ai_predictor import (
     AI_AGENTS,
@@ -93,7 +95,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 3.99"
+APP_VERSION = "Beta 4.00"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -303,9 +305,111 @@ def login_required(f):
             if invite_code:
                 return redirect(url_for("pool_join", invite_code=invite_code))
             return redirect(url_for("index"))
+        user = db.get_user(session["user_id"])
+        if user and db.user_needs_password_setup(user):
+            invite_code = kwargs.get("invite_code") or session.get("invite_code")
+            session["pending_password_user_id"] = user["id"]
+            session.pop("user_id", None)
+            session.pop("display_name", None)
+            flash("Please choose a password to continue.", "info")
+            if invite_code:
+                return redirect(url_for("set_password", invite_code=invite_code))
+            return redirect(url_for("index"))
         return f(*args, **kwargs)
 
     return decorated
+
+
+def _join_page_context(pool, **extra):
+    return {
+        "pool": pool,
+        "user_count": db.count_pool_users(pool["id"]),
+        "max_users": db.MAX_USERS_PER_POOL,
+        "logged_in": bool(session.get("user_id")),
+        "display_name": session.get("display_name"),
+        "existing_players": db.get_pool_users(pool["id"]),
+        **extra,
+    }
+
+
+def _finish_user_login(pool, user_id: int, display_name: str, *, resumed: bool) -> None:
+    session["user_id"] = user_id
+    session["display_name"] = display_name
+    session.pop("pending_password_user_id", None)
+    if resumed:
+        flash(
+            f"Welcome back, {display_name}! Signed in to the existing account with this name.",
+            "success",
+        )
+    else:
+        mark_comments_seen(pool["id"])
+        flash(f"Welcome, {display_name}!", "success")
+
+
+def _redirect_set_password(invite_code: str, user_id: int):
+    session["pending_password_user_id"] = user_id
+    return redirect(url_for("set_password", invite_code=invite_code))
+
+
+def _handle_pool_join_login(pool, invite_code: str, result: dict):
+    user_id = result["id"]
+    display_name = result["display_name"]
+    resumed = bool(result.get("resumed"))
+
+    if not user_passwords.user_requires_password(display_name):
+        _finish_user_login(pool, user_id, display_name, resumed=resumed)
+        return redirect(url_for("pool_dashboard", invite_code=invite_code))
+
+    user = db.get_user(user_id)
+    if user and db.user_needs_password_setup(user):
+        flash(
+            f"Welcome, {display_name}. Choose a password to secure your account.",
+            "info",
+        )
+        return _redirect_set_password(invite_code, user_id)
+
+    password = request.form.get("password", "")
+    if not password:
+        flash("Enter your password to sign in.", "error")
+        return render_template(
+            "join.html",
+            **_join_page_context(
+                pool,
+                needs_password=True,
+                password_display_name=display_name,
+            ),
+        )
+    if not db.verify_user_password(user_id, password):
+        flash("Incorrect password.", "error")
+        return render_template(
+            "join.html",
+            **_join_page_context(
+                pool,
+                needs_password=True,
+                password_display_name=display_name,
+            ),
+        )
+
+    _finish_user_login(pool, user_id, display_name, resumed=resumed)
+    return redirect(url_for("pool_dashboard", invite_code=invite_code))
+
+
+def _enrich_admin_members(members: list[dict]) -> list[dict]:
+    enriched = []
+    for member in members:
+        row = dict(member)
+        row.pop("password_hash", None)
+        if user_passwords.user_requires_password(row["display_name"]):
+            row["password_protected"] = True
+            row["password_is_set"] = bool(member.get("password_hash")) and not member.get(
+                "password_must_set"
+            )
+        else:
+            row["password_protected"] = False
+            row["password_is_set"] = False
+        row.pop("password_must_set", None)
+        enriched.append(row)
+    return enriched
 
 
 def admin_required(f):
@@ -748,27 +852,55 @@ def pool_join(invite_code):
         if isinstance(result, str):
             flash(result, "error")
         else:
-            session["user_id"] = result["id"]
-            session["display_name"] = result["display_name"]
-            if result.get("resumed"):
-                flash(
-                    f"Welcome back, {result['display_name']}! Signed in to the existing account with this name.",
-                    "success",
-                )
-            else:
-                mark_comments_seen(pool["id"])
-                flash(f"Welcome, {result['display_name']}!", "success")
+            return _handle_pool_join_login(pool, invite_code, result)
+
+    return render_template("join.html", **_join_page_context(pool))
+
+
+@app.route("/join/<invite_code>/set-password", methods=["GET", "POST"])
+def set_password(invite_code):
+    pool = db.get_pool_by_code(invite_code)
+    if not pool:
+        flash("Invalid invite link.", "error")
+        return redirect(url_for("index"))
+
+    session["pool_id"] = pool["id"]
+    session["invite_code"] = invite_code
+
+    user_id = session.get("pending_password_user_id")
+    if not user_id:
+        flash("Sign in with your name first.", "error")
+        return redirect(url_for("pool_join", invite_code=invite_code))
+
+    user = db.get_user(user_id)
+    if not user or user["pool_id"] != pool["id"]:
+        session.pop("pending_password_user_id", None)
+        flash("Account not found in this pool.", "error")
+        return redirect(url_for("pool_join", invite_code=invite_code))
+
+    if not user_passwords.user_requires_password(user["display_name"]):
+        abort(404)
+
+    if request.method == "POST":
+        plain = request.form.get("password", "")
+        confirm = request.form.get("password_confirm", "")
+        error = user_passwords.validate_new_password(plain, confirm)
+        if error:
+            flash(error, "error")
+        else:
+            db.set_user_password(user_id, plain)
+            session["user_id"] = user_id
+            session["display_name"] = user["display_name"]
+            session.pop("pending_password_user_id", None)
+            mark_comments_seen(pool["id"])
+            flash(f"Password saved. Welcome, {user['display_name']}!", "success")
             return redirect(url_for("pool_dashboard", invite_code=invite_code))
 
-    user_count = db.count_pool_users(pool["id"])
     return render_template(
-        "join.html",
+        "set_password.html",
         pool=pool,
-        user_count=user_count,
-        max_users=db.MAX_USERS_PER_POOL,
-        logged_in=bool(session.get("user_id")),
-        display_name=session.get("display_name"),
-        existing_players=db.get_pool_users(pool["id"]),
+        display_name=user["display_name"],
+        is_reset=bool(user["password_must_set"]),
     )
 
 
@@ -1982,6 +2114,25 @@ def admin_page(invite_code):
                         session.pop("user_id", None)
                         session.pop("display_name", None)
                     flash("User deleted — their predictions, comments, and tournament picks were removed.", "success")
+        elif action == "reset_user_password" and session.get("admin_secret") == pool["admin_secret"]:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except ValueError:
+                flash("Invalid user.", "error")
+            else:
+                error = db.reset_user_password(user_id, pool["id"])
+                if error:
+                    flash(error, "error")
+                else:
+                    member = db.get_user(user_id)
+                    name = member["display_name"] if member else "member"
+                    if session.get("user_id") == user_id:
+                        session.pop("user_id", None)
+                        session.pop("display_name", None)
+                    flash(
+                        f"Password reset for {name}. They will choose a new password on next sign-in.",
+                        "success",
+                    )
         elif action == "recalculate_user" and session.get("admin_secret") == pool["admin_secret"]:
             try:
                 user_id = int(request.form.get("user_id", 0))
@@ -2156,7 +2307,7 @@ def admin_page(invite_code):
     extra_scorer_names = [tournament_results["top_scorer"]] if tournament_results and tournament_results.get("top_scorer") else []
     scorer_squads = get_scorer_squads_data(extra_scorer_names)
 
-    members = db.get_pool_members_with_stats(pool["id"]) if is_admin else []
+    members = _enrich_admin_members(db.get_pool_members_with_stats(pool["id"])) if is_admin else []
     pool_comments = db.get_pool_comments(pool["id"])[:50] if is_admin else []
     edit_user_id = request.args.get("user_id", type=int) if is_admin else None
     if is_admin and not edit_user_id and request.method == "POST":

@@ -200,6 +200,12 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN photo_updated_at TEXT")
         if user_cols and "ai_agent_key" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN ai_agent_key TEXT")
+        if user_cols and "password_hash" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        if user_cols and "password_must_set" not in user_cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN password_must_set INTEGER NOT NULL DEFAULT 0"
+            )
 
         conn.execute(
             """
@@ -1413,6 +1419,73 @@ def get_pool_users(pool_id: int) -> list[sqlite3.Row]:
 def get_user(user_id: int) -> sqlite3.Row | None:
     with db() as conn:
         return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+
+def user_needs_password_setup(user: sqlite3.Row | dict) -> bool:
+    from user_passwords import user_requires_password
+
+    row = dict(user)
+    if not user_requires_password(row["display_name"]):
+        return False
+    if row.get("password_must_set"):
+        return True
+    return not row.get("password_hash")
+
+
+def set_user_password(user_id: int, plain_password: str) -> None:
+    from user_passwords import hash_password
+
+    with db() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, password_must_set = 0
+            WHERE id = ?
+            """,
+            (hash_password(plain_password), user_id),
+        )
+
+
+def verify_user_password(user_id: int, plain_password: str) -> bool:
+    from user_passwords import passwords_match
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return False
+    return passwords_match(plain_password, row["password_hash"])
+
+
+def reset_user_password(user_id: int, pool_id: int) -> str | None:
+    from ai_predictor import is_synced_ai_agent
+    from media_predictors import is_media_agent
+    from user_passwords import user_requires_password
+
+    with db() as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE id = ? AND pool_id = ?",
+            (user_id, pool_id),
+        ).fetchone()
+        if not user:
+            return "User not found in this pool."
+        if is_synced_ai_agent(user["display_name"], user["ai_agent_key"]):
+            return "AI pool members do not use passwords."
+        if is_media_agent(user["display_name"], user["ai_agent_key"]):
+            return "Media pundit accounts do not use passwords."
+        if not user_requires_password(user["display_name"]):
+            return "Password protection is not enabled for this member yet."
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = NULL, password_must_set = 1
+            WHERE id = ?
+            """,
+            (user_id,),
+        )
+    return None
 
 
 def mark_user_photo_updated(user_id: int) -> None:
@@ -2792,6 +2865,7 @@ def get_pool_members_with_stats(pool_id: int) -> list[dict]:
         rows = conn.execute(
             """
             SELECT u.id, u.display_name, u.photo_updated_at, u.ai_agent_key,
+                   u.password_hash, u.password_must_set,
                    (SELECT COUNT(*) FROM predictions WHERE user_id = u.id) AS prediction_count,
                    (SELECT COUNT(*) FROM comments WHERE user_id = u.id) AS comment_count
             FROM users u
