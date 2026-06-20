@@ -1,7 +1,7 @@
-"""Optional per-user passwords (pilot rollout).
+"""Per-user passwords for human pool members.
 
-Only display names listed in PASSWORD_PILOT_USERS require a password.
-Expand the pilot list (or env var) when ready for all human players.
+All human players must set a password; synced AI agents and media pundits are exempt.
+Set PASSWORD_REQUIRED=0 to disable (emergency rollback).
 """
 
 from __future__ import annotations
@@ -11,26 +11,30 @@ import re
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from db import normalize_display_name
-
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 
-# Comma-separated names in env override this default pilot list.
-_DEFAULT_PILOT_USERS = ("Morpheus",)
+
+def passwords_enabled() -> bool:
+    return os.environ.get("PASSWORD_REQUIRED", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
 
 
-def password_pilot_users() -> frozenset[str]:
-    raw = os.environ.get("PASSWORD_PILOT_USERS", "").strip()
-    if raw:
-        names = [part.strip() for part in raw.split(",") if part.strip()]
-    else:
-        names = list(_DEFAULT_PILOT_USERS)
-    return frozenset(normalize_display_name(name) for name in names)
+def user_requires_password(
+    display_name: str | None,
+    ai_agent_key: str | None = None,
+) -> bool:
+    """True for human pool members who must authenticate with a password."""
+    if not passwords_enabled():
+        return False
+    if not display_name:
+        return False
+    from ai_predictor import is_agent_badge
 
-
-def user_requires_password(display_name: str) -> bool:
-    return normalize_display_name(display_name) in password_pilot_users()
+    return not is_agent_badge(display_name, ai_agent_key)
 
 
 def hash_password(plain: str) -> str:

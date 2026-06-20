@@ -95,7 +95,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.00"
+APP_VERSION = "Beta 4.01"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -356,11 +356,14 @@ def _handle_pool_join_login(pool, invite_code: str, result: dict):
     display_name = result["display_name"]
     resumed = bool(result.get("resumed"))
 
-    if not user_passwords.user_requires_password(display_name):
+    user = db.get_user(user_id)
+    if not user_passwords.user_requires_password(
+        display_name,
+        user["ai_agent_key"] if user else None,
+    ):
         _finish_user_login(pool, user_id, display_name, resumed=resumed)
         return redirect(url_for("pool_dashboard", invite_code=invite_code))
 
-    user = db.get_user(user_id)
     if user and db.user_needs_password_setup(user):
         flash(
             f"Welcome, {display_name}. Choose a password to secure your account.",
@@ -399,7 +402,10 @@ def _enrich_admin_members(members: list[dict]) -> list[dict]:
     for member in members:
         row = dict(member)
         row.pop("password_hash", None)
-        if user_passwords.user_requires_password(row["display_name"]):
+        if user_passwords.user_requires_password(
+            row["display_name"],
+            row.get("ai_agent_key"),
+        ):
             row["password_protected"] = True
             row["password_is_set"] = bool(member.get("password_hash")) and not member.get(
                 "password_must_set"
@@ -878,7 +884,10 @@ def set_password(invite_code):
         flash("Account not found in this pool.", "error")
         return redirect(url_for("pool_join", invite_code=invite_code))
 
-    if not user_passwords.user_requires_password(user["display_name"]):
+    if not user_passwords.user_requires_password(
+        user["display_name"],
+        user["ai_agent_key"],
+    ):
         abort(404)
 
     if request.method == "POST":

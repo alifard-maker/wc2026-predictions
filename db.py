@@ -1425,7 +1425,7 @@ def user_needs_password_setup(user: sqlite3.Row | dict) -> bool:
     from user_passwords import user_requires_password
 
     row = dict(user)
-    if not user_requires_password(row["display_name"]):
+    if not user_requires_password(row["display_name"], row.get("ai_agent_key")):
         return False
     if row.get("password_must_set"):
         return True
@@ -1475,8 +1475,8 @@ def reset_user_password(user_id: int, pool_id: int) -> str | None:
             return "AI pool members do not use passwords."
         if is_media_agent(user["display_name"], user["ai_agent_key"]):
             return "Media pundit accounts do not use passwords."
-        if not user_requires_password(user["display_name"]):
-            return "Password protection is not enabled for this member yet."
+        if not user_requires_password(user["display_name"], user["ai_agent_key"]):
+            return "This account does not use a password."
         conn.execute(
             """
             UPDATE users
