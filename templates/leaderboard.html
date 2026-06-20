@@ -60,13 +60,13 @@
 {% if awarded_phases %}
 <div class="card" style="margin-top: 1.5rem">
   <h3>Phase prediction awards</h3>
-  <p class="muted-inline" style="margin: 0 0 1rem">+{{ phase_bonus_pts }} pts to whoever scored most match points across each completed phase (ties share the bonus).</p>
+  <p class="muted-inline" style="margin: 0 0 1rem">+{{ phase_bonus_pts }} pts to whoever had the most correct predictions (exact score or result) in each completed phase. Tied leaders each get +{{ phase_bonus_pts }}.</p>
   <ul class="rules compact-list">
     {% for phase in awarded_phases %}
     <li>
       <strong>{{ phase.label }}</strong> —
       {% for w in phase.winners %}
-        {{ w.display_name }} ({{ w.phase_points }} pts){% if not loop.last %}, {% endif %}
+        {{ w.display_name }} ({{ w.correct_predictions }} correct){% if not loop.last %}, {% endif %}
       {% endfor %}
     </li>
     {% endfor %}
@@ -76,7 +76,7 @@
 
 <p style="color: var(--muted); margin-top: 1.5rem; text-align: center">
   Match points update when results are entered. Bold picks earn 2× (10 for exact, 4 for result).
-  Phase bonus +{{ phase_bonus_pts }} each for group stage, R32, R16, QF, and SF.
+  Phase bonus +{{ phase_bonus_pts }} each for most correct picks (exact or result) per phase: group stage, R32, R16, QF, and SF.
   Tournament bonus: winner 50 · 2nd 25 · 3rd 15 · top scorer 25.
 </p>
 {% endblock %}
