@@ -325,9 +325,45 @@ ESPN_NOT_STARTED = frozenset({
     "STATUS_CANCELLED",
 })
 
+ESPN_HALTED = frozenset({
+    "STATUS_DELAYED",
+    "STATUS_SUSPENDED",
+})
 
-def _espn_not_started(comp_status: dict | None) -> bool:
+
+def _espn_match_has_progress(
+    comp_status: dict | None,
+    home_score: int = 0,
+    away_score: int = 0,
+) -> bool:
+    """True when play has started (scores, period, or match clock)."""
+    if home_score > 0 or away_score > 0:
+        return True
+    period = (comp_status or {}).get("period")
+    try:
+        if period is not None and int(period) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    display = (comp_status or {}).get("displayClock")
+    if display:
+        minute, _ = _parse_espn_minute(display)
+        if minute and minute > 0:
+            return True
+    type_info = (comp_status or {}).get("type") or {}
+    if type_info.get("state") == "in" and type_info.get("name") in ESPN_HALTED:
+        return True
+    return False
+
+
+def _espn_not_started(
+    comp_status: dict | None,
+    home_score: int = 0,
+    away_score: int = 0,
+) -> bool:
     name = ((comp_status or {}).get("type") or {}).get("name") or ""
+    if name in ESPN_HALTED and _espn_match_has_progress(comp_status, home_score, away_score):
+        return False
     return name in ESPN_NOT_STARTED
 
 
@@ -387,11 +423,17 @@ def _resolve_hydration_break(
     return False, None
 
 
-def _espn_status(comp_status: dict | None) -> str | None:
+def _espn_status(
+    comp_status: dict | None,
+    home_score: int = 0,
+    away_score: int = 0,
+) -> str | None:
     type_info = (comp_status or {}).get("type") or {}
     name = type_info.get("name") or ""
     state = type_info.get("state") or ""
     completed = bool(type_info.get("completed"))
+    if name in ESPN_HALTED and _espn_match_has_progress(comp_status, home_score, away_score):
+        return "suspended"
     if name in ESPN_NOT_STARTED:
         return None
     if name == "STATUS_PENALTY_SHOOTOUT":
@@ -763,9 +805,26 @@ def _sync_espn_event(
     match_id = db_match["id"]
     comp_status = competition.get("status") or event.get("status") or {}
 
-    if _espn_not_started(comp_status):
+    home_score = away_score = 0
+    for competitor in competition.get("competitors") or []:
+        score = competitor.get("score")
+        try:
+            value = int(score) if score is not None else 0
+        except (TypeError, ValueError):
+            value = 0
+        if competitor.get("homeAway") == "home":
+            home_score = value
+        elif competitor.get("homeAway") == "away":
+            away_score = value
+
+    if _espn_not_started(comp_status, home_score, away_score):
         if (db_match.get("status") or "") in (
-            "live", "halftime", "hydration_break", "extra_time", "penalty_shootout"
+            "live",
+            "halftime",
+            "hydration_break",
+            "extra_time",
+            "penalty_shootout",
+            "suspended",
         ) and db_match.get("actual_home") is None:
             db.clear_match_live_state(match_id)
             db.set_sync_meta(f"espn_live_source_{match_id}", "")
@@ -779,19 +838,7 @@ def _sync_espn_event(
     if event_id:
         db.set_sync_meta(f"espn_event_{match_id}", event_id)
 
-    home_score = away_score = 0
-    for competitor in competition.get("competitors") or []:
-        score = competitor.get("score")
-        try:
-            value = int(score) if score is not None else 0
-        except (TypeError, ValueError):
-            value = 0
-        if competitor.get("homeAway") == "home":
-            home_score = value
-        elif competitor.get("homeAway") == "away":
-            away_score = value
-
-    db_status = _espn_status(comp_status)
+    db_status = _espn_status(comp_status, home_score, away_score)
 
     display_clock = (
         comp_status.get("displayClock")

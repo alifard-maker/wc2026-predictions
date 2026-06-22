@@ -600,7 +600,7 @@ def _build_pick_party(
                     "prediction": f"{h}–{a}",
                 }
 
-        if match.get("is_live") or match.get("status") in ("halftime", "hydration_break"):
+        if match.get("is_live") or match.get("status") in ("halftime", "hydration_break", "suspended"):
             live_h = match.get("display_home")
             live_a = match.get("display_away")
             if live_h is not None and live_a is not None:
@@ -740,12 +740,12 @@ def build_matchday_recap(pool_id: int, matchday: int, now: datetime | None = Non
     finished = [enriched[m["id"]] for m in matches if enriched[m["id"]].get("actual_home") is not None]
     live_count = sum(
         1 for m in enriched.values()
-        if m["id"] in revealed_ids and (m.get("is_live") or m.get("status") in ("halftime", "hydration_break"))
+        if m["id"] in revealed_ids and (m.get("is_live") or m.get("status") in ("halftime", "hydration_break", "suspended"))
     )
     awaiting_count = sum(
         1 for m in enriched.values()
         if m["id"] in revealed_ids and not m.get("is_finished") and not m.get("is_live")
-        and m.get("status") not in ("halftime", "hydration_break")
+        and m.get("status") not in ("halftime", "hydration_break", "suspended")
     )
 
     all_preds = _fetch_matchday_predictions(pool_id, revealed_ids)

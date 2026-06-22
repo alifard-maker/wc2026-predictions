@@ -108,6 +108,10 @@
     if (status === 'hydration_break' || String(label || '').includes('Drinks break')) {
       return esc(resolveLiveMinuteLabel(label, kickoff, 'hydration_break'));
     }
+    if (status === 'suspended') {
+      const base = resolveLiveMinuteLabel(label, kickoff, status);
+      return `Delayed · ${esc(base)}`;
+    }
     if (status === 'penalty_shootout') {
       return esc('Pens');
     }

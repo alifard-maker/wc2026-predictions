@@ -21,6 +21,7 @@ LIVE_PHASE_STATUSES = frozenset({
     "hydration_break",
     "extra_time",
     "penalty_shootout",
+    "suspended",
 })
 FIFA_HYDRATION_MINUTES_1H = frozenset({22, 23, 24, 25})
 FIFA_HYDRATION_MINUTES_2H = frozenset({67, 68, 69, 70})
@@ -153,6 +154,11 @@ def live_minute_display_parts(match: dict) -> tuple[str, str | None]:
         return "HT", None
     if status == "hydration_break":
         return format_hydration_break_label(match.get("live_minute")), None
+    if status == "suspended":
+        label = sanitize_minute_label(match.get("minute_label"))
+        if label and label not in {"LIVE", "—"}:
+            return f"Delayed · {label}", None
+        return "Delayed", None
 
     label = sanitize_minute_label(match.get("minute_label"))
     minute = normalize_stored_minute(match.get("live_minute"))
@@ -330,6 +336,18 @@ def apply_live_state(match: dict, now: datetime | None = None) -> dict:
         ):
             status = "halftime"
             minute_label = format_halftime_label(kickoff, now)
+        elif db_status == "suspended":
+            status = "suspended"
+            live_minute = normalize_stored_minute(live_minute)
+            minute_label = sanitize_minute_label(
+                format_minute(
+                    live_minute,
+                    "suspended",
+                    live_injury_minute,
+                    kickoff=kickoff,
+                    now=now,
+                )
+            )
         else:
             status = "live"
             second_half_start = _second_half_start_for_match(m.get("id"))
