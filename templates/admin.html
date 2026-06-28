@@ -150,7 +150,11 @@
 {% if edit_user %}
 <div class="card admin-edit-picks-card" id="edit-picks" style="margin-bottom: 2rem; border-color: var(--accent-2)">
   <h3>Edit picks for {{ edit_user.display_name }}</h3>
-  <p style="color: var(--muted)">Admin override — deadlines do not apply. Leave score fields blank to skip a match.</p>
+  {% set pick_count = edit_user_matches | selectattr('prediction') | list | length %}
+  <p style="color: var(--muted)">
+    Admin override — deadlines do not apply. {{ pick_count }} saved pick{{ 's' if pick_count != 1 else '' }}.
+    Leave score fields blank to skip a match; check <strong>Bold</strong> for 2× points (one per calendar day).
+  </p>
 
   <form method="post" style="margin-bottom: 1.5rem">
     <input type="hidden" name="action" value="admin_tournament_vote">

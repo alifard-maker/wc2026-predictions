@@ -95,7 +95,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.05"
+APP_VERSION = "Beta 4.06"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -574,6 +574,31 @@ def sort_active_matches(matches: list[dict]) -> list[dict]:
         else:
             bucket = 3
         return (bucket, kickoff, m.get("sort_order") or 0)
+
+    return sorted(matches, key=sort_key)
+
+
+def _sort_admin_edit_matches(matches: list[dict]) -> list[dict]:
+    """Live/open and existing picks first so admin edits are easy to find."""
+    now = datetime.now(TIMEZONE)
+    today = now.date().isoformat()
+
+    def sort_key(m: dict) -> tuple:
+        kickoff = m.get("kickoff")
+        if kickoff is None:
+            kickoff = parse_match_datetime(m["match_date"], m["match_time"])
+        has_pick = 1 if m.get("prediction") else 0
+        if m.get("is_live"):
+            bucket = 0
+        elif m.get("match_date") == today or (m.get("open") and kickoff >= now):
+            bucket = 1
+        elif has_pick:
+            bucket = 2
+        elif m.get("open"):
+            bucket = 3
+        else:
+            bucket = 4
+        return (bucket, 0 if has_pick else 1, kickoff, m.get("sort_order") or 0)
 
     return sorted(matches, key=sort_key)
 
@@ -2233,6 +2258,18 @@ def admin_page(invite_code):
                 elif is_media_agent(user["display_name"], user["ai_agent_key"]):
                     flash("Media pundit picks sync from published sources — not manual override.", "error")
                 else:
+                    bold_match_ids: list[int] = []
+                    for key, value in request.form.items():
+                        if not key.startswith("bold_match"):
+                            continue
+                        match_id_str = value.strip()
+                        if not match_id_str:
+                            continue
+                        try:
+                            bold_match_ids.append(int(match_id_str))
+                        except ValueError:
+                            continue
+
                     saved = 0
                     for key in request.form:
                         if not key.startswith("pred_") or not key.endswith("_home"):
@@ -2252,19 +2289,16 @@ def admin_page(invite_code):
                             continue
                         if home_score < 0 or away_score < 0 or home_score > 20 or away_score > 20:
                             continue
-                        db.upsert_prediction(user_id, match_id, home_score, away_score)
+                        db.upsert_prediction(
+                            user_id,
+                            match_id,
+                            home_score,
+                            away_score,
+                            is_bold=match_id in bold_match_ids,
+                        )
                         saved += 1
                     bold_updated = 0
-                    for key, value in request.form.items():
-                        if not key.startswith("bold_match"):
-                            continue
-                        match_id_str = value.strip()
-                        if not match_id_str:
-                            continue
-                        try:
-                            match_id = int(match_id_str)
-                        except ValueError:
-                            continue
+                    for match_id in bold_match_ids:
                         err = db.set_bold_pick(user_id, match_id, admin_bypass=True)
                         if err:
                             flash(err, "error")
@@ -2333,7 +2367,9 @@ def admin_page(invite_code):
             edit_user = None
         else:
             user_preds = db.get_user_predictions(edit_user_id)
-            edit_user_matches = enrich_matches(db.get_all_matches(), user_preds)
+            edit_user_matches = _sort_admin_edit_matches(
+                enrich_matches(db.get_all_matches(), user_preds)
+            )
             edit_user_vote = db.get_tournament_vote(edit_user_id)
 
     return render_template(

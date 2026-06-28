@@ -729,6 +729,12 @@ PLAYER_ACCOUNT_ALIASES: dict[str, frozenset[str]] = {
         "queenofpredictions",
         "queenofpreditions",
     }),
+    "Morpheus": frozenset({
+        "Morpheus",
+        "Morpheous",
+        "morpheus",
+        "morpheous",
+    }),
 }
 
 
