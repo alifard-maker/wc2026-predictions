@@ -40,6 +40,27 @@ ROUND_OF_32 = [
     (88, ("2", "D"), ("2", "G")),
 ]
 
+# FIFA-confirmed Round of 32 pairings after the 2026 group stage (matches 73–88).
+# Used once the draw is set; later rounds still resolve from match results.
+OFFICIAL_R32_PAIRINGS: dict[int, tuple[str, str]] = {
+    73: ("South Africa", "Canada"),
+    74: ("Germany", "Paraguay"),
+    75: ("Netherlands", "Morocco"),
+    76: ("Brazil", "Japan"),
+    77: ("France", "Sweden"),
+    78: ("Côte d'Ivoire", "Norway"),
+    79: ("Mexico", "Ecuador"),
+    80: ("England", "Congo DR"),
+    81: ("USA", "Bosnia and Herzegovina"),
+    82: ("Belgium", "Senegal"),
+    83: ("Portugal", "Croatia"),
+    84: ("Spain", "Austria"),
+    85: ("Switzerland", "Algeria"),
+    86: ("Argentina", "Cabo Verde"),
+    87: ("Colombia", "Ghana"),
+    88: ("Australia", "Egypt"),
+}
+
 ROUND_OF_16 = [
     (89, 74, 77),
     (90, 73, 75),

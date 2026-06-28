@@ -112,7 +112,7 @@
 
 <h2 class="section-title" id="bracket-section-title">Knockout bracket</h2>
 <p style="color: var(--muted); margin: -0.5rem 0 1rem; font-size: 0.9rem" id="bracket-section-note">
-  Updates automatically as results are entered. Knockout matches appear when added by the pool admin.
+  Updates automatically as results are entered and when FIFA confirms knockout pairings.
 </p>
 
 <div class="bracket-shell" id="bracket-shell">
@@ -299,7 +299,7 @@
     if (bracketNote) {
       bracketNote.textContent = data.mode === 'predicted'
         ? 'Simulated path if this player\'s predictions all come true. Knockout scores use their picks where entered.'
-        : 'Updates automatically as results are entered. Knockout matches appear when added by the pool admin.';
+        : 'Updates automatically as results are entered and when FIFA confirms knockout pairings.';
     }
 
     const grid = document.getElementById('groups-grid');

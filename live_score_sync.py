@@ -902,18 +902,22 @@ def sync_live_scores(force: bool = False) -> dict:
     espn = _run_espn_sync(db_matches, our_teams)
     db_matches = [dict(m) for m in db.get_all_matches()]
 
+    def _with_knockout(result: dict) -> dict:
+        result["knockout"] = db.sync_knockout_stage()
+        return result
+
     if not is_enabled():
-        return {"ok": True, "skipped": True, "reason": "no_api_token", "espn": espn}
+        return _with_knockout({"ok": True, "skipped": True, "reason": "no_api_token", "espn": espn})
 
     cooldown = _live_sync_cooldown(db_matches)
     if db.get_sync_meta("live_sync_error") == "HTTP 429":
         cooldown = max(cooldown, 120)
     if not force and not db.try_begin_live_sync(cooldown):
-        return {"ok": True, "skipped": True, "reason": "cooldown", "espn": espn}
+        return _with_knockout({"ok": True, "skipped": True, "reason": "cooldown", "espn": espn})
 
     api_matches = _collect_api_matches()
     if not api_matches:
-        return {"ok": False, "error": "api_request_failed", "espn": espn}
+        return _with_knockout({"ok": False, "error": "api_request_failed", "espn": espn})
 
     detail_ids = {
         m["id"]

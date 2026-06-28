@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import db
-from knockout_bracket import TBD, resolve_match_teams
+from knockout_bracket import OFFICIAL_R32_PAIRINGS, TBD, resolve_match_teams
 from knockout_fixtures import fixture_rows
 from tournament_standings import compute_group_standings
 
@@ -83,7 +83,10 @@ def _resolve_knockout_teams() -> int:
             match_number = row["match_number"]
             if not match_number:
                 continue
-            home, away = resolve_match_teams(match_number, standings, matches)
+            if match_number in OFFICIAL_R32_PAIRINGS:
+                home, away = OFFICIAL_R32_PAIRINGS[match_number]
+            else:
+                home, away = resolve_match_teams(match_number, standings, matches)
             if home == row["home_team"] and away == row["away_team"]:
                 continue
             conn.execute(

@@ -95,7 +95,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.04"
+APP_VERSION = "Beta 4.05"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -948,6 +948,7 @@ def pool_dashboard(invite_code):
     db.sync_ai_tournament_vote(pool["id"])
     db.repair_fixture_schedules()
     db.repair_premature_results()
+    db.sync_knockout_stage()
     user_id = session["user_id"]
     matches = db.get_all_matches()
     predictions = db.get_user_predictions(user_id)
