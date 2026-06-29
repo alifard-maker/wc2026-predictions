@@ -71,14 +71,14 @@ def is_knockout_stage(stage: str | None) -> bool:
     return (stage or "group") != "group"
 
 
-def is_knockout_match(match: dict) -> bool:
-    return is_knockout_stage(match.get("stage"))
+def is_knockout_match(match) -> bool:
+    return is_knockout_stage(match["stage"])
 
 
-def match_counts_by_date(matches: list[dict]) -> dict[str, int]:
+def match_counts_by_date(matches) -> dict[str, int]:
     counts: dict[str, int] = {}
     for m in matches:
-        date = m.get("match_date")
+        date = m["match_date"]
         if date:
             counts[date] = counts.get(date, 0) + 1
     return counts
@@ -103,14 +103,14 @@ def validate_prediction_scores(
     return None
 
 
-def bold_day_key(match: dict) -> str:
+def bold_day_key(match) -> str:
     """One bold pick per calendar day (ET), keyed by match_date."""
-    date = match.get("match_date") or match.get("date")
+    date = match["match_date"]
     if date:
         return f"day_{date}"
-    if match.get("matchday"):
+    if match["matchday"]:
         return f"md{match['matchday']}"
-    return f"ko_{match.get('stage') or 'knockout'}"
+    return f"ko_{match['stage'] or 'knockout'}"
 
 
 def bold_pick_change_allowed(
