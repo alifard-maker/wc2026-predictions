@@ -111,7 +111,7 @@
 </div>
 
 <h2 class="section-title" id="matches">The Book — All Matches</h2>
-<p class="muted-inline" style="margin: -0.5rem 0 1rem">🎰 Mark one <strong>bold pick</strong> per calendar day (ET) for 2× points (5→10, 2→4)</p>
+<p class="muted-inline" style="margin: -0.5rem 0 1rem">🎰 <strong>Bold 2×</strong> on days with <strong>two or more matches</strong> (one per calendar day ET). Knockout picks must have a winner — no draws.</p>
 
 <div class="filter-tabs" id="matchday-tabs">
   <button type="button" class="active" data-filter="all">All</button>
@@ -124,7 +124,7 @@
 <form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
   <div class="fixture-list fixture-list-active" id="active-fixtures">
     {% for m in active_matches %}
-    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if m.show_result %} fixture-has-result{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}">
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if m.show_result %} fixture-has-result{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-knockout-no-draw="{{ '1' if m.knockout_no_draw else '0' }}" data-bold-allowed="{{ '1' if m.bold_allowed else '0' }}">
       {{ render_fixture_content(m, false) }}
     </div>
     {% endfor %}
@@ -151,11 +151,23 @@
       const home = document.querySelector(`input[data-match="${id}"][data-side="home"]`).value;
       const away = document.querySelector(`input[data-match="${id}"][data-side="away"]`).value;
       const hidden = document.getElementById('match_' + id);
-      if (home !== '' && away !== '') hidden.value = home + '-' + away;
+      const fixture = document.getElementById('match-' + id);
+      const knockout = fixture && fixture.dataset.knockoutNoDraw === '1';
+      const boldAllowed = fixture && fixture.dataset.boldAllowed === '1';
+      let drawBlocked = false;
+      if (home !== '' && away !== '' && knockout && Number(home) === Number(away)) {
+        drawBlocked = true;
+        hidden.value = '';
+      } else if (home !== '' && away !== '') {
+        hidden.value = home + '-' + away;
+      } else {
+        hidden.value = '';
+      }
       const boldRadio = document.querySelector(`input[type="radio"][name^="bold_match_"][value="${id}"]`);
       if (boldRadio && !boldRadio.hasAttribute('data-bold-locked')) {
-        boldRadio.disabled = !(home !== '' && away !== '');
+        boldRadio.disabled = drawBlocked || !boldAllowed || !(home !== '' && away !== '');
       }
+      fixture?.classList.toggle('fixture-draw-blocked', drawBlocked);
     });
   });
 

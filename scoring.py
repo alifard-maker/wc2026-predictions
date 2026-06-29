@@ -57,6 +57,51 @@ TOURNAMENT_TOP_SCORER_PTS = 25
 
 PHASE_BONUS_PTS = 15
 
+KNOCKOUT_STAGES = frozenset({
+    "round_of_32",
+    "round_of_16",
+    "quarter_final",
+    "semi_final",
+    "third_place",
+    "final",
+})
+
+
+def is_knockout_stage(stage: str | None) -> bool:
+    return (stage or "group") != "group"
+
+
+def is_knockout_match(match: dict) -> bool:
+    return is_knockout_stage(match.get("stage"))
+
+
+def match_counts_by_date(matches: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for m in matches:
+        date = m.get("match_date")
+        if date:
+            counts[date] = counts.get(date, 0) + 1
+    return counts
+
+
+def bold_allowed_for_date(match_date: str | None, counts: dict[str, int] | None = None) -> bool:
+    """Bold 2× only when more than one match is played on that calendar day (ET)."""
+    if not match_date:
+        return False
+    if counts is None:
+        return True
+    return counts.get(match_date, 0) > 1
+
+
+def validate_prediction_scores(
+    home_score: int,
+    away_score: int,
+    stage: str | None,
+) -> str | None:
+    if is_knockout_stage(stage) and home_score == away_score:
+        return "Knockout matches must have a winner — draws are not allowed (extra time and penalties decide ties)."
+    return None
+
 
 def bold_day_key(match: dict) -> str:
     """One bold pick per calendar day (ET), keyed by match_date."""
@@ -71,8 +116,12 @@ def bold_day_key(match: dict) -> str:
 def bold_pick_change_allowed(
     target_match: dict,
     existing_bold_match: dict | None,
+    *,
+    matches_on_date: int,
 ) -> bool:
     """True when the user may set or move their bold pick to target_match."""
+    if matches_on_date < 2:
+        return False
     if not is_prediction_open(target_match["match_date"], target_match["match_time"]):
         return False
     if (

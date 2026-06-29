@@ -90,6 +90,9 @@
 </div>
 {% elif m.open %}
 <div class="score-input-wrap">
+  {% if m.knockout_no_draw %}
+  <p class="muted-inline fixture-knockout-note">Knockout — pick a winner (no draws; ET and pens if level after 90).</p>
+  {% endif %}
   <div class="score-input">
     <input type="number" name="home_{{ m.id }}" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="home">
     <span class="score-dash">–</span>
@@ -97,12 +100,14 @@
     <input type="hidden" name="match_{{ m.id }}" id="match_{{ m.id }}" value="{% if m.prediction %}{{ m.prediction.home_score }}-{{ m.prediction.away_score }}{% endif %}">
   </div>
   {% set day_key = 'day_' ~ m.match_date %}
-  <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET)">
+  {% if m.bold_allowed %}
+  <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET), only when 2+ matches that day">
     <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}"
       {% if bold_by_day.get(day_key) == m.id %}checked{% endif %}
       {% if not m.open or not m.prediction or day_key in bold_locked_days %}disabled data-bold-locked{% endif %}>
     <span class="bold-pick-toggle-face">🎰 Bold 2×</span>
   </label>
+  {% endif %}
 </div>
 {% elif m.prediction %}
 <div class="prediction-done">

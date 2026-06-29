@@ -49,12 +49,16 @@ from scoring import (
     TOURNAMENT_THIRD_PTS,
     TOURNAMENT_TOP_SCORER_PTS,
     TOURNAMENT_WINNER_PTS,
+    bold_allowed_for_date,
     calculate_tournament_points,
+    is_knockout_match,
     is_prediction_open,
     is_tournament_vote_open,
+    match_counts_by_date,
     parse_match_datetime,
     prediction_deadline,
     tournament_vote_deadline,
+    validate_prediction_scores,
 )
 from player_stats import get_scorer_squads_data, get_scorer_status, resolve_scorer_pick_value
 from team_data import get_match_context
@@ -95,7 +99,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.06"
+APP_VERSION = "Beta 4.07"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -629,6 +633,7 @@ def sort_matches_for_dashboard(matches: list[dict]) -> list[dict]:
 
 def enrich_matches(matches, user_predictions=None):
     now = datetime.now(TIMEZONE)
+    schedule_counts = match_counts_by_date(matches)
     enriched = []
     for m in matches:
         raw = dict(m)
@@ -638,6 +643,8 @@ def enrich_matches(matches, user_predictions=None):
         d["deadline_urgent"] = (
             d["open"] and timedelta(0) < (d["deadline"] - now) <= timedelta(hours=1)
         )
+        d["knockout_no_draw"] = is_knockout_match(m)
+        d["bold_allowed"] = bold_allowed_for_date(m["match_date"], schedule_counts)
         if user_predictions and m["id"] in user_predictions:
             pred = user_predictions[m["id"]]
             d["prediction"] = {
@@ -955,6 +962,8 @@ def compute_bold_locked_days(bold_by_day: dict) -> set[str]:
 
 
 def user_can_edit_bold(match: dict, bold_locked_days: set[str]) -> bool:
+    if not match.get("bold_allowed"):
+        return False
     if not match.get("open") or not match.get("prediction"):
         return False
     day_key = f"day_{match['match_date']}"
@@ -1041,6 +1050,7 @@ def submit_predictions(invite_code):
     user_id = session["user_id"]
     saved = 0
     blocked = 0
+    draw_rejected = 0
 
     for key, value in request.form.items():
         if not key.startswith("match_"):
@@ -1066,7 +1076,15 @@ def submit_predictions(invite_code):
             blocked += 1
             continue
 
-        db.upsert_prediction(user_id, match_id, home_score, away_score)
+        err = validate_prediction_scores(home_score, away_score, match["stage"])
+        if err:
+            draw_rejected += 1
+            continue
+
+        upsert_err = db.upsert_prediction(user_id, match_id, home_score, away_score)
+        if upsert_err:
+            draw_rejected += 1
+            continue
         saved += 1
 
     bold_updated = 0
@@ -1100,6 +1118,11 @@ def submit_predictions(invite_code):
         flash(f"Saved {saved} prediction(s).", "success")
     if blocked:
         flash(f"{blocked} prediction(s) were past the deadline (1 hour before kickoff).", "error")
+    if draw_rejected:
+        flash(
+            f"{draw_rejected} prediction(s) rejected — knockout matches must have a winner (no draws).",
+            "error",
+        )
     if not saved and not blocked:
         flash("No predictions to save.", "error")
 
@@ -2289,13 +2312,28 @@ def admin_page(invite_code):
                             continue
                         if home_score < 0 or away_score < 0 or home_score > 20 or away_score > 20:
                             continue
-                        db.upsert_prediction(
+                        with db.db() as conn:
+                            match_row = conn.execute(
+                                "SELECT stage FROM matches WHERE id = ?", (match_id,)
+                            ).fetchone()
+                        if not match_row:
+                            continue
+                        err = validate_prediction_scores(
+                            home_score, away_score, match_row["stage"]
+                        )
+                        if err:
+                            flash(err, "error")
+                            continue
+                        upsert_err = db.upsert_prediction(
                             user_id,
                             match_id,
                             home_score,
                             away_score,
                             is_bold=match_id in bold_match_ids,
                         )
+                        if upsert_err:
+                            flash(upsert_err, "error")
+                            continue
                         saved += 1
                     bold_updated = 0
                     for match_id in bold_match_ids:

@@ -250,7 +250,99 @@ def init_db() -> None:
     repair_backfill_ai_agent_keys()
     repair_split_merged_cursor_ai_accounts()
     repair_rename_ir_iran_team()
+    repair_knockout_draw_predictions()
+    repair_bold_on_single_match_days()
     ensure_admin_secrets()
+
+
+def count_matches_on_date(match_date: str, *, conn=None) -> int:
+    if conn is None:
+        with db() as owned:
+            return count_matches_on_date(match_date, conn=owned)
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM matches WHERE match_date = ?",
+        (match_date,),
+    ).fetchone()
+    return int(row["c"] or 0)
+
+
+def repair_knockout_draw_predictions() -> int:
+    """Fix open knockout picks that incorrectly predict a draw."""
+    from scoring import is_knockout_stage, validate_prediction_scores
+
+    fixed = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.user_id, p.match_id, p.home_score, p.away_score, p.is_bold,
+                   m.stage, m.home_team, m.away_team, m.actual_home, m.actual_away
+            FROM predictions p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.home_score = p.away_score
+              AND m.stage != 'group'
+              AND m.actual_home IS NULL
+            """
+        ).fetchall()
+        for row in rows:
+            home, away = row["home_score"], row["away_score"]
+            if home != away:
+                continue
+            from ai_predictor import _team_strength
+
+            if _team_strength(row["home_team"]) >= _team_strength(row["away_team"]):
+                home += 1
+            else:
+                away += 1
+            if validate_prediction_scores(home, away, row["stage"]):
+                continue
+            points = calculate_points(
+                home,
+                away,
+                row["actual_home"],
+                row["actual_away"],
+                bool(row["is_bold"]),
+            )
+            conn.execute(
+                """
+                UPDATE predictions
+                SET home_score = ?, away_score = ?, points = ?
+                WHERE id = ?
+                """,
+                (home, away, points, row["id"]),
+            )
+            fixed += 1
+    return fixed
+
+
+def repair_bold_on_single_match_days() -> int:
+    """Clear bold flags on calendar days with only one scheduled match."""
+    cleared = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.home_score, p.away_score, p.is_bold, m.match_date,
+                   m.actual_home, m.actual_away
+            FROM predictions p
+            JOIN matches m ON m.id = p.match_id
+            WHERE p.is_bold = 1
+            """
+        ).fetchall()
+        for row in rows:
+            if count_matches_on_date(row["match_date"], conn=conn) > 1:
+                continue
+            points = calculate_points(
+                row["home_score"],
+                row["away_score"],
+                row["actual_home"],
+                row["actual_away"],
+                False,
+            )
+            conn.execute(
+                "UPDATE predictions SET is_bold = 0, points = ? WHERE id = ?",
+                (points, row["id"]),
+            )
+            cleared += 1
+    return cleared
 
 
 def repair_rename_ir_iran_team() -> None:
@@ -429,7 +521,11 @@ def fill_nostradamus_cursor_picks(pool_id: int) -> str:
                 continue
 
             home, away = predict_score(
-                match["home_team"], match["away_team"], match["id"], "cursor"
+                match["home_team"],
+                match["away_team"],
+                match["id"],
+                "cursor",
+                stage=match["stage"] or "group",
             )
             existing = conn.execute(
                 "SELECT home_score, away_score FROM predictions WHERE user_id = ? AND match_id = ?",
@@ -544,7 +640,11 @@ def repair_split_merged_cursor_ai_accounts() -> None:
 
             for match in matches:
                 exp_home, exp_away = predict_score(
-                    match["home_team"], match["away_team"], match["id"], "cursor"
+                    match["home_team"],
+                    match["away_team"],
+                    match["id"],
+                    "cursor",
+                    stage=match["stage"] or "group",
                 )
                 legacy_pred = conn.execute(
                     """
@@ -1758,11 +1858,17 @@ def upsert_prediction(
     home_score: int,
     away_score: int,
     is_bold: bool | None = None,
-) -> None:
+) -> str | None:
+    from scoring import validate_prediction_scores
+
     with db() as conn:
         match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
         if not match:
             raise ValueError("Match not found")
+
+        err = validate_prediction_scores(home_score, away_score, match["stage"])
+        if err:
+            return err
 
         existing = conn.execute(
             "SELECT is_bold, points_excluded FROM predictions WHERE user_id = ? AND match_id = ?",
@@ -1792,6 +1898,7 @@ def upsert_prediction(
             """,
             (user_id, match_id, home_score, away_score, points, 1 if bold else 0),
         )
+    return None
 
 
 def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) -> str | None:
@@ -1801,6 +1908,9 @@ def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) ->
         match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
         if not match:
             return "Match not found."
+        matches_on_date = count_matches_on_date(match["match_date"], conn=conn)
+        if matches_on_date < 2:
+            return "Bold 2× is only available on days with more than one match."
         pred = conn.execute(
             "SELECT * FROM predictions WHERE user_id = ? AND match_id = ?",
             (user_id, match_id),
@@ -1832,7 +1942,9 @@ def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) ->
                 break
 
         if not admin_bypass and not bold_pick_change_allowed(
-            dict(match), dict(existing_bold_match) if existing_bold_match else None
+            dict(match),
+            dict(existing_bold_match) if existing_bold_match else None,
+            matches_on_date=matches_on_date,
         ):
             return "Bold pick is locked — your bold match deadline has passed."
 
@@ -2537,6 +2649,7 @@ def sync_ai_predictions(pool_id: int) -> int:
             continue
         ai_id = ensure_ai_user(pool_id, agent["display_name"], agent["key"])
         for m in matches:
+            stage = m["stage"] or "group"
             if not is_prediction_open(m["match_date"], m["match_time"]):
                 continue
             pred = get_prediction(ai_id, m["id"])
@@ -2548,14 +2661,25 @@ def sync_ai_predictions(pool_id: int) -> int:
                             (ai_id, m["id"]),
                         )
                 continue
-            home, away = predict_score(m["home_team"], m["away_team"], m["id"], agent["key"])
-            if pred and pred["home_score"] == home and pred["away_score"] == away:
+            home, away = predict_score(
+                m["home_team"], m["away_team"], m["id"], agent["key"], stage=stage
+            )
+            knockout_draw = (
+                stage != "group"
+                and pred
+                and pred["home_score"] == pred["away_score"]
+            )
+            if pred and pred["home_score"] == home and pred["away_score"] == away and not knockout_draw:
                 continue
             if pred:
-                upsert_prediction(ai_id, m["id"], home, away)
+                err = upsert_prediction(ai_id, m["id"], home, away)
+                if err:
+                    continue
                 saved += 1
             else:
-                upsert_prediction(ai_id, m["id"], home, away)
+                err = upsert_prediction(ai_id, m["id"], home, away)
+                if err:
+                    continue
                 saved += 1
     return saved
 
@@ -2590,7 +2714,9 @@ def sync_nostradamus_predictions(pool_id: int) -> int:
                         (keeper_id, m["id"]),
                     )
             continue
-        home, away = predict_score(m["home_team"], m["away_team"], m["id"], "cursor")
+        home, away = predict_score(
+            m["home_team"], m["away_team"], m["id"], "cursor", stage=m.get("stage") or "group"
+        )
         if pred and pred["home_score"] == home and pred["away_score"] == away:
             continue
         upsert_prediction(keeper_id, m["id"], home, away)

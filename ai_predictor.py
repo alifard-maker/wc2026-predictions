@@ -30,7 +30,7 @@ LEGACY_AI_AGENT_KEYS: frozenset[str] = frozenset({LEGACY_PREDICTIONS_AGENT_KEY})
 RENAMED_LEGACY_AI_NAMES: frozenset[str] = frozenset({"Nostradamus"})
 
 # Bump when predict_score logic changes — triggers refresh of open AI picks on deploy.
-AI_PREDICTOR_VERSION = 2
+AI_PREDICTOR_VERSION = 3
 
 AGENT_DRAW_BIAS = {
     "cursor": 0.35,
@@ -106,11 +106,19 @@ def _score_pool_for_gap(gap: float) -> dict[str, list[tuple[int, int]]]:
     return _SCORE_POOLS[-1][1]
 
 
-def predict_score(home: str, away: str, match_id: int, agent_key: str = "cursor") -> tuple[int, int]:
+def predict_score(
+    home: str,
+    away: str,
+    match_id: int,
+    agent_key: str = "cursor",
+    *,
+    stage: str = "group",
+) -> tuple[int, int]:
     """Deterministic AI prediction with realistic score variety."""
     home_s = _team_strength(home)
     away_s = _team_strength(away)
     seed = _seed(agent_key, match_id, home, away)
+    knockout = stage != "group"
 
     closeness = min(home_s, away_s) / max(home_s, away_s)
     gap = 1.0 - closeness
@@ -122,22 +130,30 @@ def predict_score(home: str, away: str, match_id: int, agent_key: str = "cursor"
     if seed % 100 < int(upset_chance * 100):
         home_edge = 1.0 - home_edge
 
-    draw_threshold = int(draw_bias * closeness * 340)
-    if closeness < 0.82:
-        draw_threshold = int(draw_threshold * (0.55 + closeness * 0.35))
-
     roll = seed % 1000
-    home_threshold = draw_threshold + int((1000 - draw_threshold) * home_edge)
-
-    if roll < draw_threshold:
-        outcome = "draw"
-    elif roll < home_threshold:
-        outcome = "home"
+    if knockout:
+        home_threshold = int(1000 * home_edge)
+        outcome = "home" if roll < home_threshold else "away"
     else:
-        outcome = "away"
+        draw_threshold = int(draw_bias * closeness * 340)
+        if closeness < 0.82:
+            draw_threshold = int(draw_threshold * (0.55 + closeness * 0.35))
+        home_threshold = draw_threshold + int((1000 - draw_threshold) * home_edge)
+        if roll < draw_threshold:
+            outcome = "draw"
+        elif roll < home_threshold:
+            outcome = "home"
+        else:
+            outcome = "away"
 
     pool = _score_pool_for_gap(gap)[outcome]
-    return pool[(seed // 7 + match_id) % len(pool)]
+    home_score, away_score = pool[(seed // 7 + match_id) % len(pool)]
+    if knockout and home_score == away_score:
+        if home_edge >= 0.5:
+            home_score += 1
+        else:
+            away_score += 1
+    return home_score, away_score
 
 
 TOP_SCORER_PICKS = [

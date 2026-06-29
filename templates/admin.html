@@ -229,7 +229,9 @@
             <td><input type="number" name="pred_{{ m.id }}_home" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" placeholder="—"></td>
             <td><input type="number" name="pred_{{ m.id }}_away" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" placeholder="—"></td>
             <td>
+              {% if m.bold_allowed %}
               <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}" {% if m.prediction and m.prediction.is_bold %}checked{% endif %} title="Bold pick (2× points)">
+              {% else %}<span class="muted-inline">—</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
