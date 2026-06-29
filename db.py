@@ -2715,7 +2715,7 @@ def sync_nostradamus_predictions(pool_id: int) -> int:
                     )
             continue
         home, away = predict_score(
-            m["home_team"], m["away_team"], m["id"], "cursor", stage=m.get("stage") or "group"
+            m["home_team"], m["away_team"], m["id"], "cursor", stage=m["stage"] or "group"
         )
         if pred and pred["home_score"] == home and pred["away_score"] == away:
             continue
