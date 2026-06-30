@@ -21,6 +21,11 @@ DB_PATH = Path(os.environ.get("DATABASE_PATH", _default_db))
 FIXED_ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "Ducati1098R!")
 MAX_USERS_PER_POOL = 100
 
+# Authoritative pens winners for tied knockouts (match_id -> 'home' | 'away').
+CONFIRMED_SHOOTOUT_WINNERS: dict[int, str] = {
+    74: "away",  # Germany 1–1 Paraguay — Paraguay won on penalties
+}
+
 
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -440,11 +445,10 @@ def repair_knockout_outcome_scoring() -> int:
         ).fetchall()
         for row in rows:
             match = dict(row)
-            winner = match.get("shootout_winner")
+            winner = CONFIRMED_SHOOTOUT_WINNERS.get(match["id"]) or match.get("shootout_winner")
             if match["actual_home"] == match["actual_away"]:
-                winner = winner or infer_shootout_winner(match, conn=conn)
-                if not winner and match["id"] == 74 and match["home_team"] == "Germany":
-                    winner = "home"
+                if match["id"] not in CONFIRMED_SHOOTOUT_WINNERS:
+                    winner = winner or infer_shootout_winner(match, conn=conn)
             elif winner:
                 winner = None
             if winner != match.get("shootout_winner"):
@@ -2114,7 +2118,9 @@ def update_match_result(
 
         winner = shootout_winner if shootout_winner in ("home", "away") else None
         if is_knockout_stage(match["stage"]) and actual_home == actual_away:
-            winner = winner or infer_shootout_winner(dict(match), conn=conn)
+            winner = CONFIRMED_SHOOTOUT_WINNERS.get(match_id) or winner or infer_shootout_winner(
+                dict(match), conn=conn
+            )
         elif actual_home != actual_away:
             winner = None
 
