@@ -15,7 +15,7 @@
   {% if m.is_live %}
   <span class="badge badge-live" data-live-badge="{{ m.id }}">{% if m.status == 'penalty_shootout' %}Pens{% elif m.status == 'extra_time' %}ET {{ m.minute_base or (m.minute_label | live_minute) }}{% if m.added_time_label %} <span class="live-added-time">{{ m.added_time_label }}</span>{% endif %}{% elif m.status == 'halftime' %}{{ m.minute_base or (m.minute_label | live_minute) }}{% elif m.status == 'hydration_break' %}{{ m.minute_base or (m.minute_label | live_minute) }}{% elif m.status == 'suspended' %}{{ m.minute_base or (m.minute_label | live_minute) }}{% else %}LIVE {{ m.minute_base or (m.minute_label | live_minute) }}{% if m.added_time_label %} <span class="live-added-time">{{ m.added_time_label }}</span>{% endif %}{% endif %}</span>
   {% elif is_finished_row %}
-  <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}</span>
+  <span class="badge badge-done" data-live-badge="{{ m.id }}">FT: {{ m.display_home }}–{{ m.display_away }}{% if m.shootout_winner_team %} ({{ m.shootout_winner_team }} pens){% endif %}</span>
   {% elif m.open %}
   <span class="badge badge-open badge-deadline-track{% if m.deadline_urgent %} badge-open-urgent{% endif %}" data-deadline="{{ m.deadline.isoformat() }}">Open until {{ m.deadline.strftime('%a %d %b, %H:%M') }} ET</span>
   {% elif not is_finished_row %}

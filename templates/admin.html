@@ -390,6 +390,13 @@
       <div style="color: var(--muted); font-size: 0.85rem">Final result</div>
       <input type="number" name="actual_home" min="0" max="20" value="{{ m.actual_home if m.actual_home is not none else '' }}" placeholder="H" required>
       <input type="number" name="actual_away" min="0" max="20" value="{{ m.actual_away if m.actual_away is not none else '' }}" placeholder="A" required>
+      {% if m.stage != 'group' %}
+      <select name="shootout_winner" title="If tied after extra time, who won on penalties?">
+        <option value="">Pens winner (if tied)</option>
+        <option value="home" {% if m.shootout_winner == 'home' %}selected{% endif %}>{{ m.home_team }} (pens)</option>
+        <option value="away" {% if m.shootout_winner == 'away' %}selected{% endif %}>{{ m.away_team }} (pens)</option>
+      </select>
+      {% endif %}
       <button type="submit" class="btn btn-gold">FT</button>
     </form>
     <form method="post" class="admin-goal-form">

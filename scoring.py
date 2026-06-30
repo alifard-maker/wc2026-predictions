@@ -167,21 +167,59 @@ def calculate_tournament_points(
     return breakdown
 
 
+def resolve_scoring_result(
+    stage: str | None,
+    actual_home: int,
+    actual_away: int,
+    shootout_winner: str | None = None,
+) -> str:
+    """Who won for points: knockout pens count; group stage uses the entered score."""
+    if is_knockout_stage(stage) and shootout_winner in ("home", "away"):
+        return shootout_winner
+    return match_result(actual_home, actual_away)
+
+
 def calculate_points(
     pred_home: int,
     pred_away: int,
     actual_home: int | None,
     actual_away: int | None,
     is_bold: bool = False,
+    *,
+    stage: str | None = None,
+    shootout_winner: str | None = None,
 ) -> int | None:
     if actual_home is None or actual_away is None:
         return None
+    actual_result = resolve_scoring_result(stage, actual_home, actual_away, shootout_winner)
+    pred_result = match_result(pred_home, pred_away)
     if pred_home == actual_home and pred_away == actual_away:
         base = 5
-    elif match_result(pred_home, pred_away) == match_result(actual_home, actual_away):
+    elif pred_result == actual_result:
         base = 2
     else:
         base = 0
     if is_bold and base > 0:
         return base * 2
     return base
+
+
+def calculate_points_for_match(
+    pred_home: int,
+    pred_away: int,
+    match,
+    is_bold: bool = False,
+) -> int | None:
+    """Score a prediction using a match row (sqlite3.Row or dict)."""
+    shootout_winner = None
+    if hasattr(match, "keys") and "shootout_winner" in match.keys():
+        shootout_winner = match["shootout_winner"]
+    return calculate_points(
+        pred_home,
+        pred_away,
+        match["actual_home"],
+        match["actual_away"],
+        is_bold,
+        stage=match["stage"],
+        shootout_winner=shootout_winner,
+    )

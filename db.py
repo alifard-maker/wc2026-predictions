@@ -8,7 +8,13 @@ from pathlib import Path
 
 from fixtures import GROUP_FIXTURES
 from phase_bonus import compute_pool_phase_bonuses
-from scoring import bold_day_key, calculate_points, calculate_tournament_points
+from scoring import (
+    bold_day_key,
+    calculate_points,
+    calculate_points_for_match,
+    calculate_tournament_points,
+    is_knockout_stage,
+)
 
 _default_db = Path(__file__).parent / "predictions.db"
 DB_PATH = Path(os.environ.get("DATABASE_PATH", _default_db))
@@ -177,6 +183,7 @@ def init_db() -> None:
                 ("live_home", "INTEGER"),
                 ("live_away", "INTEGER"),
                 ("match_number", "INTEGER"),
+                ("shootout_winner", "TEXT"),
             ]:
                 if col not in match_cols:
                     conn.execute(f"ALTER TABLE matches ADD COLUMN {col} {typedef}")
@@ -252,6 +259,7 @@ def init_db() -> None:
     repair_rename_ir_iran_team()
     repair_knockout_draw_predictions()
     repair_bold_on_single_match_days()
+    repair_knockout_outcome_scoring()
     ensure_admin_secrets()
 
 
@@ -301,6 +309,7 @@ def repair_knockout_draw_predictions() -> int:
                 row["actual_home"],
                 row["actual_away"],
                 bool(row["is_bold"]),
+                stage=row["stage"],
             )
             conn.execute(
                 """
@@ -321,7 +330,7 @@ def repair_bold_on_single_match_days() -> int:
         rows = conn.execute(
             """
             SELECT p.id, p.home_score, p.away_score, p.is_bold, m.match_date,
-                   m.actual_home, m.actual_away
+                   m.actual_home, m.actual_away, m.stage, m.shootout_winner
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
             WHERE p.is_bold = 1
@@ -330,11 +339,10 @@ def repair_bold_on_single_match_days() -> int:
         for row in rows:
             if count_matches_on_date(row["match_date"], conn=conn) > 1:
                 continue
-            points = calculate_points(
+            points = calculate_points_for_match(
                 row["home_score"],
                 row["away_score"],
-                row["actual_home"],
-                row["actual_away"],
+                row,
                 False,
             )
             conn.execute(
@@ -343,6 +351,110 @@ def repair_bold_on_single_match_days() -> int:
             )
             cleared += 1
     return cleared
+
+
+def infer_shootout_winner(match: dict, *, conn) -> str | None:
+    """Derive knockout pens winner from stored shootout data."""
+    import json
+
+    from live_scores import shootout_tally
+
+    if match.get("actual_home") != match.get("actual_away"):
+        return None
+
+    penalties = conn.execute(
+        """
+        SELECT p.outcome, p.minute, p.taker_team, m.home_team, m.away_team
+        FROM match_penalties p
+        JOIN matches m ON m.id = p.match_id
+        WHERE p.match_id = ?
+        ORDER BY p.minute ASC, COALESCE(p.injury_minute, 0) ASC, p.id ASC
+        """,
+        (match["id"],),
+    ).fetchall()
+    penalty_rows = [dict(p) for p in penalties]
+    tally = shootout_tally(penalty_rows)
+    if tally:
+        home_pens, away_pens = tally
+        if home_pens > away_pens:
+            return "home"
+        if away_pens > home_pens:
+            return "away"
+
+    raw = conn.execute(
+        "SELECT value FROM sync_meta WHERE key = ?",
+        (f"shootout_score_{match['id']}",),
+    ).fetchone()
+    if raw and raw["value"]:
+        try:
+            data = json.loads(raw["value"])
+            home_pens = int(data.get("home", data.get("homeTeam", -1)))
+            away_pens = int(data.get("away", data.get("awayTeam", -1)))
+            if home_pens > away_pens:
+                return "home"
+            if away_pens > home_pens:
+                return "away"
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return None
+
+
+def rescore_match_predictions(match_id: int, *, conn) -> None:
+    match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
+    if not match or match["actual_home"] is None or match["actual_away"] is None:
+        return
+    preds = conn.execute(
+        """
+        SELECT id, home_score, away_score, is_bold, points_excluded
+        FROM predictions WHERE match_id = ?
+        """,
+        (match_id,),
+    ).fetchall()
+    for pred in preds:
+        if pred["points_excluded"]:
+            conn.execute("UPDATE predictions SET points = NULL WHERE id = ?", (pred["id"],))
+            continue
+        points = calculate_points_for_match(
+            pred["home_score"],
+            pred["away_score"],
+            match,
+            bool(pred["is_bold"]),
+        )
+        conn.execute(
+            "UPDATE predictions SET points = ? WHERE id = ?",
+            (points, pred["id"]),
+        )
+
+
+def repair_knockout_outcome_scoring() -> int:
+    """Set pens winners on tied knockouts and rescore predictions for final outcome."""
+    updated = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM matches
+            WHERE stage != 'group'
+              AND actual_home IS NOT NULL
+              AND actual_away IS NOT NULL
+            """
+        ).fetchall()
+        for row in rows:
+            match = dict(row)
+            winner = match.get("shootout_winner")
+            if match["actual_home"] == match["actual_away"]:
+                winner = winner or infer_shootout_winner(match, conn=conn)
+                if not winner and match["id"] == 74 and match["home_team"] == "Germany":
+                    winner = "home"
+            elif winner:
+                winner = None
+            if winner != match.get("shootout_winner"):
+                conn.execute(
+                    "UPDATE matches SET shootout_winner = ? WHERE id = ?",
+                    (winner, match["id"]),
+                )
+                updated += 1
+            rescore_match_predictions(match["id"], conn=conn)
+    return updated
 
 
 def repair_rename_ir_iran_team() -> None:
@@ -670,11 +782,10 @@ def repair_split_merged_cursor_ai_accounts() -> None:
                     bold = bold or bool(legacy_pred["is_bold"])
                     conn.execute("DELETE FROM predictions WHERE id = ?", (legacy_pred["id"],))
 
-                points = calculate_points(
+                points = calculate_points_for_match(
                     exp_home,
                     exp_away,
-                    match["actual_home"],
-                    match["actual_away"],
+                    match,
                     bold,
                 )
                 conn.execute(
@@ -883,7 +994,7 @@ def recalculate_user_match_points(user_id: int, *, conn=None) -> None:
     preds = conn.execute(
         """
         SELECT p.id, p.home_score, p.away_score, p.is_bold, p.points_excluded,
-               m.actual_home, m.actual_away
+               m.actual_home, m.actual_away, m.stage, m.shootout_winner
         FROM predictions p
         JOIN matches m ON m.id = p.match_id
         WHERE p.user_id = ?
@@ -896,11 +1007,10 @@ def recalculate_user_match_points(user_id: int, *, conn=None) -> None:
             continue
         if pred["actual_home"] is None or pred["actual_away"] is None:
             continue
-        points = calculate_points(
+        points = calculate_points_for_match(
             pred["home_score"],
             pred["away_score"],
-            pred["actual_home"],
-            pred["actual_away"],
+            pred,
             bool(pred["is_bold"]),
         )
         conn.execute(
@@ -1882,8 +1992,8 @@ def upsert_prediction(
         if excluded:
             points = None
         else:
-            points = calculate_points(
-                home_score, away_score, match["actual_home"], match["actual_away"], bool(bold)
+            points = calculate_points_for_match(
+                home_score, away_score, match, bool(bold)
             )
         conn.execute(
             """
@@ -1926,7 +2036,8 @@ def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) ->
         siblings = conn.execute(
             """
             SELECT p.id, p.match_id, p.home_score, p.away_score, p.is_bold, p.points_excluded,
-                   m.actual_home, m.actual_away, m.match_date, m.match_time, m.matchday, m.stage
+                   m.actual_home, m.actual_away, m.match_date, m.match_time, m.matchday, m.stage,
+                   m.shootout_winner
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
             WHERE p.user_id = ?
@@ -1955,11 +2066,10 @@ def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) ->
             if row["points_excluded"]:
                 pts = 0
             else:
-                pts = calculate_points(
+                pts = calculate_points_for_match(
                     row["home_score"],
                     row["away_score"],
-                    row["actual_home"],
-                    row["actual_away"],
+                    row,
                     bool(new_bold),
                 )
             conn.execute(
@@ -1983,50 +2093,40 @@ def get_user_bold_by_day(user_id: int) -> dict[str, int]:
     return {bold_day_key(dict(r)): r["match_id"] for r in rows}
 
 
-def update_match_result(match_id: int, actual_home: int, actual_away: int) -> bool:
+def update_match_result(
+    match_id: int,
+    actual_home: int,
+    actual_away: int,
+    *,
+    shootout_winner: str | None = None,
+) -> bool:
     from datetime import datetime
 
-    from scoring import TIMEZONE, parse_match_datetime
+    from scoring import TIMEZONE, is_knockout_stage, parse_match_datetime
 
     with db() as conn:
-        match = conn.execute(
-            "SELECT match_date, match_time FROM matches WHERE id = ?",
-            (match_id,),
-        ).fetchone()
+        match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
         if not match:
             return False
         kickoff = parse_match_datetime(match["match_date"], match["match_time"])
         if datetime.now(TIMEZONE) < kickoff:
             return False
 
+        winner = shootout_winner if shootout_winner in ("home", "away") else None
+        if is_knockout_stage(match["stage"]) and actual_home == actual_away:
+            winner = winner or infer_shootout_winner(dict(match), conn=conn)
+        elif actual_home != actual_away:
+            winner = None
+
         conn.execute(
             """
-            UPDATE matches SET actual_home = ?, actual_away = ?, status = 'finished',
-                   live_home = ?, live_away = ?, live_minute = 90
+            UPDATE matches SET actual_home = ?, actual_away = ?, shootout_winner = ?,
+                   status = 'finished', live_home = ?, live_away = ?, live_minute = 90
             WHERE id = ?
             """,
-            (actual_home, actual_away, actual_home, actual_away, match_id),
+            (actual_home, actual_away, winner, actual_home, actual_away, match_id),
         )
-        predictions = conn.execute(
-            "SELECT id, home_score, away_score, points_excluded FROM predictions WHERE match_id = ?",
-            (match_id,),
-        ).fetchall()
-        for pred in predictions:
-            if pred["points_excluded"]:
-                conn.execute("UPDATE predictions SET points = NULL WHERE id = ?", (pred["id"],))
-                continue
-            row = conn.execute(
-                "SELECT is_bold FROM predictions WHERE id = ?",
-                (pred["id"],),
-            ).fetchone()
-            points = calculate_points(
-                pred["home_score"],
-                pred["away_score"],
-                actual_home,
-                actual_away,
-                bool(row["is_bold"]) if row else False,
-            )
-            conn.execute("UPDATE predictions SET points = ? WHERE id = ?", (points, pred["id"]))
+        rescore_match_predictions(match_id, conn=conn)
     return True
 
 

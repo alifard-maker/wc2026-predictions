@@ -99,7 +99,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.08"
+APP_VERSION = "Beta 4.09"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -645,6 +645,13 @@ def enrich_matches(matches, user_predictions=None):
         )
         d["knockout_no_draw"] = is_knockout_match(m)
         d["bold_allowed"] = bold_allowed_for_date(m["match_date"], schedule_counts)
+        shootout_winner = raw.get("shootout_winner")
+        if shootout_winner == "home":
+            d["shootout_winner_team"] = m["home_team"]
+        elif shootout_winner == "away":
+            d["shootout_winner_team"] = m["away_team"]
+        else:
+            d["shootout_winner_team"] = None
         if user_predictions and m["id"] in user_predictions:
             pred = user_predictions[m["id"]]
             d["prediction"] = {
@@ -2027,7 +2034,15 @@ def admin_page(invite_code):
             except ValueError:
                 flash("Invalid score.", "error")
             else:
-                db.update_match_result(match_id, actual_home, actual_away)
+                shootout_winner = request.form.get("shootout_winner", "").strip() or None
+                if shootout_winner not in ("home", "away"):
+                    shootout_winner = None
+                db.update_match_result(
+                    match_id,
+                    actual_home,
+                    actual_away,
+                    shootout_winner=shootout_winner,
+                )
                 db.sync_knockout_stage()
                 flash("Result saved — points updated for all players.", "success")
         elif action == "add_match" and session.get("admin_secret") == pool["admin_secret"]:
