@@ -601,6 +601,18 @@ def _competitor_teams(
     return home_name, away_name, team_by_id
 
 
+def _espn_shootout_winner(competition: dict) -> str | None:
+    """ESPN marks the advancing team with winner=true after pens."""
+    for competitor in competition.get("competitors") or []:
+        if not competitor.get("winner"):
+            continue
+        if competitor.get("homeAway") == "home":
+            return "home"
+        if competitor.get("homeAway") == "away":
+            return "away"
+    return None
+
+
 def _fetch_competition_for_event(event_id: str, match_date: str | None = None) -> dict | None:
     dates: list[str | None] = []
     if match_date:
@@ -851,12 +863,27 @@ def _sync_espn_event(
     if db_status == "penalty_shootout":
         home_score, away_score = _freeze_regulation_score(match_id, home_score, away_score)
 
+    shootout_winner = None
+    from scoring import is_knockout_stage
+
+    if (
+        db_status == "finished"
+        and is_knockout_stage(db_match.get("stage"))
+        and home_score == away_score
+    ):
+        shootout_winner = _espn_shootout_winner(competition)
+
     if (
         db_status == "finished"
         and db_match.get("actual_home") is None
         and _match_started(db_match)
         and _kickoffs_align(kickoff_et, db_match)
-        and db.update_match_result(match_id, home_score, away_score)
+        and db.update_match_result(
+            match_id,
+            home_score,
+            away_score,
+            shootout_winner=shootout_winner,
+        )
     ):
         result["finished"] = 1
         db.set_sync_meta(f"regulation_score_{match_id}", "")

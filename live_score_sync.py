@@ -428,6 +428,25 @@ def _db_status(api_status: str) -> str:
     return "scheduled"
 
 
+def _shootout_winner_from_api(api_match: dict) -> str | None:
+    """Football-data pens tally -> home/away winner side."""
+    score = api_match.get("score") or {}
+    pens = score.get("penalties") or {}
+    home = pens.get("home", pens.get("homeTeam"))
+    away = pens.get("away", pens.get("awayTeam"))
+    if home is None or away is None:
+        return None
+    try:
+        home_pens, away_pens = int(home), int(away)
+    except (TypeError, ValueError):
+        return None
+    if home_pens > away_pens:
+        return "home"
+    if away_pens > home_pens:
+        return "away"
+    return None
+
+
 def _store_shootout_score(match_id: int, api_match: dict) -> None:
     score = api_match.get("score") or {}
     pens = score.get("penalties") or {}
@@ -797,11 +816,25 @@ def _process_api_match(
     if status == FINISHED_API_STATUS:
         final_home, final_away, check = _crosscheck_live_scores(db_match, home_score, away_score)
         result["crosscheck"] = check
+        shootout_winner = None
+        from scoring import is_knockout_stage
+
+        if (
+            is_knockout_stage(db_match.get("stage"))
+            and final_home == final_away
+        ):
+            shootout_winner = _shootout_winner_from_api(api_match)
+            _store_shootout_score(match_id, api_match)
         if (
             db_match["actual_home"] is None
             and _match_started(db_match)
             and _kickoffs_align(kickoff, db_match)
-            and db.update_match_result(match_id, final_home, final_away)
+            and db.update_match_result(
+                match_id,
+                final_home,
+                final_away,
+                shootout_winner=shootout_winner,
+            )
         ):
             result["finished"] = 1
             db.set_sync_meta(f"regulation_score_{match_id}", "")

@@ -24,7 +24,22 @@ MAX_USERS_PER_POOL = 100
 # Authoritative pens winners for tied knockouts (match_id -> 'home' | 'away').
 CONFIRMED_SHOOTOUT_WINNERS: dict[int, str] = {
     74: "away",  # Germany 1–1 Paraguay — Paraguay won on penalties
+    75: "away",  # Netherlands 1–1 Morocco — Morocco won on penalties
 }
+
+# Fallback when match_id differs between environments (home_team, away_team) -> winner side.
+CONFIRMED_SHOOTOUT_WINNERS_BY_PAIR: dict[tuple[str, str], str] = {
+    ("Germany", "Paraguay"): "away",
+    ("Netherlands", "Morocco"): "away",
+}
+
+
+def confirmed_shootout_winner(match: dict) -> str | None:
+    """Known pens result for a tied knockout (by id or team pairing)."""
+    winner = CONFIRMED_SHOOTOUT_WINNERS.get(match["id"])
+    if winner in ("home", "away"):
+        return winner
+    return CONFIRMED_SHOOTOUT_WINNERS_BY_PAIR.get((match["home_team"], match["away_team"]))
 
 
 def get_connection() -> sqlite3.Connection:
@@ -445,9 +460,9 @@ def repair_knockout_outcome_scoring() -> int:
         ).fetchall()
         for row in rows:
             match = dict(row)
-            winner = CONFIRMED_SHOOTOUT_WINNERS.get(match["id"]) or match.get("shootout_winner")
+            winner = confirmed_shootout_winner(match) or match.get("shootout_winner")
             if match["actual_home"] == match["actual_away"]:
-                if match["id"] not in CONFIRMED_SHOOTOUT_WINNERS:
+                if not confirmed_shootout_winner(match):
                     winner = winner or infer_shootout_winner(match, conn=conn)
             elif winner:
                 winner = None
@@ -2118,7 +2133,7 @@ def update_match_result(
 
         winner = shootout_winner if shootout_winner in ("home", "away") else None
         if is_knockout_stage(match["stage"]) and actual_home == actual_away:
-            winner = CONFIRMED_SHOOTOUT_WINNERS.get(match_id) or winner or infer_shootout_winner(
+            winner = confirmed_shootout_winner(dict(match)) or winner or infer_shootout_winner(
                 dict(match), conn=conn
             )
         elif actual_home != actual_away:
