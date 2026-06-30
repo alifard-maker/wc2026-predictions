@@ -193,6 +193,8 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE predictions ADD COLUMN points_excluded INTEGER NOT NULL DEFAULT 0"
             )
+        if pred_cols and "predicted_shootout_winner" not in pred_cols:
+            conn.execute("ALTER TABLE predictions ADD COLUMN predicted_shootout_winner TEXT")
 
         match_cols = {row[1] for row in conn.execute("PRAGMA table_info(matches)").fetchall()}
         if match_cols:
@@ -307,7 +309,7 @@ def repair_knockout_draw_predictions() -> int:
             FROM predictions p
             JOIN matches m ON m.id = p.match_id
             WHERE p.home_score = p.away_score
-              AND m.stage != 'group'
+              AND m.stage = 'round_of_32'
               AND m.actual_home IS NULL
             """
         ).fetchall()
@@ -425,7 +427,7 @@ def rescore_match_predictions(match_id: int, *, conn) -> None:
         return
     preds = conn.execute(
         """
-        SELECT id, home_score, away_score, is_bold, points_excluded
+        SELECT id, home_score, away_score, is_bold, points_excluded, predicted_shootout_winner
         FROM predictions WHERE match_id = ?
         """,
         (match_id,),
@@ -439,6 +441,7 @@ def rescore_match_predictions(match_id: int, *, conn) -> None:
             pred["away_score"],
             match,
             bool(pred["is_bold"]),
+            predicted_shootout_winner=pred["predicted_shootout_winner"],
         )
         conn.execute(
             "UPDATE predictions SET points = ? WHERE id = ?",
@@ -1013,7 +1016,8 @@ def recalculate_user_match_points(user_id: int, *, conn=None) -> None:
     preds = conn.execute(
         """
         SELECT p.id, p.home_score, p.away_score, p.is_bold, p.points_excluded,
-               m.actual_home, m.actual_away, m.stage, m.shootout_winner
+               m.actual_home, m.actual_away, m.stage, m.shootout_winner,
+               p.predicted_shootout_winner
         FROM predictions p
         JOIN matches m ON m.id = p.match_id
         WHERE p.user_id = ?
@@ -1031,6 +1035,7 @@ def recalculate_user_match_points(user_id: int, *, conn=None) -> None:
             pred["away_score"],
             pred,
             bool(pred["is_bold"]),
+            predicted_shootout_winner=pred["predicted_shootout_winner"],
         )
         conn.execute(
             "UPDATE predictions SET points = ? WHERE id = ?",
@@ -1987,15 +1992,27 @@ def upsert_prediction(
     home_score: int,
     away_score: int,
     is_bold: bool | None = None,
+    *,
+    predicted_shootout_winner: str | None = None,
 ) -> str | None:
     from scoring import validate_prediction_scores
+
+    if home_score != away_score:
+        predicted_shootout_winner = None
+    elif predicted_shootout_winner not in ("home", "away"):
+        predicted_shootout_winner = None
 
     with db() as conn:
         match = conn.execute("SELECT * FROM matches WHERE id = ?", (match_id,)).fetchone()
         if not match:
             raise ValueError("Match not found")
 
-        err = validate_prediction_scores(home_score, away_score, match["stage"])
+        err = validate_prediction_scores(
+            home_score,
+            away_score,
+            match["stage"],
+            predicted_shootout_winner,
+        )
         if err:
             return err
 
@@ -2012,20 +2029,36 @@ def upsert_prediction(
             points = None
         else:
             points = calculate_points_for_match(
-                home_score, away_score, match, bool(bold)
+                home_score,
+                away_score,
+                match,
+                bool(bold),
+                predicted_shootout_winner=predicted_shootout_winner,
             )
         conn.execute(
             """
-            INSERT INTO predictions (user_id, match_id, home_score, away_score, points, is_bold)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO predictions (
+                user_id, match_id, home_score, away_score, points, is_bold,
+                predicted_shootout_winner
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, match_id) DO UPDATE SET
                 home_score = excluded.home_score,
                 away_score = excluded.away_score,
                 points = excluded.points,
                 is_bold = excluded.is_bold,
+                predicted_shootout_winner = excluded.predicted_shootout_winner,
                 submitted_at = datetime('now')
             """,
-            (user_id, match_id, home_score, away_score, points, 1 if bold else 0),
+            (
+                user_id,
+                match_id,
+                home_score,
+                away_score,
+                points,
+                1 if bold else 0,
+                predicted_shootout_winner,
+            ),
         )
     return None
 
@@ -2055,6 +2088,7 @@ def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) ->
         siblings = conn.execute(
             """
             SELECT p.id, p.match_id, p.home_score, p.away_score, p.is_bold, p.points_excluded,
+                   p.predicted_shootout_winner,
                    m.actual_home, m.actual_away, m.match_date, m.match_time, m.matchday, m.stage,
                    m.shootout_winner
             FROM predictions p
@@ -2090,6 +2124,7 @@ def set_bold_pick(user_id: int, match_id: int, *, admin_bypass: bool = False) ->
                     row["away_score"],
                     row,
                     bool(new_bold),
+                    predicted_shootout_winner=row["predicted_shootout_winner"],
                 )
             conn.execute(
                 "UPDATE predictions SET is_bold = ?, points = ? WHERE id = ?",
@@ -3092,7 +3127,7 @@ def get_pool_predictions_summary(pool_id: int, match_id: int) -> list[dict]:
         rows = conn.execute(
             """
             SELECT u.id AS user_id, u.display_name, u.photo_updated_at, u.ai_agent_key,
-                   p.home_score, p.away_score,
+                   p.home_score, p.away_score, p.predicted_shootout_winner,
                    p.points, p.submitted_at, p.is_bold
             FROM predictions p
             JOIN users u ON u.id = p.user_id

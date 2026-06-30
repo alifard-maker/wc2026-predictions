@@ -53,6 +53,8 @@ from scoring import (
     bold_allowed_for_date,
     calculate_tournament_points,
     is_knockout_match,
+    is_knockout_no_draw_stage,
+    is_pens_draw_allowed_stage,
     is_prediction_open,
     is_tournament_vote_open,
     match_counts_by_date,
@@ -60,6 +62,7 @@ from scoring import (
     prediction_deadline,
     tournament_vote_deadline,
     validate_prediction_scores,
+    format_prediction_display,
 )
 from player_stats import get_scorer_squads_data, get_scorer_status, resolve_scorer_pick_value
 from team_data import get_match_context
@@ -100,7 +103,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.13"
+APP_VERSION = "Beta 4.14"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -116,6 +119,24 @@ def live_minute_filter(value: str | None) -> str:
 @app.template_filter("goal_minute")
 def goal_minute_filter(value: str | None) -> str:
     return sanitize_goal_minute_label(value)
+
+
+@app.template_filter("prediction_display")
+def prediction_display_filter(pred, home_team="", away_team="", stage=""):
+    """Format a prediction dict or scores for display."""
+    if pred is None:
+        return ""
+    if isinstance(pred, dict):
+        return format_prediction_display(
+            pred.get("home_score", 0),
+            pred.get("away_score", 0),
+            stage=stage or pred.get("stage"),
+            predicted_shootout_winner=pred.get("predicted_shootout_winner"),
+            home_team=home_team or pred.get("home_team"),
+            away_team=away_team or pred.get("away_team"),
+        )
+    return str(pred)
+
 MAINTENANCE_MODE = os.environ.get("MAINTENANCE_MODE", "").strip().lower() in ("1", "true", "yes")
 
 
@@ -660,7 +681,8 @@ def enrich_matches(matches, user_predictions=None):
         d["deadline_urgent"] = (
             d["open"] and timedelta(0) < (d["deadline"] - now) <= timedelta(hours=1)
         )
-        d["knockout_no_draw"] = is_knockout_match(m)
+        d["knockout_no_draw"] = is_knockout_no_draw_stage(m["stage"])
+        d["pens_draw_allowed"] = is_pens_draw_allowed_stage(m["stage"])
         d["bold_allowed"] = bold_allowed_for_date(m["match_date"], schedule_counts)
         shootout_winner = raw.get("shootout_winner")
         d["shootout_winner"] = shootout_winner
@@ -672,9 +694,13 @@ def enrich_matches(matches, user_predictions=None):
             d["shootout_winner_team"] = None
         if user_predictions and m["id"] in user_predictions:
             pred = user_predictions[m["id"]]
+            pens_winner = None
+            if "predicted_shootout_winner" in pred.keys():
+                pens_winner = pred["predicted_shootout_winner"]
             d["prediction"] = {
                 "home_score": pred["home_score"],
                 "away_score": pred["away_score"],
+                "predicted_shootout_winner": pens_winner,
                 "points": pred["points"],
                 "submitted_at": pred["submitted_at"],
                 "is_bold": bool(pred["is_bold"]) if "is_bold" in pred.keys() else False,
@@ -1110,12 +1136,27 @@ def submit_predictions(invite_code):
             blocked += 1
             continue
 
-        err = validate_prediction_scores(home_score, away_score, match["stage"])
+        err = validate_prediction_scores(
+            home_score,
+            away_score,
+            match["stage"],
+            request.form.get(f"pens_{match_id}", "").strip() or None,
+        )
         if err:
             draw_rejected += 1
             continue
 
-        upsert_err = db.upsert_prediction(user_id, match_id, home_score, away_score)
+        pens_pick = request.form.get(f"pens_{match_id}", "").strip() or None
+        if pens_pick not in ("home", "away"):
+            pens_pick = None
+
+        upsert_err = db.upsert_prediction(
+            user_id,
+            match_id,
+            home_score,
+            away_score,
+            predicted_shootout_winner=pens_pick,
+        )
         if upsert_err:
             draw_rejected += 1
             continue
@@ -1154,7 +1195,8 @@ def submit_predictions(invite_code):
         flash(f"{blocked} prediction(s) were past the deadline (1 hour before kickoff).", "error")
     if draw_rejected:
         flash(
-            f"{draw_rejected} prediction(s) rejected — knockout matches must have a winner (no draws).",
+            f"{draw_rejected} prediction(s) rejected — check knockout rules "
+            "(Round of 32 needs a winner; Round of 16+ draws need a pens winner).",
             "error",
         )
     if not saved and not blocked:
@@ -1620,6 +1662,9 @@ def matches_live_feed(invite_code):
                     {
                         "home_score": m["prediction"]["home_score"],
                         "away_score": m["prediction"]["away_score"],
+                        "predicted_shootout_winner": m["prediction"].get(
+                            "predicted_shootout_winner"
+                        ),
                         "points": m["prediction"]["points"],
                         "is_bold": m["prediction"]["is_bold"],
                     }
@@ -2364,8 +2409,11 @@ def admin_page(invite_code):
                             ).fetchone()
                         if not match_row:
                             continue
+                        pens_pick = request.form.get(f"pred_{match_id}_pens", "").strip() or None
+                        if pens_pick not in ("home", "away"):
+                            pens_pick = None
                         err = validate_prediction_scores(
-                            home_score, away_score, match_row["stage"]
+                            home_score, away_score, match_row["stage"], pens_pick
                         )
                         if err:
                             flash(err, "error")
@@ -2376,6 +2424,7 @@ def admin_page(invite_code):
                             home_score,
                             away_score,
                             is_bold=match_id in bold_match_ids,
+                            predicted_shootout_winner=pens_pick,
                         )
                         if upsert_err:
                             flash(upsert_err, "error")

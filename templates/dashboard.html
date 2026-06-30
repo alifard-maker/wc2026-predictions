@@ -124,7 +124,7 @@
 <form method="post" action="{{ url_for('submit_predictions', invite_code=pool.invite_code) }}">
   <div class="fixture-list fixture-list-active" id="active-fixtures">
     {% for m in active_matches %}
-    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if m.show_result %} fixture-has-result{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-knockout-no-draw="{{ '1' if m.knockout_no_draw else '0' }}" data-bold-allowed="{{ '1' if m.bold_allowed else '0' }}">
+    <div class="fixture {% if not m.open %}locked{% endif %}{% if not m.open %} fixture-awaiting-kickoff{% endif %}{% if m.is_live %} fixture-live{% endif %}{% if m.show_result %} fixture-has-result{% endif %}{% if match_spotlight and match_spotlight.match_id == m.id %} fixture-spotlight{% endif %}" id="match-{{ m.id }}" data-match-id="{{ m.id }}" data-matchday="{{ m.matchday or '' }}" data-group="{{ m.group_name or '' }}" data-stage="{{ m.stage }}" data-knockout-no-draw="{{ '1' if m.knockout_no_draw else '0' }}" data-pens-draw-allowed="{{ '1' if m.pens_draw_allowed else '0' }}" data-bold-allowed="{{ '1' if m.bold_allowed else '0' }}" data-home-team="{{ m.home_team }}" data-away-team="{{ m.away_team }}">
       {{ render_fixture_content(m, false) }}
     </div>
     {% endfor %}
@@ -146,29 +146,53 @@
 {% block scripts %}
 <script>
   document.querySelectorAll('.score-input input[type="number"]').forEach(inp => {
-    inp.addEventListener('input', () => {
-      const id = inp.dataset.match;
-      const home = document.querySelector(`input[data-match="${id}"][data-side="home"]`).value;
-      const away = document.querySelector(`input[data-match="${id}"][data-side="away"]`).value;
-      const hidden = document.getElementById('match_' + id);
-      const fixture = document.getElementById('match-' + id);
-      const knockout = fixture && fixture.dataset.knockoutNoDraw === '1';
-      const boldAllowed = fixture && fixture.dataset.boldAllowed === '1';
-      let drawBlocked = false;
-      if (home !== '' && away !== '' && knockout && Number(home) === Number(away)) {
-        drawBlocked = true;
+    inp.addEventListener('input', () => syncFixturePrediction(inp.dataset.match));
+  });
+  document.querySelectorAll('.pens-pick-row input[type="radio"]').forEach(inp => {
+    inp.addEventListener('change', () => syncFixturePrediction(inp.dataset.match));
+  });
+
+  function syncFixturePrediction(matchId) {
+    const home = document.querySelector(`input[data-match="${matchId}"][data-side="home"]`)?.value;
+    const away = document.querySelector(`input[data-match="${matchId}"][data-side="away"]`)?.value;
+    const hidden = document.getElementById('match_' + matchId);
+    const fixture = document.getElementById('match-' + matchId);
+    const knockout = fixture && fixture.dataset.knockoutNoDraw === '1';
+    const pensAllowed = fixture && fixture.dataset.pensDrawAllowed === '1';
+    const boldAllowed = fixture && fixture.dataset.boldAllowed === '1';
+    const pensRow = document.querySelector(`[data-pens-pick="${matchId}"]`);
+    const pensSelected = document.querySelector(`input[name="pens_${matchId}"]:checked`);
+    let drawBlocked = false;
+    let pensRequired = false;
+    const isDraw = home !== '' && away !== '' && Number(home) === Number(away);
+    if (pensRow) {
+      pensRow.hidden = !(pensAllowed && isDraw);
+      pensRequired = pensAllowed && isDraw;
+    }
+    if (isDraw && knockout) {
+      drawBlocked = true;
+      hidden.value = '';
+    } else if (home !== '' && away !== '') {
+      if (pensRequired && !pensSelected) {
         hidden.value = '';
-      } else if (home !== '' && away !== '') {
-        hidden.value = home + '-' + away;
       } else {
-        hidden.value = '';
+        hidden.value = home + '-' + away;
       }
-      const boldRadio = document.querySelector(`input[type="radio"][name^="bold_match_"][value="${id}"]`);
-      if (boldRadio && !boldRadio.hasAttribute('data-bold-locked')) {
-        boldRadio.disabled = drawBlocked || !boldAllowed || !(home !== '' && away !== '');
-      }
-      fixture?.classList.toggle('fixture-draw-blocked', drawBlocked);
-    });
+    } else {
+      hidden.value = '';
+    }
+    const boldRadio = document.querySelector(`input[type="radio"][name^="bold_match_"][value="${matchId}"]`);
+    const pickComplete = hidden.value !== '';
+    if (boldRadio && !boldRadio.hasAttribute('data-bold-locked')) {
+      boldRadio.disabled = drawBlocked || !boldAllowed || !pickComplete;
+    }
+    fixture?.classList.toggle('fixture-draw-blocked', drawBlocked);
+    fixture?.classList.toggle('fixture-pens-required', pensRequired && !pensSelected);
+  }
+
+  document.querySelectorAll('.score-input-wrap').forEach(wrap => {
+    const inp = wrap.querySelector('input[data-side="home"]');
+    if (inp) syncFixturePrediction(inp.dataset.match);
   });
 
   const tabs = document.getElementById('matchday-tabs');
@@ -231,8 +255,11 @@
     const pts = m.prediction?.points != null
       ? ` <span class="points-earned" data-prediction-points="${m.id}">+${m.prediction.points} pts</span>`
       : '';
+    const pickText = m.prediction
+      ? formatPredictionText(m.prediction, m.home_team, m.away_team, m.stage)
+      : '';
     const pickInline = inlineFinished && m.prediction
-      ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}">(Your prediction ${m.prediction.home_score} – ${m.prediction.away_score})</span>`
+      ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}">(Your prediction ${pickText})</span>`
       : '';
     const matchupClass = inlineFinished ? ' fixture-matchup-line-with-pick' : '';
     const scoreWrapClass = inlineFinished && m.prediction ? 'fixture-score-line-wrap' : 'fixture-score-line-wrap fixture-score-line-wrap-plain';
@@ -240,7 +267,7 @@
     if (!inlineFinished && m.prediction) {
       predHtml = `<div class="fixture-prediction-row" data-fixture-prediction="${m.id}">
         <span class="fixture-result-label">Your pick</span>
-        <span class="fixture-result-score">${m.prediction.home_score} – ${m.prediction.away_score}</span>${bold}${pts}
+        <span class="fixture-result-score">${pickText}</span>${bold}${pts}
       </div>`;
     } else if (!inlineFinished && !m.is_live) {
       predHtml = `<div class="fixture-prediction-row fixture-prediction-missing">

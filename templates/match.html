@@ -43,7 +43,7 @@
     {% if match.prediction %}
     <div class="match-pick-row" id="match-pick-row">
       <span class="fixture-result-label">Your prediction</span>
-      <span class="match-pick-score">{{ match.prediction.home_score }} – {{ match.prediction.away_score }}</span>
+      <span class="match-pick-score">{{ match.prediction | prediction_display(match.home_team, match.away_team, match.stage) }}</span>
       {% if match.prediction.is_bold %}<span class="bold-tag">BOLD 2×</span>{% endif %}
     </div>
     {% endif %}
@@ -67,7 +67,7 @@
           <span class="match-matchup-team team away{{ result_winner_class(match, 'away') }}">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
         </div>
         {% if match.prediction %}
-        <span class="match-pick-inline">(Your prediction {{ match.prediction.home_score }} – {{ match.prediction.away_score }})</span>
+        <span class="match-pick-inline">(Your prediction {{ match.prediction | prediction_display(match.home_team, match.away_team, match.stage) }})</span>
         {% endif %}
       </div>
       {% if match.prediction %}
@@ -161,7 +161,7 @@
           {% if p.hidden %}
           <span class="pick-hidden">🔒 Hidden</span>
           {% else %}
-          <strong>{{ p.home_score }} – {{ p.away_score }}</strong>
+          <strong>{{ p | prediction_display(match.home_team, match.away_team, match.stage) }}</strong>
           {% endif %}
         </td>
         <td>{% if p.points is not none %}{{ p.points }}{% else %}—{% endif %}</td>
@@ -380,7 +380,7 @@
       tbody.innerHTML = data.predictions.map(p => {
         const pred = p.hidden
           ? '<span class="pick-hidden">🔒 Hidden</span>'
-          : `<strong>${p.home_score} – ${p.away_score}</strong>`;
+          : `<strong>${formatPredictionText(p, {{ match.home_team | tojson }}, {{ match.away_team | tojson }}, {{ match.stage | tojson }})}</strong>`;
         const aiBadge = p.is_ai
           ? `<span class="ai-badge" title="${esc(p.display_name)}">${esc(p.ai_badge || 'AI')}</span>`
           : '';

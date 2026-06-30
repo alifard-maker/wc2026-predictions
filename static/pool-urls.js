@@ -235,6 +235,30 @@
     return `${h} – ${a}`;
   };
 
+  const PENS_DRAW_STAGES = new Set([
+    'round_of_16',
+    'quarter_final',
+    'semi_final',
+    'third_place',
+    'final',
+  ]);
+
+  global.formatPredictionText = function (pred, homeTeam, awayTeam, stage) {
+    if (!pred || pred.home_score == null || pred.away_score == null) return '';
+    let line = `${pred.home_score} – ${pred.away_score}`;
+    if (
+      PENS_DRAW_STAGES.has(stage || '')
+      && Number(pred.home_score) === Number(pred.away_score)
+      && (pred.predicted_shootout_winner === 'home' || pred.predicted_shootout_winner === 'away')
+      && homeTeam
+      && awayTeam
+    ) {
+      const winner = pred.predicted_shootout_winner === 'home' ? homeTeam : awayTeam;
+      line += ` (${winner} on pens)`;
+    }
+    return line;
+  };
+
   global.formatResultBadgeText = function (m) {
     if (m.result_display && m.result_display.badge_text) {
       return `FT: ${m.result_display.badge_text}`;

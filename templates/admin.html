@@ -210,6 +210,7 @@
             <th>Current</th>
             <th>H</th>
             <th>A</th>
+            <th>Pens</th>
             <th>Bold</th>
           </tr>
         </thead>
@@ -224,10 +225,21 @@
               {% if m.open %}<span class="badge">Open</span>{% else %}<span class="badge badge-live">Closed</span>{% endif %}
             </td>
             <td>
-              {% if m.prediction %}{{ m.prediction.home_score }}–{{ m.prediction.away_score }}{% if m.prediction.is_bold %} ★{% endif %}{% else %}—{% endif %}
+              {% if m.prediction %}{{ m.prediction | prediction_display(m.home_team, m.away_team, m.stage) }}{% if m.prediction.is_bold %} ★{% endif %}{% else %}—{% endif %}
             </td>
             <td><input type="number" name="pred_{{ m.id }}_home" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" placeholder="—"></td>
             <td><input type="number" name="pred_{{ m.id }}_away" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" placeholder="—"></td>
+            <td>
+              {% if m.pens_draw_allowed %}
+              <select name="pred_{{ m.id }}_pens" title="Required when H = A">
+                <option value="">—</option>
+                <option value="home" {% if m.prediction and m.prediction.predicted_shootout_winner == 'home' %}selected{% endif %}>{{ m.home_team }}</option>
+                <option value="away" {% if m.prediction and m.prediction.predicted_shootout_winner == 'away' %}selected{% endif %}>{{ m.away_team }}</option>
+              </select>
+              {% else %}
+              <span class="muted-inline">—</span>
+              {% endif %}
+            </td>
             <td>
               {% if m.bold_allowed %}
               <input type="radio" name="bold_match_{{ m.match_date }}" value="{{ m.id }}" {% if m.prediction and m.prediction.is_bold %}checked{% endif %} title="Bold pick (2× points)">

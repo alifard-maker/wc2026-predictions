@@ -66,6 +66,15 @@ KNOCKOUT_STAGES = frozenset({
     "final",
 })
 
+# From Round of 16 onward, users may predict a draw plus a penalty-shootout winner.
+PENS_DRAW_STAGES = frozenset({
+    "round_of_16",
+    "quarter_final",
+    "semi_final",
+    "third_place",
+    "final",
+})
+
 
 def is_knockout_stage(stage: str | None) -> bool:
     return (stage or "group") != "group"
@@ -73,6 +82,16 @@ def is_knockout_stage(stage: str | None) -> bool:
 
 def is_knockout_match(match) -> bool:
     return is_knockout_stage(match["stage"])
+
+
+def is_knockout_no_draw_stage(stage: str | None) -> bool:
+    """Round of 32 only — picks must have a winner in the scoreline."""
+    return stage == "round_of_32"
+
+
+def is_pens_draw_allowed_stage(stage: str | None) -> bool:
+    """Round of 16+ — tied scorelines require a penalty-shootout winner pick."""
+    return (stage or "") in PENS_DRAW_STAGES
 
 
 def match_counts_by_date(matches) -> dict[str, int]:
@@ -97,10 +116,57 @@ def validate_prediction_scores(
     home_score: int,
     away_score: int,
     stage: str | None,
+    predicted_shootout_winner: str | None = None,
 ) -> str | None:
-    if is_knockout_stage(stage) and home_score == away_score:
-        return "Knockout matches must have a winner — draws are not allowed (extra time and penalties decide ties)."
+    if is_knockout_no_draw_stage(stage) and home_score == away_score:
+        return (
+            "Round of 32 picks must have a winner — draws are not allowed "
+            "(extra time and penalties decide ties)."
+        )
+    if is_pens_draw_allowed_stage(stage) and home_score == away_score:
+        if predicted_shootout_winner not in ("home", "away"):
+            return (
+                "Tied knockout picks need a penalty-shootout winner — "
+                "choose which team advances after pens."
+            )
     return None
+
+
+def resolve_prediction_result(
+    stage: str | None,
+    pred_home: int,
+    pred_away: int,
+    predicted_shootout_winner: str | None = None,
+) -> str:
+    """Outcome implied by a prediction (pens winner when a draw is picked from R16+)."""
+    if is_pens_draw_allowed_stage(stage) and pred_home == pred_away:
+        if predicted_shootout_winner in ("home", "away"):
+            return predicted_shootout_winner
+        return "draw"
+    return match_result(pred_home, pred_away)
+
+
+def format_prediction_display(
+    pred_home: int,
+    pred_away: int,
+    *,
+    stage: str | None = None,
+    predicted_shootout_winner: str | None = None,
+    home_team: str | None = None,
+    away_team: str | None = None,
+) -> str:
+    """Human-readable pick including pens winner when applicable."""
+    line = f"{pred_home} – {pred_away}"
+    if (
+        is_pens_draw_allowed_stage(stage)
+        and pred_home == pred_away
+        and predicted_shootout_winner in ("home", "away")
+        and home_team
+        and away_team
+    ):
+        winner = home_team if predicted_shootout_winner == "home" else away_team
+        line += f" ({winner} on pens)"
+    return line
 
 
 def bold_day_key(match) -> str:
@@ -188,12 +254,23 @@ def calculate_points(
     *,
     stage: str | None = None,
     shootout_winner: str | None = None,
+    predicted_shootout_winner: str | None = None,
 ) -> int | None:
     if actual_home is None or actual_away is None:
         return None
     actual_result = resolve_scoring_result(stage, actual_home, actual_away, shootout_winner)
-    pred_result = match_result(pred_home, pred_away)
-    if pred_home == actual_home and pred_away == actual_away:
+    pred_result = resolve_prediction_result(
+        stage, pred_home, pred_away, predicted_shootout_winner
+    )
+    score_exact = pred_home == actual_home and pred_away == actual_away
+    if (
+        score_exact
+        and is_pens_draw_allowed_stage(stage)
+        and pred_home == pred_away
+        and actual_result in ("home", "away")
+    ):
+        score_exact = predicted_shootout_winner == shootout_winner
+    if score_exact:
         base = 5
     elif pred_result == actual_result:
         base = 2
@@ -209,6 +286,8 @@ def calculate_points_for_match(
     pred_away: int,
     match,
     is_bold: bool = False,
+    *,
+    predicted_shootout_winner: str | None = None,
 ) -> int | None:
     """Score a prediction using a match row (sqlite3.Row or dict)."""
     shootout_winner = None
@@ -222,4 +301,5 @@ def calculate_points_for_match(
         is_bold,
         stage=match["stage"],
         shootout_winner=shootout_winner,
+        predicted_shootout_winner=predicted_shootout_winner,
     )

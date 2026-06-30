@@ -1152,6 +1152,55 @@ tr.picks-missed td {
   line-height: 1;
 }
 
+.fixture-knockout-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: center;
+  max-width: 14rem;
+}
+
+.pens-pick-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 14rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fixture-pens-required .pens-pick-row {
+  border-color: var(--gold, #f5c542);
+  box-shadow: 0 0 0 1px rgba(245, 197, 66, 0.25);
+}
+
+.pens-pick-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+
+.pens-pick-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.pens-pick-option input {
+  margin: 0;
+}
+
+.fixture-draw-blocked .score-input input {
+  border-color: var(--danger, #e74c3c);
+}
+
 .prediction-done {
   text-align: center;
   font-weight: 700;

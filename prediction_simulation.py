@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from knockout_bracket import resolve_r32_pairings
+from scoring import is_pens_draw_allowed_stage
 from tournament_standings import (
     GROUPS,
     KNOCKOUT_STAGES,
@@ -14,7 +15,11 @@ from tournament_standings import (
 
 def _predictions_dict(predictions: dict) -> dict[int, dict]:
     return {
-        mid: {"home_score": p["home_score"], "away_score": p["away_score"]}
+        mid: {
+            "home_score": p["home_score"],
+            "away_score": p["away_score"],
+            "predicted_shootout_winner": p.get("predicted_shootout_winner"),
+        }
         for mid, p in predictions.items()
     }
 
@@ -62,10 +67,28 @@ def annotate_predicted_qualification(
     return annotated
 
 
-def predicted_winner(home_score: int, away_score: int, home_team: str, away_team: str) -> str:
+def predicted_winner(
+    home_score: int,
+    away_score: int,
+    home_team: str,
+    away_team: str,
+    *,
+    stage: str | None = None,
+    predicted_shootout_winner: str | None = None,
+) -> str:
     if home_score > away_score:
         return home_team
     if away_score > home_score:
+        return away_team
+    if (
+        is_pens_draw_allowed_stage(stage)
+        and predicted_shootout_winner == "home"
+    ):
+        return home_team
+    if (
+        is_pens_draw_allowed_stage(stage)
+        and predicted_shootout_winner == "away"
+    ):
         return away_team
     return home_team
 
@@ -91,7 +114,15 @@ def _predicted_slot(
 ) -> dict:
     if pred and home and away:
         hs, aws = pred["home_score"], pred["away_score"]
-        winner = predicted_winner(hs, aws, home, away)
+        stage = db_m.get("stage") if db_m else None
+        winner = predicted_winner(
+            hs,
+            aws,
+            home,
+            away,
+            stage=stage,
+            predicted_shootout_winner=pred.get("predicted_shootout_winner"),
+        )
         finished = True
     else:
         hs = aws = None

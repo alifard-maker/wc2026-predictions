@@ -44,7 +44,7 @@
         <span class="fixture-matchup-team team away{{ result_winner_class(m, 'away') }}">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
       </div>
       {% if is_finished_row and m.prediction %}
-      <span class="fixture-pick-inline" data-fixture-pick-inline="{{ m.id }}">(Your prediction {{ m.prediction.home_score }} – {{ m.prediction.away_score }})</span>
+      <span class="fixture-pick-inline" data-fixture-pick-inline="{{ m.id }}">(Your prediction {{ m.prediction | prediction_display(m.home_team, m.away_team, m.stage) }})</span>
       {% endif %}
     </div>
     {% if is_finished_row %}
@@ -67,7 +67,7 @@
   {% if m.prediction %}
   <div class="fixture-prediction-row" data-fixture-prediction="{{ m.id }}">
     <span class="fixture-result-label">Your pick</span>
-    <span class="fixture-result-score">{{ m.prediction.home_score }} – {{ m.prediction.away_score }}</span>
+    <span class="fixture-result-score">{{ m.prediction | prediction_display(m.home_team, m.away_team, m.stage) }}</span>
     {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
     {% if m.prediction.points is not none %}
     <span class="points-earned" data-prediction-points="{{ m.id }}">+{{ m.prediction.points }} pts</span>
@@ -92,7 +92,9 @@
 {% elif m.open %}
 <div class="score-input-wrap">
   {% if m.knockout_no_draw %}
-  <p class="muted-inline fixture-knockout-note">Knockout — pick a winner (no draws; ET and pens if level after 90).</p>
+  <p class="muted-inline fixture-knockout-note">Round of 32 — pick a winner in the scoreline (no draws).</p>
+  {% elif m.pens_draw_allowed %}
+  <p class="muted-inline fixture-knockout-note">Knockout — you may pick a draw after extra time; if you do, choose who wins on penalties.</p>
   {% endif %}
   <div class="score-input">
     <input type="number" name="home_{{ m.id }}" min="0" max="20" value="{{ m.prediction.home_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="home">
@@ -100,6 +102,21 @@
     <input type="number" name="away_{{ m.id }}" min="0" max="20" value="{{ m.prediction.away_score if m.prediction else '' }}" data-match="{{ m.id }}" data-side="away">
     <input type="hidden" name="match_{{ m.id }}" id="match_{{ m.id }}" value="{% if m.prediction %}{{ m.prediction.home_score }}-{{ m.prediction.away_score }}{% endif %}">
   </div>
+  {% if m.pens_draw_allowed %}
+  <div class="pens-pick-row" data-pens-pick="{{ m.id }}" hidden>
+    <span class="pens-pick-label">Wins on penalties:</span>
+    <label class="pens-pick-option">
+      <input type="radio" name="pens_{{ m.id }}" value="home" data-pens-side="home" data-match="{{ m.id }}"
+        {% if m.prediction and m.prediction.predicted_shootout_winner == 'home' %}checked{% endif %}>
+      <span>{{ m.home_team }}</span>
+    </label>
+    <label class="pens-pick-option">
+      <input type="radio" name="pens_{{ m.id }}" value="away" data-pens-side="away" data-match="{{ m.id }}"
+        {% if m.prediction and m.prediction.predicted_shootout_winner == 'away' %}checked{% endif %}>
+      <span>{{ m.away_team }}</span>
+    </label>
+  </div>
+  {% endif %}
   {% set day_key = 'day_' ~ m.match_date %}
   {% if m.bold_allowed %}
   <label class="bold-pick-toggle" title="2× points if correct — one bold per day (ET), only when 2+ matches that day">
@@ -112,7 +129,7 @@
 </div>
 {% elif m.prediction %}
 <div class="prediction-done">
-  {{ m.prediction.home_score }} – {{ m.prediction.away_score }}
+  {{ m.prediction | prediction_display(m.home_team, m.away_team, m.stage) }}
   {% if m.prediction.is_bold %}<span class="bold-tag">BOLD</span>{% endif %}
   {% if m.prediction.points is not none %}
   <div class="points-earned">+{{ m.prediction.points }} pts</div>

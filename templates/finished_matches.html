@@ -130,8 +130,11 @@
     const pts = m.prediction?.points != null
       ? ` <span class="points-earned" data-prediction-points="${m.id}">+${m.prediction.points} pts</span>`
       : '';
+    const pickText = m.prediction
+      ? formatPredictionText(m.prediction, m.home_team, m.away_team, m.stage)
+      : '';
     const pickInline = inlineFinished && m.prediction
-      ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}">(Your prediction ${m.prediction.home_score} – ${m.prediction.away_score})</span>`
+      ? `<span class="fixture-pick-inline" data-fixture-pick-inline="${m.id}">(Your prediction ${pickText})</span>`
       : '';
     const matchupClass = inlineFinished ? ' fixture-matchup-line-with-pick' : '';
     const scoreWrapClass = inlineFinished && m.prediction ? 'fixture-score-line-wrap' : 'fixture-score-line-wrap fixture-score-line-wrap-plain';
@@ -139,7 +142,7 @@
     if (!inlineFinished && m.prediction) {
       predHtml = `<div class="fixture-prediction-row" data-fixture-prediction="${m.id}">
         <span class="fixture-result-label">Your pick</span>
-        <span class="fixture-result-score">${m.prediction.home_score} – ${m.prediction.away_score}</span>${bold}${pts}
+        <span class="fixture-result-score">${pickText}</span>${bold}${pts}
       </div>`;
     } else if (!inlineFinished && !m.is_live) {
       predHtml = `<div class="fixture-prediction-row fixture-prediction-missing">

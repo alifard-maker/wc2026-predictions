@@ -11,10 +11,12 @@ from db import db, get_all_matches, get_leaderboard, get_pool_comments, get_pool
 from live_scores import apply_live_state
 from scoring import (
     TIMEZONE,
+    is_pens_draw_allowed_stage,
     is_prediction_open,
     is_tournament_vote_open,
     match_result,
     prediction_deadline,
+    resolve_prediction_result,
 )
 
 EMOJI_RE = re.compile(
@@ -437,9 +439,10 @@ def build_match_consensus(pool_id: int, match_id: int) -> dict:
     with db() as conn:
         rows = conn.execute(
             """
-            SELECT p.home_score, p.away_score
+            SELECT p.home_score, p.away_score, p.predicted_shootout_winner, m.stage
             FROM predictions p
             JOIN users u ON u.id = p.user_id
+            JOIN matches m ON m.id = p.match_id
             WHERE p.match_id = ? AND u.pool_id = ?
             """,
             (match_id, pool_id),
@@ -450,7 +453,12 @@ def build_match_consensus(pool_id: int, match_id: int) -> dict:
     home_w = draw = away_w = 0
     scores: Counter = Counter()
     for r in rows:
-        res = match_result(r["home_score"], r["away_score"])
+        res = resolve_prediction_result(
+            r["stage"],
+            r["home_score"],
+            r["away_score"],
+            r["predicted_shootout_winner"],
+        )
         if res == "home":
             home_w += 1
         elif res == "draw":
@@ -475,14 +483,20 @@ def _match_label(match: dict) -> str:
     return f"{match['home_team']} vs {match['away_team']}"
 
 
-def _consensus_from_preds(preds: list[dict]) -> dict | None:
+def _consensus_from_preds(preds: list[dict], *, stage: str | None = None) -> dict | None:
     if not preds:
         return None
     total = len(preds)
     home_w = draw = away_w = 0
     scores: Counter = Counter()
     for p in preds:
-        outcome = match_result(p["home_score"], p["away_score"])
+        st = stage or p.get("stage")
+        outcome = resolve_prediction_result(
+            st,
+            p["home_score"],
+            p["away_score"],
+            p.get("predicted_shootout_winner"),
+        )
         if outcome == "home":
             home_w += 1
         elif outcome == "draw":
