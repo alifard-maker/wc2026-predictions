@@ -239,7 +239,7 @@ def _scoreline(match: dict) -> str:
     a = match.get("display_away")
     if h is None or a is None:
         return f"{home} vs {away}"
-    pens_line = format_shootout_scoreline(home, away, h, a, match.get("penalties"))
+    pens_line = format_shootout_scoreline(home, away, h, a, match.get("penalties"), match_id=match.get("id"))
     if pens_line and match.get("status") == "penalty_shootout":
         return pens_line
     return f"{home} {h}–{a} {away}"

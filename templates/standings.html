@@ -191,7 +191,10 @@
 
   function renderMatch(m) {
     const hasScore = m.display_home !== null && m.display_away !== null;
-    const score = hasScore ? `<span class="bracket-score">${m.display_home}–${m.display_away}</span>` : '';
+    const scoreText = (m.result_display && m.result_display.badge_text)
+      ? m.result_display.badge_text
+      : (hasScore ? `${m.display_home}–${m.display_away}` : '');
+    const score = hasScore ? `<span class="bracket-score" title="${escapeHtml(scoreText)}">${escapeHtml(scoreText)}</span>` : '';
     let tag = '';
     if (m.is_predicted && m.is_finished) tag = '<span class="badge bracket-predicted">Pred</span>';
     else if (m.is_live) tag = '<span class="badge badge-live bracket-live">LIVE</span>';

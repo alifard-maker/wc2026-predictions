@@ -205,6 +205,11 @@ def annotate_qualification(
 def match_winner(match: dict | None) -> str | None:
     if not match or match.get("actual_home") is None or match.get("actual_away") is None:
         return None
+    shootout_winner = match.get("shootout_winner")
+    if shootout_winner == "home":
+        return match["home_team"]
+    if shootout_winner == "away":
+        return match["away_team"]
     if match["actual_home"] > match["actual_away"]:
         return match["home_team"]
     if match["actual_away"] > match["actual_home"]:
@@ -238,6 +243,7 @@ def _match_slot(match: dict | None, home: str | None, away: str | None) -> dict:
         "away_placeholder": away_team is None,
         "display_home": display_home,
         "display_away": display_away,
+        "result_display": m.get("result_display") if m else None,
         "winner": winner,
         "is_live": is_live,
         "is_finished": is_finished,

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_fixture_content.html" import render_fixture_content with context %}
 {% from "_team_flag.html" import team_with_flag with context %}
+{% from "_result_score.html" import render_result_summary with context %}
 
 {% block title %}{{ pool.name }} — Finished Matches{% endblock %}
 
@@ -38,7 +39,7 @@
           <span class="finished-match-vs">vs</span>
           <span class="team away">{{ team_with_flag(m.away_team, pool.invite_code) }}</span>
         </span>
-        <span class="finished-match-score" data-summary-score="{{ m.id }}">{{ m.display_home }}–{{ m.display_away }}</span>
+        <span class="finished-match-score" data-summary-score="{{ m.id }}">{{ render_result_summary(m) }}</span>
         {% if m.prediction and m.prediction.points is not none %}
         <span class="finished-match-pts points-earned" data-summary-pts="{{ m.id }}">+{{ m.prediction.points }} pts</span>
         {% elif m.prediction %}
@@ -111,7 +112,7 @@
 
   function updateFinishedSummary(m) {
     const summaryScore = document.querySelector(`[data-summary-score="${m.id}"]`);
-    if (summaryScore) summaryScore.textContent = `${m.display_home}–${m.display_away}`;
+    if (summaryScore) summaryScore.textContent = formatResultSummaryText(m);
     const summaryPts = document.querySelector(`[data-summary-pts="${m.id}"]`);
     if (summaryPts && m.prediction && m.prediction.points != null) {
       summaryPts.textContent = `+${m.prediction.points} pts`;
@@ -155,9 +156,7 @@
       <span class="fixture-result-label">${actualLabel}</span>
       <div class="${scoreWrapClass}">
         <div class="fixture-matchup-line${matchupClass}">
-          <span class="fixture-matchup-team team home">${m.home_team}</span>
-          <span class="fixture-result-score" data-live-actual-score="${m.id}"><span class="fixture-actual-score">${m.display_home} – ${m.display_away}</span></span>
-          <span class="fixture-matchup-team team away">${m.away_team}</span>
+          ${renderFixtureResultScoreLine(m)}
         </div>${pickInline}
       </div>${predMeta}
       <div class="fixture-result-events" data-live-events="${m.id}">${eventsHtml}</div>
@@ -165,13 +164,9 @@
   }
 
   function updateFixtureResult(scoreEl, m) {
-    const actualScore = scoreEl.querySelector(`[data-live-actual-score="${m.id}"]`);
-    const actualPart = actualScore?.querySelector('.fixture-actual-score');
+    patchFixtureResultScore(scoreEl, m);
     const events = scoreEl.querySelector(`[data-live-events="${m.id}"]`);
     const actualLabel = scoreEl.querySelector('.fixture-actual-row .fixture-result-label');
-    const scoreText = `${m.display_home} – ${m.display_away}`;
-    if (actualPart) actualPart.textContent = scoreText;
-    else if (actualScore) actualScore.textContent = scoreText;
     if (events) events.innerHTML = renderMatchEventsHtml(m.goals, m.cards, true, m.home_team, m.away_team, m.penalties);
     if (actualLabel) actualLabel.textContent = m.is_live ? 'Live' : 'Result';
     const ptsEl = scoreEl.querySelector(`[data-prediction-points="${m.id}"]`);
@@ -210,7 +205,7 @@
       const score = document.querySelector(`[data-live-score="${m.id}"]`);
       if (m.is_finished && badge) {
         badge.className = 'badge badge-done';
-        badge.textContent = `FT: ${m.display_home}–${m.display_away}`;
+        badge.textContent = formatResultBadgeText(m);
         updateFinishedSummary(m);
       }
       if ((m.is_live || m.is_finished || m.show_result) && score) {

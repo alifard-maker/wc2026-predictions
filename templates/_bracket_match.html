@@ -24,7 +24,7 @@
     {% endif %}
   </div>
   {% if m.is_live or m.is_finished %}
-  <span class="bracket-score">{{ m.display_home }}–{{ m.display_away }}</span>
+  <span class="bracket-score">{% if m.result_display and m.result_display.badge_text %}{{ m.result_display.badge_text }}{% else %}{{ m.display_home }}–{{ m.display_away }}{% endif %}</span>
   {% endif %}
   {% if m.is_predicted and m.is_finished %}<span class="badge bracket-predicted">Pred</span>{% elif m.is_live %}<span class="badge badge-live bracket-live">LIVE</span>{% elif m.is_finished %}<span class="badge badge-done bracket-ft">FT</span>{% endif %}
 {% if m.id %}

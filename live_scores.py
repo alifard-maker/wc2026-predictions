@@ -110,14 +110,96 @@ def shootout_tally(penalties: list[dict] | None) -> tuple[int, int] | None:
     return (home, away) if found else None
 
 
+def shootout_tally_from_meta(match_id: int | None) -> tuple[int, int] | None:
+    """Pens score from live-sync metadata when kick rows are not stored yet."""
+    if not match_id:
+        return None
+    import json
+
+    import db
+
+    raw = db.get_sync_meta(f"shootout_score_{match_id}")
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        home = int(data.get("home", data.get("homeTeam")))
+        away = int(data.get("away", data.get("awayTeam")))
+        return home, away
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def resolve_shootout_tally(
+    penalties: list[dict] | None,
+    match_id: int | None = None,
+) -> tuple[int, int] | None:
+    tally = shootout_tally(penalties)
+    if tally:
+        return tally
+    return shootout_tally_from_meta(match_id)
+
+
+def build_result_presentation(
+    *,
+    display_home: int | None,
+    display_away: int | None,
+    home_team: str,
+    away_team: str,
+    shootout_winner: str | None = None,
+    penalties: list[dict] | None = None,
+    match_id: int | None = None,
+) -> dict:
+    """Display fields for knockout results decided on penalties."""
+    base = {
+        "et_score": None,
+        "pens_score": None,
+        "winner_side": None,
+        "winner_team": None,
+        "badge_text": None,
+        "score_html_hint": None,
+    }
+    if display_home is None or display_away is None:
+        return base
+
+    et = f"{display_home}–{display_away}"
+    if shootout_winner not in ("home", "away"):
+        return {**base, "et_score": et, "badge_text": et}
+
+    winner_team = home_team if shootout_winner == "home" else away_team
+    tally = resolve_shootout_tally(penalties, match_id)
+    if tally:
+        pen_home, pen_away = tally
+        pens = f"{pen_home}–{pen_away} pens"
+        return {
+            "et_score": et,
+            "pens_score": pens,
+            "winner_side": shootout_winner,
+            "winner_team": winner_team,
+            "badge_text": f"{et} · {pens}",
+            "score_html_hint": f"{winner_team} win {pens}",
+        }
+
+    return {
+        "et_score": et,
+        "pens_score": None,
+        "winner_side": shootout_winner,
+        "winner_team": winner_team,
+        "badge_text": f"{et} · {winner_team} on pens",
+        "score_html_hint": f"{winner_team} win on pens",
+    }
+
+
 def format_shootout_scoreline(
     home_team: str,
     away_team: str,
     home_goals: int,
     away_goals: int,
     penalties: list[dict] | None,
+    *,
+    match_id: int | None = None,
 ) -> str | None:
-    tally = shootout_tally(penalties)
+    tally = resolve_shootout_tally(penalties, match_id)
     if not tally:
         return None
     pen_home, pen_away = tally

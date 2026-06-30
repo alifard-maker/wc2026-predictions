@@ -205,4 +205,66 @@
   global.renderMatchEventsHtml = function (goals, cards, compact, homeTeam, awayTeam, penalties) {
     return `${renderGoalsHtml(goals, compact)}${renderCardsHtml(cards, compact, homeTeam, awayTeam)}${renderPenaltiesHtml(penalties, compact, homeTeam, awayTeam)}`;
   };
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  global.formatResultSummaryText = function (m) {
+    if (m.result_display && m.result_display.badge_text) {
+      return m.result_display.badge_text;
+    }
+    if (m.display_home != null && m.display_away != null) {
+      return `${m.display_home}–${m.display_away}`;
+    }
+    return '';
+  };
+
+  global.formatResultScoreHtml = function (m, esc) {
+    esc = esc || escHtml;
+    const h = m.display_home;
+    const a = m.display_away;
+    if (h == null || a == null) return '';
+    const rd = m.result_display;
+    if (rd && rd.winner_team) {
+      const pensLine = rd.pens_score
+        ? `${esc(rd.winner_team)} win ${esc(rd.pens_score)}`
+        : `${esc(rd.winner_team)} win on pens`;
+      return `<span class="result-shootout-wrap"><span class="result-et-score" title="Score after extra time">${h}–${a}</span><span class="result-pens-detail">${pensLine}</span></span>`;
+    }
+    return `${h} – ${a}`;
+  };
+
+  global.formatResultBadgeText = function (m) {
+    if (m.result_display && m.result_display.badge_text) {
+      return `FT: ${m.result_display.badge_text}`;
+    }
+    if (m.display_home != null && m.display_away != null) {
+      return `FT: ${m.display_home}–${m.display_away}`;
+    }
+    return 'Full time';
+  };
+
+  global.resultWinnerClass = function (m, side) {
+    return (m.result_display && m.result_display.winner_side === side) ? ' fixture-winner' : '';
+  };
+
+  global.renderFixtureResultScoreLine = function (m, esc) {
+    esc = esc || escHtml;
+    return `<span class="fixture-matchup-team team home${resultWinnerClass(m, 'home')}">${esc(m.home_team)}</span>`
+      + `<span class="fixture-result-score" data-live-actual-score="${m.id}"><span class="fixture-actual-score">${formatResultScoreHtml(m, esc)}</span></span>`
+      + `<span class="fixture-matchup-team team away${resultWinnerClass(m, 'away')}">${esc(m.away_team)}</span>`;
+  };
+
+  global.patchFixtureResultScore = function (scoreEl, m, esc) {
+    if (!scoreEl) return;
+    const actualScore = scoreEl.querySelector(`[data-live-actual-score="${m.id}"]`);
+    const actualPart = actualScore?.querySelector('.fixture-actual-score');
+    if (actualPart) actualPart.innerHTML = formatResultScoreHtml(m, esc);
+    else if (actualScore) actualScore.innerHTML = formatResultScoreHtml(m, esc);
+    const homeTeam = scoreEl.querySelector('.fixture-matchup-team.team.home');
+    const awayTeam = scoreEl.querySelector('.fixture-matchup-team.team.away');
+    if (homeTeam) homeTeam.className = `fixture-matchup-team team home${resultWinnerClass(m, 'home')}`;
+    if (awayTeam) awayTeam.className = `fixture-matchup-team team away${resultWinnerClass(m, 'away')}`;
+  };
 })(window);

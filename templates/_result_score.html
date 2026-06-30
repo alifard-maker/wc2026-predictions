@@ -1,0 +1,32 @@
+{% macro render_result_score(m) %}
+{% if m.result_display and m.result_display.winner_team %}
+<span class="result-shootout-wrap">
+  <span class="result-et-score" title="Score after extra time">{{ m.display_home }}–{{ m.display_away }}</span>
+  <span class="result-pens-detail">
+    {% if m.result_display.pens_score %}
+    {{ m.result_display.winner_team }} win {{ m.result_display.pens_score }}
+    {% else %}
+    {{ m.result_display.winner_team }} win on pens
+    {% endif %}
+  </span>
+</span>
+{% else %}
+{{ m.display_home }} – {{ m.display_away }}
+{% endif %}
+{% endmacro %}
+
+{% macro result_winner_class(m, side) %}
+{% if m.result_display and m.result_display.winner_side == side %} fixture-winner{% endif %}
+{% endmacro %}
+
+{% macro render_result_badge(m) %}
+{% if m.result_display and m.result_display.badge_text %}
+FT: {{ m.result_display.badge_text }}
+{% else %}
+FT: {{ m.display_home }}–{{ m.display_away }}
+{% endif %}
+{% endmacro %}
+
+{% macro render_result_summary(m) %}
+{% if m.result_display and m.result_display.badge_text %}{{ m.result_display.badge_text }}{% else %}{{ m.display_home }}–{{ m.display_away }}{% endif %}
+{% endmacro %}

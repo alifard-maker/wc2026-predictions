@@ -6,6 +6,7 @@
 {% from "_comment_emoji_picker.html" import comment_emoji_picker %}
 {% from "_listen_live.html" import render_listen_live %}
 {% from "_game_stats.html" import render_game_stats %}
+{% from "_result_score.html" import render_result_score, result_winner_class, render_result_badge with context %}
 {% block title %}{{ match.home_team }} vs {{ match.away_team }}{% endblock %}
 
 {% block content %}
@@ -49,9 +50,9 @@
     <div class="match-actual-row">
       <span class="fixture-result-label">Live</span>
       <div class="match-matchup-line match-matchup-line-score">
-        <span class="match-matchup-team team home">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
-        <span id="match-score" class="match-matchup-score">{{ match.display_home }} – {{ match.display_away }}</span>
-        <span class="match-matchup-team team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
+        <span class="match-matchup-team team home{{ result_winner_class(match, 'home') }}">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
+        <span id="match-score" class="match-matchup-score">{{ render_result_score(match) }}</span>
+        <span class="match-matchup-team team away{{ result_winner_class(match, 'away') }}">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
       </div>
     </div>
     {% elif match.is_finished %}
@@ -59,11 +60,11 @@
       <span class="fixture-result-label">Result</span>
       <div class="match-score-line-wrap">
         <div class="match-matchup-line match-matchup-line-finished-score">
-          <span class="match-matchup-team team home">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
+          <span class="match-matchup-team team home{{ result_winner_class(match, 'home') }}">{{ team_with_flag(match.home_team, pool.invite_code) }}</span>
           <span id="match-score" class="match-matchup-score match-result-center-score">
-            <span class="match-actual-score">{{ match.display_home }} – {{ match.display_away }}</span>
+            <span class="match-actual-score">{{ render_result_score(match) }}</span>
           </span>
-          <span class="match-matchup-team team away">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
+          <span class="match-matchup-team team away{{ result_winner_class(match, 'away') }}">{{ team_with_flag(match.away_team, pool.invite_code) }}</span>
         </div>
         {% if match.prediction %}
         <span class="match-pick-inline">(Your prediction {{ match.prediction.home_score }} – {{ match.prediction.away_score }})</span>
@@ -321,7 +322,11 @@
     const m = data.match;
     const scoreEl = document.getElementById('match-score');
     if (scoreEl && (m.is_live || m.is_finished)) {
-      scoreEl.textContent = `${m.display_home} – ${m.display_away}`;
+      if (typeof formatResultScoreHtml === 'function') {
+        scoreEl.innerHTML = formatResultScoreHtml(m, esc);
+      } else {
+        scoreEl.textContent = `${m.display_home} – ${m.display_away}`;
+      }
     }
     const minEl = document.getElementById('match-minute');
     if (minEl) minEl.remove();
@@ -331,7 +336,9 @@
       badge.innerHTML = formatMatchStatusBadge(m, esc, data.match.kickoff_iso);
     } else if (badge && m.is_finished) {
       badge.className = 'badge badge-done';
-      badge.textContent = 'Full time';
+      badge.textContent = typeof formatResultBadgeText === 'function'
+        ? formatResultBadgeText(m)
+        : 'Full time';
     }
 
     const listenWrap = document.getElementById('listen-live-wrap');

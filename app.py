@@ -37,6 +37,7 @@ import live_score_sync
 from listen_live import LISTEN_LIVE_DESTINATIONS
 from live_scores import (
     apply_live_state,
+    build_result_presentation,
     next_scheduled_kickoff,
     opening_kickoff_iso,
     sanitize_goal_minute_label,
@@ -99,7 +100,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.10"
+APP_VERSION = "Beta 4.11"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -465,6 +466,19 @@ def penalties_for_json(penalties: list[dict]) -> list[dict]:
     ]
 
 
+def result_display_for_json(result_display: dict | None) -> dict | None:
+    if not result_display or not result_display.get("winner_team"):
+        return None
+    return {
+        "et_score": result_display.get("et_score"),
+        "pens_score": result_display.get("pens_score"),
+        "winner_team": result_display.get("winner_team"),
+        "winner_side": result_display.get("winner_side"),
+        "badge_text": result_display.get("badge_text"),
+        "score_html_hint": result_display.get("score_html_hint"),
+    }
+
+
 def cards_for_json(cards: list[dict]) -> list[dict]:
     return [
         {
@@ -517,7 +531,10 @@ def _fill_result_display(match: dict, raw: dict, now: datetime) -> None:
         match["status"] = "finished"
         match["is_finished"] = True
         match["is_live"] = False
-        match["minute_label"] = "FT"
+        if raw.get("shootout_winner") in ("home", "away"):
+            match["minute_label"] = "FT (pens)"
+        else:
+            match["minute_label"] = "FT"
     elif live_home is not None or live_away is not None:
         match["display_home"] = 0 if live_home is None else live_home
         match["display_away"] = 0 if live_away is None else live_away
@@ -646,6 +663,7 @@ def enrich_matches(matches, user_predictions=None):
         d["knockout_no_draw"] = is_knockout_match(m)
         d["bold_allowed"] = bold_allowed_for_date(m["match_date"], schedule_counts)
         shootout_winner = raw.get("shootout_winner")
+        d["shootout_winner"] = shootout_winner
         if shootout_winner == "home":
             d["shootout_winner_team"] = m["home_team"]
         elif shootout_winner == "away":
@@ -667,6 +685,15 @@ def enrich_matches(matches, user_predictions=None):
         d["cards"] = db.get_match_cards(m["id"])
         d["penalties"] = db.get_match_penalties(m["id"])
         _fill_result_display(d, raw, now)
+        d["result_display"] = build_result_presentation(
+            display_home=d.get("display_home"),
+            display_away=d.get("display_away"),
+            home_team=m["home_team"],
+            away_team=m["away_team"],
+            shootout_winner=shootout_winner,
+            penalties=d.get("penalties"),
+            match_id=m["id"],
+        )
         d["show_result"] = match_show_result(d, raw, now)
         if datetime.now(TIMEZONE) < d["kickoff"] and (raw.get("actual_home") is not None or d.get("is_finished")):
             d["is_finished"] = False
@@ -1579,6 +1606,7 @@ def matches_live_feed(invite_code):
                 "away_team": m["away_team"],
                 "display_home": m["display_home"],
                 "display_away": m["display_away"],
+                "result_display": result_display_for_json(m.get("result_display")),
                 "minute_label": sanitize_minute_label(m["minute_label"]),
                 "kickoff_iso": m["kickoff"].isoformat() if m.get("kickoff") else None,
                 "status": m["status"],
@@ -1986,8 +2014,11 @@ def match_watch_feed(invite_code, match_id):
         "poll_interval_ms": 5000 if enriched.get("status") == "penalty_shootout" and enriched.get("is_live") else 15000,
         "match": {
             "id": enriched["id"],
+            "home_team": enriched["home_team"],
+            "away_team": enriched["away_team"],
             "display_home": enriched["display_home"],
             "display_away": enriched["display_away"],
+            "result_display": result_display_for_json(enriched.get("result_display")),
             "minute_label": sanitize_minute_label(enriched["minute_label"]),
             "minute_base": enriched.get("minute_base"),
             "added_time_label": enriched.get("added_time_label"),
