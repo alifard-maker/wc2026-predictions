@@ -55,6 +55,8 @@ def build_pool_spotlight(
         "away_team": match["away_team"],
         "display_home": match["display_home"],
         "display_away": match["display_away"],
+        "result_display": match.get("result_display"),
+        "outcome_line": (match.get("result_display") or {}).get("score_html_hint"),
         "correct_predictors": correct,
         "expires_at": expires_at.isoformat() if expires_at else None,
     }
@@ -63,12 +65,24 @@ def build_pool_spotlight(
 def spotlight_for_json(spotlight: dict | None, user_id: int | None = None) -> dict | None:
     if not spotlight:
         return None
+    rd = spotlight.get("result_display") or {}
     return {
         "match_id": spotlight["match_id"],
         "home_team": spotlight["home_team"],
         "away_team": spotlight["away_team"],
         "display_home": spotlight["display_home"],
         "display_away": spotlight["display_away"],
+        "outcome_line": spotlight.get("outcome_line") or rd.get("score_html_hint"),
+        "result_display": (
+            {
+                "winner_team": rd.get("winner_team"),
+                "pens_score": rd.get("pens_score"),
+                "badge_text": rd.get("badge_text"),
+                "score_html_hint": rd.get("score_html_hint"),
+            }
+            if rd.get("winner_team")
+            else None
+        ),
         "expires_at": spotlight.get("expires_at"),
         "predictors": [
             {

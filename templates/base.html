@@ -64,7 +64,12 @@
     <span class="ticker-label">🎯 Result</span>
     <div class="spotlight-body" id="spotlight-body">
       {% if match_spotlight %}
-      <span class="spotlight-score">{{ match_spotlight.home_team }} {{ match_spotlight.display_home }}–{{ match_spotlight.display_away }} {{ match_spotlight.away_team }}</span>
+      <span class="spotlight-score">
+        <span class="spotlight-matchline">{{ match_spotlight.home_team }} {{ match_spotlight.display_home }}–{{ match_spotlight.display_away }} {{ match_spotlight.away_team }}</span>
+        {% if match_spotlight.outcome_line %}
+        <span class="spotlight-outcome">{{ match_spotlight.outcome_line }}</span>
+        {% endif %}
+      </span>
       <span class="spotlight-sep">—</span>
       <span class="spotlight-winners">
         {% if match_spotlight.correct_predictors %}
@@ -301,7 +306,12 @@
           `${escapeHtml(p.display_name)}${p.is_you ? ' (you)' : ''} +${p.points}</span>`
         ).join('');
         body.innerHTML =
-          `<span class="spotlight-score">${escapeHtml(spotlight.home_team)} ${spotlight.display_home}–${spotlight.display_away} ${escapeHtml(spotlight.away_team)}</span>` +
+          `<span class="spotlight-score">` +
+          `<span class="spotlight-matchline">${escapeHtml(spotlight.home_team)} ${spotlight.display_home}–${spotlight.display_away} ${escapeHtml(spotlight.away_team)}</span>` +
+          (spotlight.outcome_line
+            ? `<span class="spotlight-outcome">${escapeHtml(spotlight.outcome_line)}</span>`
+            : '') +
+          `</span>` +
           `<span class="spotlight-sep">—</span>` +
           `<span class="spotlight-winners">${chips || '<span class="spotlight-empty">No correct picks in your pool</span>'}</span>`;
         if (typeof updateBannerOffset === 'function') updateBannerOffset();

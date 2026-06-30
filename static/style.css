@@ -3285,7 +3285,21 @@ a.bracket-match:hover {
 }
 
 .spotlight-score {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
   font-weight: 600;
+  min-width: 0;
+}
+
+.spotlight-matchline {
+  white-space: nowrap;
+}
+
+.spotlight-outcome {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gold);
   white-space: nowrap;
 }
 
