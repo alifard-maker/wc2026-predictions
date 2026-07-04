@@ -14,14 +14,15 @@ from tournament_standings import (
 
 
 def _predictions_dict(predictions: dict) -> dict[int, dict]:
-    return {
-        mid: {
-            "home_score": p["home_score"],
-            "away_score": p["away_score"],
-            "predicted_shootout_winner": p.get("predicted_shootout_winner"),
+    out: dict[int, dict] = {}
+    for mid, p in predictions.items():
+        row = dict(p) if not isinstance(p, dict) else p
+        out[mid] = {
+            "home_score": row["home_score"],
+            "away_score": row["away_score"],
+            "predicted_shootout_winner": row.get("predicted_shootout_winner"),
         }
-        for mid, p in predictions.items()
-    }
+    return out
 
 
 def _group_predictions_complete(group: str, matches: list[dict], predictions: dict[int, dict]) -> bool:
@@ -113,7 +114,8 @@ def _predicted_slot(
     pred: dict | None,
 ) -> dict:
     if pred and home and away:
-        hs, aws = pred["home_score"], pred["away_score"]
+        prow = dict(pred) if not isinstance(pred, dict) else pred
+        hs, aws = prow["home_score"], prow["away_score"]
         stage = db_m.get("stage") if db_m else None
         winner = predicted_winner(
             hs,
@@ -121,7 +123,7 @@ def _predicted_slot(
             home,
             away,
             stage=stage,
-            predicted_shootout_winner=pred.get("predicted_shootout_winner"),
+            predicted_shootout_winner=prow.get("predicted_shootout_winner"),
         )
         finished = True
     else:
