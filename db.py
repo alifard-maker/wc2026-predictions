@@ -31,6 +31,7 @@ CONFIRMED_SHOOTOUT_WINNERS: dict[int, str] = {
 CONFIRMED_SHOOTOUT_WINNERS_BY_PAIR: dict[tuple[str, str], str] = {
     ("Germany", "Paraguay"): "away",
     ("Netherlands", "Morocco"): "away",
+    ("Switzerland", "Colombia"): "home",  # Switzerland won on penalties
 }
 
 
@@ -282,6 +283,7 @@ def init_db() -> None:
     repair_knockout_draw_predictions()
     repair_bold_on_single_match_days()
     repair_knockout_outcome_scoring()
+    repair_finished_shootout_displays()
     ensure_admin_secrets()
 
 
@@ -476,6 +478,56 @@ def repair_knockout_outcome_scoring() -> int:
                 )
                 updated += 1
             rescore_match_predictions(match["id"], conn=conn)
+    return updated
+
+
+def repair_finished_shootout_displays() -> int:
+    """Backfill full ESPN shootout sequences and drop fake 120' pen goals."""
+    from scoring import is_knockout_stage
+
+    try:
+        from espn_live_sync import refresh_match_shootout
+    except Exception:
+        refresh_match_shootout = None
+
+    updated = 0
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM matches
+            WHERE stage != 'group'
+              AND actual_home IS NOT NULL
+              AND actual_away IS NOT NULL
+              AND (
+                shootout_winner IN ('home', 'away')
+                OR (actual_home = actual_away AND stage != 'group')
+              )
+            """
+        ).fetchall()
+    for row in rows:
+        match = dict(row)
+        if not is_knockout_stage(match.get("stage")):
+            continue
+        if match.get("shootout_winner") not in ("home", "away"):
+            # Still tied without a winner recorded — skip until scoring repair runs.
+            if not confirmed_shootout_winner(match):
+                continue
+        pens = get_match_penalties(match["id"])
+        kick_count = sum(1 for p in pens if (p.get("minute") or 0) > 120)
+        scored_only = kick_count > 0 and all(
+            p.get("outcome") == "scored" for p in pens if (p.get("minute") or 0) > 120
+        )
+        needs_fetch = kick_count < 3 or scored_only
+        if needs_fetch and refresh_match_shootout is not None:
+            try:
+                n = refresh_match_shootout(match["id"], match)
+                if n:
+                    updated += 1
+            except Exception:
+                pass
+        cleaned = clear_bogus_shootout_goal_rows(match["id"])
+        if cleaned:
+            updated += 1
     return updated
 
 
@@ -1876,6 +1928,116 @@ def import_match_penalty(
             (match_id, team, taker, outcome, minute, injury_minute),
         )
     return True
+
+
+def replace_match_shootout_penalties(
+    match_id: int,
+    kicks: list[tuple[str, str | None, str]],
+) -> int:
+    """Replace shootout rows for a match with an authoritative ordered kick list.
+
+    Each kick is (taker_team, taker_name, outcome) in kick order.
+    Returns number of kicks stored.
+    """
+    if not kicks:
+        return 0
+    with db() as conn:
+        match = conn.execute(
+            "SELECT home_team, away_team FROM matches WHERE id = ?",
+            (match_id,),
+        ).fetchone()
+        if not match:
+            return 0
+        valid = {match["home_team"], match["away_team"]}
+        cleaned: list[tuple[str, str | None, str]] = []
+        for team, name, outcome in kicks:
+            team = (team or "").strip()
+            if team not in valid or outcome not in ("scored", "saved", "missed"):
+                continue
+            taker = (name or "").strip() or None
+            cleaned.append((team, taker, outcome))
+        if not cleaned:
+            return 0
+        conn.execute(
+            "DELETE FROM match_penalties WHERE match_id = ? AND minute > 120",
+            (match_id,),
+        )
+        for i, (team, taker, outcome) in enumerate(cleaned):
+            conn.execute(
+                """
+                INSERT INTO match_penalties
+                (match_id, taker_team, taker_name, goalkeeper_name, outcome, minute, injury_minute)
+                VALUES (?, ?, ?, NULL, ?, ?, NULL)
+                """,
+                (match_id, team, taker, outcome, 121 + i),
+            )
+        home_scored = sum(
+            1 for team, _, outcome in cleaned if team == match["home_team"] and outcome == "scored"
+        )
+        away_scored = sum(
+            1 for team, _, outcome in cleaned if team == match["away_team"] and outcome == "scored"
+        )
+    import json
+
+    set_sync_meta(
+        f"shootout_score_{match_id}",
+        json.dumps({"home": home_scored, "away": away_scored}),
+    )
+    return len(cleaned)
+
+
+def clear_bogus_shootout_goal_rows(match_id: int | None = None) -> int:
+    """Remove goals wrongly imported from shootout kicks (e.g. 120' Penalty - Scored).
+
+    For finished knockouts decided on pens, keep only as many goal rows as the
+    final ET score allows (earliest first). Drop the rest — usually fake 120' pens.
+    """
+    removed = 0
+    with db() as conn:
+        if match_id is None:
+            rows = conn.execute(
+                """
+                SELECT id FROM matches
+                WHERE stage != 'group'
+                  AND shootout_winner IN ('home', 'away')
+                  AND actual_home IS NOT NULL
+                  AND actual_away IS NOT NULL
+                """
+            ).fetchall()
+            match_ids = [r["id"] for r in rows]
+        else:
+            match_ids = [match_id]
+        for mid in match_ids:
+            match = conn.execute(
+                "SELECT actual_home, actual_away FROM matches WHERE id = ?",
+                (mid,),
+            ).fetchone()
+            if not match:
+                continue
+            goals = conn.execute(
+                """
+                SELECT id, team_side, minute, is_penalty FROM match_goals
+                WHERE match_id = ?
+                ORDER BY
+                  CASE WHEN minute >= 120 AND is_penalty = 1 THEN 1 ELSE 0 END,
+                  minute,
+                  id
+                """,
+                (mid,),
+            ).fetchall()
+            home_left = int(match["actual_home"] or 0)
+            away_left = int(match["actual_away"] or 0)
+            for g in goals:
+                side = g["team_side"]
+                if side == "home" and home_left > 0:
+                    home_left -= 1
+                    continue
+                if side == "away" and away_left > 0:
+                    away_left -= 1
+                    continue
+                conn.execute("DELETE FROM match_goals WHERE id = ?", (g["id"],))
+                removed += 1
+    return removed
 
 
 def upsert_match_goal(

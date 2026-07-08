@@ -660,6 +660,8 @@ def _sync_regulation_goals_from_competition(
             continue
         if minute is None:
             continue
+        if _is_shootout_penalty_detail(detail):
+            continue
         if in_shootout and detail.get("penaltyKick"):
             continue
         if team_name == db_match["home_team"]:
@@ -688,11 +690,17 @@ def refresh_match_goal_flags(
     if not competition:
         return 0
     _, _, team_by_id = _competitor_teams(competition, our_teams)
+    trail_status = ((competition.get("status") or {}).get("type") or {}).get("name") or ""
+    in_shootout = trail_status in {
+        "STATUS_PENALTY_SHOOTOUT",
+        "STATUS_FINAL_PEN",
+    } or bool(db_match.get("shootout_winner"))
     return _sync_regulation_goals_from_competition(
         match_id,
         db_match,
         competition,
         team_by_id,
+        in_shootout=in_shootout,
     )
 
 
@@ -723,6 +731,81 @@ def _shootout_outcome(type_text: str, scoring_play: bool | None) -> str | None:
     return None
 
 
+def _is_shootout_penalty_detail(detail: dict) -> bool:
+    """True for ESPN shootout kick events (not in-play penalty goals)."""
+    type_text = ((detail.get("type") or {}).get("text") or "").strip().lower()
+    if type_text.startswith("penalty -"):
+        return True
+    if "shootout" in type_text:
+        return True
+    return False
+
+
+def _shootout_kicks_from_summary(
+    event_id: str,
+    db_match: dict,
+    our_teams: set[str] | None = None,
+) -> list[tuple[str, str | None, str]]:
+    """Ordered (team, player, outcome) kicks from ESPN summary.shootout."""
+    if not event_id:
+        return []
+    summary = _fetch_summary(event_id)
+    if not summary:
+        return []
+    blocks = summary.get("shootout") or []
+    if not isinstance(blocks, list) or not blocks:
+        return []
+
+    our_teams = our_teams or set(db.get_distinct_teams())
+    home = db_match.get("home_team")
+    away = db_match.get("away_team")
+    ordered: list[tuple[str, str, str | None, str]] = []
+    for block in blocks:
+        raw_team = (block.get("team") or "").strip()
+        team_name = canonical_team_name(raw_team, our_teams) or raw_team
+        if team_name not in (home, away):
+            # Map by display (ESPN may omit accents etc.)
+            if home and raw_team.lower() == home.lower():
+                team_name = home
+            elif away and raw_team.lower() == away.lower():
+                team_name = away
+            else:
+                continue
+        for shot in block.get("shots") or []:
+            player = (shot.get("player") or "").strip() or None
+            outcome = "scored" if shot.get("didScore") else "missed"
+            shot_id = str(shot.get("id") or "")
+            ordered.append((shot_id, team_name, player, outcome))
+
+    ordered.sort(key=lambda row: row[0])
+    return [(team, player, outcome) for _, team, player, outcome in ordered]
+
+
+def _shootout_kicks_from_details(
+    competition: dict,
+    team_by_id: dict[str, str],
+) -> list[tuple[str, str | None, str]]:
+    """Fallback kick list from competition.details (often misses failed pens)."""
+    kicks: list[tuple[str, str | None, str]] = []
+    for detail in competition.get("details") or []:
+        if not _is_shootout_penalty_detail(detail):
+            continue
+        type_text = ((detail.get("type") or {}).get("text") or "").strip()
+        player = None
+        athletes = detail.get("athletesInvolved") or []
+        if athletes:
+            player = (athletes[0].get("displayName") or athletes[0].get("fullName") or "").strip()
+        team_id = str((detail.get("team") or {}).get("id") or "")
+        team_name = team_by_id.get(team_id)
+        if not team_name or not player:
+            continue
+        outcome = _shootout_outcome(type_text, detail.get("scoringPlay"))
+        if not outcome:
+            outcome = "scored" if detail.get("scoringPlay") else "missed"
+        kicks.append((team_name, player, outcome))
+    return kicks
+
+
 def _sync_shootout_penalties(
     match_id: int,
     db_match: dict,
@@ -730,54 +813,41 @@ def _sync_shootout_penalties(
     competition: dict,
     *,
     in_shootout: bool,
+    event_id: str | None = None,
+    finished_on_pens: bool = False,
 ) -> int:
-    if not in_shootout:
+    """Store full shootouts during live pens and after FT-Pens finishes."""
+    if not in_shootout and not finished_on_pens:
         return 0
 
+    kicks = _shootout_kicks_from_summary(event_id or "", db_match)
+    if not kicks:
+        kicks = _shootout_kicks_from_details(competition, team_by_id)
+    if not kicks:
+        return 0
+
+    existing = [
+        p
+        for p in db.get_match_penalties(match_id)
+        if (p.get("minute") or 0) > 120
+    ]
+    # Summary.shootout is authoritative (includes misses). Always replace on FT-Pens,
+    # or when the new list is longer than what we already stored mid-shootout.
+    if finished_on_pens or len(kicks) >= max(len(existing), 1):
+        return db.replace_match_shootout_penalties(match_id, kicks)
+
     added = 0
-    existing = db.get_match_penalties(match_id)
-    shootout_count = sum(1 for pen in existing if (pen.get("minute") or 0) > 120)
-    seen: set[tuple[str, str, str]] = {
+    seen = {
         (
             pen.get("taker_team") or "",
             pen.get("taker_name") or "",
             pen.get("outcome") or "",
         )
         for pen in existing
-        if (pen.get("minute") or 0) > 120
     }
-
-    for detail in competition.get("details") or []:
-        type_text = ((detail.get("type") or {}).get("text") or "").strip()
-        if not type_text and not detail.get("penaltyKick"):
-            continue
-        if not detail.get("penaltyKick"):
-            continue
-        lower = type_text.lower()
-        if "shootout" not in lower and not in_shootout:
-            continue
-
-        clock_minute, _ = _parse_espn_minute((detail.get("clock") or {}).get("displayValue"))
-        if clock_minute is not None and clock_minute <= 120:
-            continue
-
-        player = None
-        athletes = detail.get("athletesInvolved") or []
-        if athletes:
-            player = (athletes[0].get("displayName") or athletes[0].get("fullName") or "").strip()
-        if not player:
-            continue
-
-        team_id = str((detail.get("team") or {}).get("id") or "")
-        team_name = team_by_id.get(team_id)
-        if not team_name:
-            continue
-
-        outcome = _shootout_outcome(type_text, detail.get("scoringPlay"))
-        if not outcome:
-            outcome = "scored" if detail.get("scoringPlay") else "missed"
-
-        key = (team_name, player, outcome)
+    shootout_count = len(existing)
+    for team_name, player, outcome in kicks:
+        key = (team_name, player or "", outcome)
         if key in seen:
             continue
         minute = 120 + shootout_count + 1
@@ -786,6 +856,24 @@ def _sync_shootout_penalties(
             shootout_count += 1
             seen.add(key)
     return added
+
+
+def refresh_match_shootout(
+    match_id: int,
+    db_match: dict,
+    our_teams: set[str] | None = None,
+) -> int:
+    """Backfill full shootout kick sequence from ESPN summary for a finished match."""
+    our_teams = our_teams or set(db.get_distinct_teams())
+    event_id = find_espn_event_id(db_match, our_teams)
+    if not event_id:
+        return 0
+    kicks = _shootout_kicks_from_summary(event_id, db_match, our_teams)
+    if not kicks:
+        return 0
+    stored = db.replace_match_shootout_penalties(match_id, kicks)
+    db.clear_bogus_shootout_goal_rows(match_id)
+    return stored
 
 
 def _sync_espn_event(
@@ -922,6 +1010,18 @@ def _sync_espn_event(
     expected_cards: list[tuple[str, str, str]] = []
     expected_goals: list[tuple[str, int, int | None]] = []
     in_shootout = db_status == "penalty_shootout"
+    finished_on_pens = bool(
+        db_status == "finished"
+        and (
+            shootout_winner in ("home", "away")
+            or db_match.get("shootout_winner") in ("home", "away")
+            or (
+                is_knockout_stage(db_match.get("stage"))
+                and home_score == away_score
+                and ((comp_status.get("type") or {}).get("name") or "") == "STATUS_FINAL_PEN"
+            )
+        )
+    )
     for detail in competition.get("details") or []:
         type_text = ((detail.get("type") or {}).get("text") or "").strip()
         player = None
@@ -940,7 +1040,10 @@ def _sync_espn_event(
         if _is_goal_event(type_text, detail):
             if minute is None:
                 continue
-            if in_shootout and detail.get("penaltyKick"):
+            # ESPN labels shootout kicks "Penalty - Scored" at 120' — never store as goals.
+            if _is_shootout_penalty_detail(detail):
+                continue
+            if (in_shootout or finished_on_pens) and detail.get("penaltyKick"):
                 continue
             if team_name == db_match["home_team"]:
                 side = "home"
@@ -967,7 +1070,13 @@ def _sync_espn_event(
         team_by_id,
         competition,
         in_shootout=in_shootout,
+        event_id=event_id,
+        finished_on_pens=finished_on_pens,
     )
+    if finished_on_pens:
+        cleaned = db.clear_bogus_shootout_goal_rows(match_id)
+        if cleaned:
+            result["goals_removed"] = result.get("goals_removed", 0) + cleaned
 
     if result["matched"]:
         finished = db_match.get("actual_home") is not None
