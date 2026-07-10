@@ -61,6 +61,18 @@ OFFICIAL_R32_PAIRINGS: dict[int, tuple[str, str]] = {
     88: ("Australia", "Egypt"),
 }
 
+# FIFA-confirmed Round of 16 pairings after the 2026 Round of 32 (matches 89–96).
+OFFICIAL_R16_PAIRINGS: dict[int, tuple[str, str]] = {
+    89: ("Paraguay", "France"),
+    90: ("Canada", "Morocco"),
+    91: ("Brazil", "Norway"),
+    92: ("Mexico", "England"),
+    93: ("Portugal", "Spain"),
+    94: ("USA", "Belgium"),
+    95: ("Argentina", "Egypt"),
+    96: ("Switzerland", "Colombia"),
+}
+
 ROUND_OF_16 = [
     (89, 74, 77),
     (90, 73, 75),

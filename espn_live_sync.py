@@ -506,6 +506,28 @@ def _espn_event_kickoff(event: dict) -> datetime | None:
         return None
 
 
+def _find_db_match_by_kickoff(
+    kickoff_et: datetime,
+    db_matches: list[dict],
+) -> dict | None:
+    """Match ESPN events to scheduled knockout slots when team names are still TBD."""
+    candidates = []
+    for m in db_matches:
+        if m.get("stage") == "group":
+            continue
+        if not _kickoffs_align(kickoff_et, m):
+            continue
+        candidates.append(m)
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda m: abs((kickoff_et - _db_kickoff_et(m)).total_seconds()),
+    )
+
+
 def _find_db_match(
     home_name: str | None,
     away_name: str | None,
@@ -521,6 +543,8 @@ def _find_db_match(
         if m["home_team"] == home_name and m["away_team"] == away_name
     ]
     if not candidates:
+        if kickoff_et:
+            return _find_db_match_by_kickoff(kickoff_et, db_matches)
         return None
     if len(candidates) == 1:
         only = candidates[0]
@@ -903,6 +927,13 @@ def _sync_espn_event(
         return result
 
     match_id = db_match["id"]
+    if home_name and away_name and (
+        db_match.get("home_team") != home_name or db_match.get("away_team") != away_name
+    ):
+        db.update_match_teams(match_id, home_name, away_name)
+        db_match = dict(db_match)
+        db_match["home_team"] = home_name
+        db_match["away_team"] = away_name
     comp_status = competition.get("status") or event.get("status") or {}
 
     home_score = away_score = 0
@@ -1103,6 +1134,36 @@ def _sync_espn_event(
             result["score_reconciled"] = 1
 
     return result
+
+
+def sync_knockout_dates_from_espn() -> int:
+    """Fetch ESPN scoreboards for recent knockout matchdays and merge results."""
+    our_teams = set(db.get_distinct_teams())
+    db_matches = [dict(m) for m in db.get_all_matches()]
+    dates = [
+        "20260628",
+        "20260629",
+        "20260630",
+        "20260701",
+        "20260702",
+        "20260703",
+        "20260704",
+        "20260705",
+        "20260706",
+        "20260707",
+    ]
+    finished = 0
+    for date_slug in dates:
+        payload = _fetch_scoreboard(date_slug)
+        if not payload:
+            continue
+        for event in payload.get("events") or []:
+            row = _sync_espn_event(event, db_matches, our_teams)
+            if row.get("finished"):
+                finished += 1
+            if row.get("matched"):
+                db_matches = [dict(m) for m in db.get_all_matches()]
+    return finished
 
 
 def sync_historical_cards(

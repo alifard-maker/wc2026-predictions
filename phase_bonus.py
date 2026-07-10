@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scoring import PHASE_BONUS_PTS
+from scoring import PHASE_BONUS_PTS, match_teams_known
 
 PHASE_BONUS_ROUNDS: list[tuple[str, str, int]] = [
     ("group", "Group stage", 72),
@@ -17,13 +17,35 @@ def _phase_matches(matches: list[dict], phase_key: str) -> list[dict]:
     return [m for m in matches if m.get("stage") == phase_key]
 
 
-def _phase_complete(phase_matches: list[dict]) -> bool:
-    if not phase_matches:
-        return False
-    return all(
-        m.get("actual_home") is not None and m.get("actual_away") is not None
+def _phase_finished_matches(phase_matches: list[dict]) -> list[dict]:
+    """Matches in this phase with a final score entered."""
+    return [
+        m
         for m in phase_matches
-    )
+        if m.get("actual_home") is not None and m.get("actual_away") is not None
+    ]
+
+
+def _phase_countable_matches(phase_matches: list[dict]) -> list[dict]:
+    """Fixtures with confirmed teams (exclude placeholder TBD slots)."""
+    return [
+        m
+        for m in phase_matches
+        if match_teams_known(m.get("home_team"), m.get("away_team"))
+    ]
+
+
+def _phase_complete(phase_matches: list[dict], expected_count: int) -> bool:
+    """True when every expected fixture in the phase has a result."""
+    finished = _phase_finished_matches(phase_matches)
+    if len(finished) >= expected_count:
+        return True
+    # Also complete when all confirmed-team fixtures are finished and we have enough.
+    countable = _phase_countable_matches(phase_matches)
+    if len(countable) < expected_count:
+        return False
+    countable_finished = _phase_finished_matches(countable)
+    return len(countable_finished) >= expected_count
 
 
 def _user_phase_correct_counts(pool_id: int, match_ids: list[int]) -> list[dict]:
@@ -69,13 +91,10 @@ def compute_pool_phase_bonuses(pool_id: int, matches: list[dict] | None = None) 
 
     for phase_key, label, expected_count in PHASE_BONUS_ROUNDS:
         phase_matches = _phase_matches(matches, phase_key)
-        finished = sum(
-            1
-            for m in phase_matches
-            if m.get("actual_home") is not None and m.get("actual_away") is not None
-        )
-        complete = _phase_complete(phase_matches)
-        match_ids = [m["id"] for m in phase_matches]
+        finished_matches = _phase_finished_matches(phase_matches)
+        finished = len(finished_matches)
+        complete = _phase_complete(phase_matches, expected_count)
+        match_ids = [m["id"] for m in finished_matches]
         scores = _user_phase_correct_counts(pool_id, match_ids) if complete else []
         winners = _phase_winners(scores)
 

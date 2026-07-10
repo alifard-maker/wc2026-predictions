@@ -284,6 +284,7 @@ def init_db() -> None:
     repair_bold_on_single_match_days()
     repair_knockout_outcome_scoring()
     repair_finished_shootout_displays()
+    repair_knockout_results_from_espn()
     ensure_admin_secrets()
 
 
@@ -529,6 +530,18 @@ def repair_finished_shootout_displays() -> int:
         if cleaned:
             updated += 1
     return updated
+
+
+def repair_knockout_results_from_espn() -> int:
+    """Backfill finished knockout results (e.g. Round of 16) from ESPN scoreboards."""
+    try:
+        from espn_live_sync import sync_knockout_dates_from_espn
+    except Exception:
+        return 0
+    try:
+        return sync_knockout_dates_from_espn()
+    except Exception:
+        return 0
 
 
 def repair_rename_ir_iran_team() -> None:
@@ -1594,6 +1607,14 @@ def repair_live_display_data() -> None:
                     """,
                     (row["id"],),
                 )
+
+
+def update_match_teams(match_id: int, home_team: str, away_team: str) -> None:
+    with db() as conn:
+        conn.execute(
+            "UPDATE matches SET home_team = ?, away_team = ? WHERE id = ?",
+            (home_team.strip(), away_team.strip(), match_id),
+        )
 
 
 def sync_knockout_stage() -> dict:
