@@ -218,15 +218,24 @@ def calculate_tournament_points(
     if not vote or not results:
         return breakdown
 
-    if results.get("winner") and vote.get("winner") == results["winner"]:
+    def _ready(value: str | None) -> str | None:
+        text = (value or "").strip()
+        if not text or text.upper() == "TBD":
+            return None
+        return text
+
+    winner = _ready(results.get("winner"))
+    second = _ready(results.get("second_place"))
+    third = _ready(results.get("third_place"))
+    scorer = _ready(results.get("top_scorer"))
+
+    if winner and vote.get("winner") == winner:
         breakdown["winner"] = TOURNAMENT_WINNER_PTS
-    if results.get("second_place") and vote.get("second_place") == results["second_place"]:
+    if second and vote.get("second_place") == second:
         breakdown["second_place"] = TOURNAMENT_SECOND_PTS
-    if results.get("third_place") and vote.get("third_place") == results["third_place"]:
+    if third and vote.get("third_place") == third:
         breakdown["third_place"] = TOURNAMENT_THIRD_PTS
-    if results.get("top_scorer") and normalize_player(vote.get("top_scorer", "")) == normalize_player(
-        results["top_scorer"]
-    ):
+    if scorer and normalize_player(vote.get("top_scorer", "")) == normalize_player(scorer):
         breakdown["top_scorer"] = TOURNAMENT_TOP_SCORER_PTS
 
     breakdown["total"] = sum(breakdown[k] for k in ("winner", "second_place", "third_place", "top_scorer"))

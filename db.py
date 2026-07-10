@@ -285,6 +285,7 @@ def init_db() -> None:
     repair_knockout_outcome_scoring()
     repair_finished_shootout_displays()
     repair_knockout_results_from_espn()
+    sync_tournament_results_from_matches()
     ensure_admin_secrets()
 
 
@@ -2366,6 +2367,7 @@ def update_match_result(
             (actual_home, actual_away, winner, actual_home, actual_away, match_id),
         )
         rescore_match_predictions(match_id, conn=conn)
+    sync_tournament_results_from_matches()
     return True
 
 
@@ -3198,6 +3200,111 @@ def get_tournament_results() -> dict | None:
         if not row or not row["winner"]:
             return None
         return dict(row)
+
+
+def _unique_tournament_top_scorer() -> str | None:
+    """Golden Boot name when one player clearly leads the scoring chart."""
+    board = get_tournament_scorer_leaderboard()
+    if not board:
+        return None
+    top_goals = int(board[0]["goals"] or 0)
+    if top_goals <= 0:
+        return None
+    leaders = [r for r in board if int(r["goals"] or 0) == top_goals]
+    if len(leaders) != 1:
+        return None
+    name = (leaders[0].get("player_name") or "").strip()
+    return name or None
+
+
+def derive_tournament_results_from_matches() -> dict | None:
+    """Build winner / 2nd / 3rd / top scorer from finished final & 3rd-place matches."""
+    from tournament_standings import match_winner
+
+    matches = [dict(m) for m in get_all_matches()]
+    final = next(
+        (
+            m
+            for m in matches
+            if m.get("stage") == "final"
+            and m.get("actual_home") is not None
+            and m.get("actual_away") is not None
+        ),
+        None,
+    )
+    if not final:
+        return None
+
+    winner = match_winner(final)
+    if not winner:
+        return None
+    second = (
+        final["away_team"] if winner == final["home_team"] else final["home_team"]
+    )
+
+    third_match = next(
+        (
+            m
+            for m in matches
+            if m.get("stage") == "third_place"
+            and m.get("actual_home") is not None
+            and m.get("actual_away") is not None
+        ),
+        None,
+    )
+    third = match_winner(third_match) if third_match else None
+
+    existing = get_tournament_results() or {}
+    top_scorer = _unique_tournament_top_scorer() or (existing.get("top_scorer") or "").strip()
+
+    return {
+        "winner": winner,
+        "second_place": second,
+        "third_place": third or (existing.get("third_place") or "").strip(),
+        "top_scorer": top_scorer,
+    }
+
+
+def sync_tournament_results_from_matches() -> bool:
+    """Auto-assign tournament bonus results once the final (and 3rd place) are decided."""
+    derived = derive_tournament_results_from_matches()
+    if not derived or not derived.get("winner") or not derived.get("second_place"):
+        return False
+
+    existing = get_tournament_results()
+    if existing:
+        same = (
+            (existing.get("winner") or "") == derived["winner"]
+            and (existing.get("second_place") or "") == derived["second_place"]
+            and (existing.get("third_place") or "") == (derived.get("third_place") or "")
+            and (existing.get("top_scorer") or "") == (derived.get("top_scorer") or "")
+        )
+        if same:
+            return False
+
+    # Require a top scorer only when the tournament is fully finished (final + 3rd).
+    # Until then, keep any existing scorer pick so admin overrides are preserved.
+    top_scorer = derived.get("top_scorer") or ""
+    if not top_scorer and existing:
+        top_scorer = (existing.get("top_scorer") or "").strip()
+    if not top_scorer:
+        # Placeholder until Golden Boot is unique / admin sets it — still award podium.
+        top_scorer = existing.get("top_scorer") if existing else ""
+        top_scorer = (top_scorer or "").strip() or "TBD"
+
+    third = (derived.get("third_place") or "").strip()
+    if not third and existing:
+        third = (existing.get("third_place") or "").strip()
+    if not third:
+        third = "TBD"
+
+    save_tournament_results(
+        top_scorer,
+        derived["winner"],
+        derived["second_place"],
+        third,
+    )
+    return True
 
 
 def save_tournament_results(top_scorer: str, winner: str, second_place: str, third_place: str) -> None:

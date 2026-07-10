@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from scoring import PHASE_BONUS_PTS, match_teams_known
 
-PHASE_BONUS_ROUNDS: list[tuple[str, str, int]] = [
-    ("group", "Group stage", 72),
-    ("round_of_32", "Round of 32", 16),
-    ("round_of_16", "Round of 16", 8),
-    ("quarter_final", "Quarter-finals", 4),
-    ("semi_final", "Semi-finals", 2),
+# (phase_key, label, stages, expected_finished_count)
+PHASE_BONUS_ROUNDS: list[tuple[str, str, tuple[str, ...], int]] = [
+    ("group", "Group stage", ("group",), 72),
+    ("round_of_32", "Round of 32", ("round_of_32",), 16),
+    ("round_of_16", "Round of 16", ("round_of_16",), 8),
+    ("quarter_final", "Quarter-finals", ("quarter_final",), 4),
+    ("semi_final", "Semi-finals", ("semi_final",), 2),
+    ("finals", "Final & 3rd place", ("final", "third_place"), 2),
 ]
 
 
-def _phase_matches(matches: list[dict], phase_key: str) -> list[dict]:
-    return [m for m in matches if m.get("stage") == phase_key]
+def _phase_matches(matches: list[dict], stages: tuple[str, ...]) -> list[dict]:
+    stage_set = set(stages)
+    return [m for m in matches if m.get("stage") in stage_set]
 
 
 def _phase_finished_matches(phase_matches: list[dict]) -> list[dict]:
@@ -40,7 +43,6 @@ def _phase_complete(phase_matches: list[dict], expected_count: int) -> bool:
     finished = _phase_finished_matches(phase_matches)
     if len(finished) >= expected_count:
         return True
-    # Also complete when all confirmed-team fixtures are finished and we have enough.
     countable = _phase_countable_matches(phase_matches)
     if len(countable) < expected_count:
         return False
@@ -89,8 +91,8 @@ def compute_pool_phase_bonuses(pool_id: int, matches: list[dict] | None = None) 
     detail_by_user: dict[int, list[dict]] = {}
     phases: list[dict] = []
 
-    for phase_key, label, expected_count in PHASE_BONUS_ROUNDS:
-        phase_matches = _phase_matches(matches, phase_key)
+    for phase_key, label, stages, expected_count in PHASE_BONUS_ROUNDS:
+        phase_matches = _phase_matches(matches, stages)
         finished_matches = _phase_finished_matches(phase_matches)
         finished = len(finished_matches)
         complete = _phase_complete(phase_matches, expected_count)
