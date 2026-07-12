@@ -12,7 +12,7 @@
   <h3>Your pick: {{ user_vote.top_scorer }}</h3>
   {% if user_pick %}
   <p style="margin: 0.5rem 0 0">
-    Currently <strong>#{{ user_pick.rank }}</strong> with <strong>{{ user_pick.goals }}</strong> goal{{ 's' if user_pick.goals != 1 else '' }}
+    Currently <strong>#{{ user_pick.rank }}</strong>{% if user_pick.rank == 1 and co_leaders|length > 1 %} (shared lead){% endif %} with <strong>{{ user_pick.goals }}</strong> goal{{ 's' if user_pick.goals != 1 else '' }}
     {% if user_pick.goals > 0 %}({{ user_pick.team }}){% endif %}
   </p>
   {% else %}

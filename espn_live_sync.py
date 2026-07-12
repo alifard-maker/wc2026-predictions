@@ -758,10 +758,13 @@ def _shootout_outcome(type_text: str, scoring_play: bool | None) -> str | None:
 def _is_shootout_penalty_detail(detail: dict) -> bool:
     """True for ESPN shootout kick events (not in-play penalty goals)."""
     type_text = ((detail.get("type") or {}).get("text") or "").strip().lower()
-    if type_text.startswith("penalty -"):
-        return True
     if "shootout" in type_text:
         return True
+    # ESPN uses "Penalty - Scored" for both in-play pens and shootout kicks; only
+    # treat 120'+ as shootout (regulation/ET pens stay on the Golden Boot chart).
+    if type_text.startswith("penalty -"):
+        minute, _ = _parse_espn_minute((detail.get("clock") or {}).get("displayValue"))
+        return minute is not None and minute >= 120
     return False
 
 
@@ -1173,18 +1176,27 @@ def sync_knockout_dates_from_espn() -> int:
     return finished
 
 
-def sync_historical_cards(
+def sync_historical_for_dates(
     db_matches: list[dict] | None = None,
     our_teams: set[str] | None = None,
     match_dates: list[str] | None = None,
 ) -> dict:
-    """Re-fetch ESPN events for past match dates to drop rescinded cards (e.g. VAR)."""
+    """Re-fetch ESPN events for past match dates (goals, cards, finished scores)."""
     if not match_dates:
         return {"ok": True, "dates": 0, "matched": 0}
 
     our_teams = our_teams or set(db.get_distinct_teams())
     db_matches = db_matches or [dict(m) for m in db.get_all_matches()]
-    totals = {"ok": True, "dates": 0, "matched": 0, "cards_removed": 0, "matched_match_ids": []}
+    totals = {
+        "ok": True,
+        "dates": 0,
+        "matched": 0,
+        "finished": 0,
+        "goals_added": 0,
+        "cards_added": 0,
+        "cards_removed": 0,
+        "matched_match_ids": [],
+    }
 
     for date_str in match_dates:
         espn_date = (date_str or "").replace("-", "")
@@ -1200,9 +1212,23 @@ def sync_historical_cards(
                 totals["matched"] += 1
                 if row.get("match_id") is not None:
                     totals["matched_match_ids"].append(row["match_id"])
+                totals["finished"] += row.get("finished") or 0
+                totals["goals_added"] += row.get("goals_added") or 0
+                totals["cards_added"] += row.get("cards_added") or 0
                 totals["cards_removed"] += row.get("cards_removed") or 0
+                if row.get("finished"):
+                    db_matches = [dict(m) for m in db.get_all_matches()]
 
     return totals
+
+
+def sync_historical_cards(
+    db_matches: list[dict] | None = None,
+    our_teams: set[str] | None = None,
+    match_dates: list[str] | None = None,
+) -> dict:
+    """Re-fetch ESPN events for past match dates to drop rescinded cards (e.g. VAR)."""
+    return sync_historical_for_dates(db_matches, our_teams, match_dates)
 
 
 def _espn_scoreboard_dates() -> list[str | None]:

@@ -1462,6 +1462,26 @@ def match_dates_with_synced_cards() -> list[str]:
     return [row["match_date"] for row in rows]
 
 
+def match_dates_for_historical_sync() -> list[str]:
+    """Past kickoff dates worth re-fetching from ESPN (goals / cards backfill)."""
+    from datetime import datetime
+
+    from scoring import TIMEZONE
+
+    today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT match_date
+            FROM matches
+            WHERE match_date <= ?
+            ORDER BY match_date DESC
+            """,
+            (today,),
+        ).fetchall()
+    return [row["match_date"] for row in rows]
+
+
 # Cards overturned by VAR after being briefly shown in a live feed.
 RESCINDED_VAR_CARDS = (
     {"player": "Tim Ream", "team": "USA", "card_type": "yellow", "home": "USA", "away": "Paraguay"},
@@ -2567,20 +2587,43 @@ def delete_match_goal(goal_id: int) -> str | None:
 
 def get_tournament_scorer_leaderboard(*, group_by_team: bool = False) -> list[dict]:
     """Aggregate all match goals into a top-scorers table."""
+    from scoring import normalize_player
+
     with db() as conn:
-        order = "team ASC, player_name ASC" if group_by_team else "goals DESC, player_name ASC"
         rows = conn.execute(
-            f"""
+            """
             SELECT g.scorer_name AS player_name,
                    CASE WHEN g.team_side = 'home' THEN m.home_team ELSE m.away_team END AS team,
                    COUNT(*) AS goals
             FROM match_goals g
             JOIN matches m ON m.id = g.match_id
             GROUP BY lower(g.scorer_name), team
-            ORDER BY {order}
             """
         ).fetchall()
-        return [dict(r) for r in rows]
+
+    merged: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        player_name = (row["player_name"] or "").strip()
+        team = row["team"]
+        key = (normalize_player(player_name), team)
+        entry = merged.get(key)
+        if not entry:
+            merged[key] = {
+                "player_name": player_name,
+                "team": team,
+                "goals": int(row["goals"] or 0),
+            }
+            continue
+        entry["goals"] += int(row["goals"] or 0)
+        if len(player_name) > len(entry["player_name"]):
+            entry["player_name"] = player_name
+
+    board = list(merged.values())
+    if group_by_team:
+        board.sort(key=lambda r: (r["team"].lower(), r["player_name"].lower()))
+    else:
+        board.sort(key=lambda r: (-r["goals"], r["player_name"].lower()))
+    return board
 
 
 def get_tournament_scorer_events() -> list[dict]:
@@ -3204,17 +3247,28 @@ def get_tournament_results() -> dict | None:
 
 def _unique_tournament_top_scorer() -> str | None:
     """Golden Boot name when one player clearly leads the scoring chart."""
+    leaders = get_tournament_top_scorers()
+    if len(leaders) == 1:
+        return leaders[0]
+    return None
+
+
+def get_tournament_top_scorers() -> list[str]:
+    """Players tied for the Golden Boot lead (empty when nobody has scored)."""
     board = get_tournament_scorer_leaderboard()
     if not board:
-        return None
+        return []
     top_goals = int(board[0]["goals"] or 0)
     if top_goals <= 0:
-        return None
-    leaders = [r for r in board if int(r["goals"] or 0) == top_goals]
-    if len(leaders) != 1:
-        return None
-    name = (leaders[0].get("player_name") or "").strip()
-    return name or None
+        return []
+    names: list[str] = []
+    for row in board:
+        if int(row["goals"] or 0) != top_goals:
+            break
+        name = (row.get("player_name") or "").strip()
+        if name:
+            names.append(name)
+    return names
 
 
 def derive_tournament_results_from_matches() -> dict | None:

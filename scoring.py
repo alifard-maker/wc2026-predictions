@@ -200,7 +200,11 @@ def bold_pick_change_allowed(
 
 
 def normalize_player(name: str) -> str:
-    return " ".join(name.strip().lower().split())
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", name or "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return " ".join(text.strip().lower().split())
 
 
 def calculate_tournament_points(
@@ -235,8 +239,24 @@ def calculate_tournament_points(
         breakdown["second_place"] = TOURNAMENT_SECOND_PTS
     if third and vote.get("third_place") == third:
         breakdown["third_place"] = TOURNAMENT_THIRD_PTS
-    if scorer and normalize_player(vote.get("top_scorer", "")) == normalize_player(scorer):
-        breakdown["top_scorer"] = TOURNAMENT_TOP_SCORER_PTS
+    pick = normalize_player(vote.get("top_scorer", ""))
+    if pick:
+        official = normalize_player(scorer) if scorer else ""
+        if official and pick == official:
+            breakdown["top_scorer"] = TOURNAMENT_TOP_SCORER_PTS
+        elif not official or scorer is None:
+            # Shared Golden Boot — award when the pick matches any co-leader.
+            try:
+                import db as _db
+
+                co_leaders = {
+                    normalize_player(name)
+                    for name in _db.get_tournament_top_scorers()
+                }
+            except Exception:
+                co_leaders = set()
+            if pick in co_leaders:
+                breakdown["top_scorer"] = TOURNAMENT_TOP_SCORER_PTS
 
     breakdown["total"] = sum(breakdown[k] for k in ("winner", "second_place", "third_place", "top_scorer"))
     return breakdown

@@ -51,9 +51,15 @@ def resolve_scorer_pick_value(selected: str, custom: str | None = None) -> str:
 def get_scorer_status(player_name: str, leaderboard: list[dict]) -> dict | None:
     norm = normalize_player(player_name)
     ranked = sorted(leaderboard, key=lambda r: (-r["goals"], r["player_name"].lower()))
+    prev_goals: int | None = None
+    rank = 0
     for i, row in enumerate(ranked):
+        goals = int(row["goals"] or 0)
+        if goals != prev_goals:
+            rank = i + 1
+            prev_goals = goals
         if normalize_player(row["player_name"]) == norm:
-            return {"rank": i + 1, **row}
+            return {"rank": rank, **row}
     return None
 
 

@@ -928,6 +928,41 @@ def reconcile_recorded_match_cards() -> dict:
     return result
 
 
+HISTORICAL_SYNC_COOLDOWN_SECONDS = 3600
+
+
+def reconcile_historical_espn_matches(*, force: bool = False) -> dict:
+    """Backfill goals and finished scores from ESPN for past tournament dates."""
+    dates = db.match_dates_for_historical_sync()
+    if not dates:
+        return {"ok": True, "dates": 0, "skipped": True}
+
+    if not force:
+        last_raw = db.get_sync_meta("historical_espn_last_run") or ""
+        if last_raw:
+            try:
+                last = datetime.fromisoformat(last_raw)
+                if (datetime.now(TIMEZONE) - last).total_seconds() < HISTORICAL_SYNC_COOLDOWN_SECONDS:
+                    return {"ok": True, "dates": len(dates), "skipped": True, "reason": "cooldown"}
+            except ValueError:
+                pass
+
+    our_teams = set(db.get_distinct_teams())
+    db_matches = [dict(m) for m in db.get_all_matches()]
+    result: dict = {"ok": True, "dates": len(dates)}
+
+    try:
+        import espn_live_sync
+
+        result["espn"] = espn_live_sync.sync_historical_for_dates(db_matches, our_teams, dates)
+        db.set_sync_meta("historical_espn_last_run", datetime.now(TIMEZONE).isoformat())
+    except Exception as exc:
+        logger.warning("Historical ESPN match sync failed: %s", exc)
+        result["espn_error"] = str(exc)[:200]
+
+    return result
+
+
 def sync_live_scores(force: bool = False) -> dict:
     """Pull live scores from ESPN + football-data.org and update the database."""
     our_teams = set(db.get_distinct_teams())
@@ -1001,6 +1036,7 @@ def sync_live_scores(force: bool = False) -> dict:
     totals["espn"] = espn
 
     knockout = db.sync_knockout_stage()
+    historical = reconcile_historical_espn_matches()
     card_reconcile = reconcile_recorded_match_cards()
     shootout_repair = db.repair_bogus_shootout_penalties()
     goals_reconciled = db.reconcile_all_live_scores_from_goals()
@@ -1012,6 +1048,7 @@ def sync_live_scores(force: bool = False) -> dict:
         "crosschecks": crosscheck_rows[-8:],
         "crosscheck_disagreements": disagreements[-5:],
         "knockout": knockout,
+        "historical_espn": historical,
         "card_reconcile": card_reconcile,
         "shootout_repair_removed": shootout_repair,
         "goals_reconciled": goals_reconciled,

@@ -103,7 +103,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.18"
+APP_VERSION = "Beta 4.19"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1834,7 +1834,8 @@ def scorers_page(invite_code):
         return redirect(url_for("index"))
 
     rank_board = db.get_tournament_scorer_leaderboard()
-    board = db.get_tournament_scorer_leaderboard(group_by_team=True)
+    board = rank_board
+    co_leaders = db.get_tournament_top_scorers()
     events = db.get_tournament_scorer_events()
     user_vote = db.get_tournament_vote(session["user_id"])
     user_pick = None
@@ -1849,6 +1850,7 @@ def scorers_page(invite_code):
         events=events,
         user_pick=user_pick,
         user_vote=dict(user_vote) if user_vote else None,
+        co_leaders=co_leaders,
     )
 
 
@@ -1861,7 +1863,8 @@ def scorers_feed(invite_code):
 
     live_score_sync.sync_live_scores()
     rank_board = db.get_tournament_scorer_leaderboard()
-    board = db.get_tournament_scorer_leaderboard(group_by_team=True)
+    board = rank_board
+    co_leaders = db.get_tournament_top_scorers()
     events = db.get_tournament_scorer_events()
     user_vote = db.get_tournament_vote(session["user_id"])
     user_pick = None
