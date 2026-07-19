@@ -12,6 +12,43 @@
   <p style="margin: 0; text-align: left">Logged in as {{ user_with_name(session.user_id, session.display_name, current_user_photo, pool.invite_code, 'sm', url_for('player_page', invite_code=pool.invite_code, user_id=session.user_id)) }}</p>
 </section>
 
+{% if finale_awards %}
+<section class="finale-awards card" aria-label="Pool champions">
+  <div class="finale-awards-header">
+    <span class="champion-trophy" aria-hidden="true">🏆</span>
+    <div>
+      <h2 class="finale-awards-title">World Cup 2026 — Pool champions</h2>
+      {% if finale_awards.wc_winner %}
+      <p class="finale-awards-sub">{{ finale_awards.wc_winner }} are World Cup champions · prediction pool awards below</p>
+      {% else %}
+      <p class="finale-awards-sub">The tournament is finished — here are this pool’s winners</p>
+      {% endif %}
+    </div>
+  </div>
+  <ul class="finale-awards-list">
+    <li>
+      <span class="finale-award-label">Champion</span>
+      <strong class="finale-award-name">{{ finale_awards.champion_names }}</strong>
+      <span class="finale-award-meta">{{ finale_awards.champion_points }} total points</span>
+    </li>
+    {% if finale_awards.match_names %}
+    <li>
+      <span class="finale-award-label">Most exacts + results</span>
+      <strong class="finale-award-name">{{ finale_awards.match_names }}</strong>
+      <span class="finale-award-meta">{{ finale_awards.match_hits }} hits{% if finale_awards.match_leaders|length == 1 %} ({{ finale_awards.match_exact }} exact · {{ finale_awards.match_results }} correct results){% endif %}</span>
+    </li>
+    {% endif %}
+    {% if finale_awards.tournament_names %}
+    <li>
+      <span class="finale-award-label">Best tournament picks</span>
+      <strong class="finale-award-name">{{ finale_awards.tournament_names }}</strong>
+      <span class="finale-award-meta">{{ finale_awards.tournament_points }} tournament bonus points</span>
+    </li>
+    {% endif %}
+  </ul>
+</section>
+{% endif %}
+
 {% if tournament_vote.show_reminder %}
 <div class="card tournament-vote-card" id="dashboard-tournament-vote" data-deadline="{{ tournament_vote.deadline }}">
   <h3>🏆 Tournament picks due</h3>

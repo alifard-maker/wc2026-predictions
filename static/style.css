@@ -2939,6 +2939,78 @@ textarea:focus {
   font-size: 1.75rem;
 }
 
+.finale-awards {
+  margin: 0 0 2rem;
+  border-color: rgba(241, 196, 15, 0.45);
+  background: linear-gradient(135deg, rgba(241, 196, 15, 0.16), rgba(46, 204, 113, 0.08));
+}
+
+.finale-awards-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.finale-awards-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.finale-awards-sub {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.finale-awards-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.finale-awards-list li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) auto;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(241, 196, 15, 0.2);
+}
+
+.finale-award-label {
+  color: var(--accent-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.finale-award-name {
+  font-size: 1.1rem;
+}
+
+.finale-award-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .finale-awards-list li {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .finale-award-meta {
+    text-align: left;
+  }
+}
+
 .groups-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

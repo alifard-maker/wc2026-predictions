@@ -103,7 +103,7 @@ from engagement import (
     tournament_picks_revealed,
 )
 
-APP_VERSION = "Beta 4.19"
+APP_VERSION = "Beta 4.20"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-me-in-production")
@@ -1051,6 +1051,7 @@ def pool_dashboard(invite_code):
     finished_matches = sort_finished_matches([m for m in enriched if m["collapsible_finished"]])
     finished_count = len(finished_matches)
     leaderboard = db.get_leaderboard(pool["id"])
+    finale_awards = db.get_pool_finale_awards(pool["id"], leaderboard)
 
     open_count = sum(1 for m in enriched if m["open"])
     predicted_open = sum(1 for m in enriched if m["open"] and m["prediction"])
@@ -1066,6 +1067,7 @@ def pool_dashboard(invite_code):
         finished_count=finished_count,
         leaderboard=leaderboard,
         leader_message=db.get_leader_message(leaderboard),
+        finale_awards=finale_awards,
         open_count=open_count,
         predicted_open=predicted_open,
         next_prediction=next_prediction,
@@ -1386,6 +1388,7 @@ def leaderboard_page(invite_code):
         pool=pool,
         leaderboard=leaderboard,
         leader_message=db.get_leader_message(leaderboard),
+        finale_awards=db.get_pool_finale_awards(pool["id"], leaderboard),
         phase_bonus=db.get_pool_phase_bonus_status(pool["id"]),
         phase_bonus_pts=PHASE_BONUS_PTS,
         finished_matches=finished,

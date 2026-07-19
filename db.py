@@ -3445,12 +3445,81 @@ def get_pool_phase_bonus_status(pool_id: int) -> dict:
     return compute_pool_phase_bonuses(pool_id)
 
 
+def world_cup_final_is_finished() -> bool:
+    """True once the World Cup final has an official score."""
+    for match in get_all_matches():
+        if match["stage"] == "final" and match["actual_home"] is not None:
+            return True
+    return False
+
+
+def _award_names(entries: list[dict]) -> str:
+    names = [e["display_name"] for e in entries]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} & {names[1]}"
+    return f"{', '.join(names[:-1])} & {names[-1]}"
+
+
+def get_pool_finale_awards(
+    pool_id: int,
+    leaderboard: list[dict] | None = None,
+) -> dict | None:
+    """End-of-tournament pool awards (humans only). None until the final is finished."""
+    if not world_cup_final_is_finished():
+        return None
+
+    board = leaderboard if leaderboard is not None else get_leaderboard(pool_id)
+    humans = [
+        e
+        for e in board
+        if not e.get("ai_agent_key") and int(e.get("total_points") or 0) > 0
+    ]
+    if not humans:
+        return None
+
+    def _leaders(score_fn) -> tuple[list[dict], int]:
+        best = max(int(score_fn(e) or 0) for e in humans)
+        if best <= 0:
+            return [], 0
+        return [e for e in humans if int(score_fn(e) or 0) == best], best
+
+    champ_pts = max(int(e["total_points"] or 0) for e in humans)
+    champions = [e for e in humans if int(e["total_points"] or 0) == champ_pts]
+    match_leaders, match_hits = _leaders(
+        lambda e: int(e.get("exact_scores") or 0) + int(e.get("correct_results") or 0)
+    )
+    tourney_leaders, tourney_pts = _leaders(lambda e: int(e.get("tournament_points") or 0))
+
+    results = get_tournament_results() or {}
+    return {
+        "champion_names": _award_names(champions),
+        "champion_points": champ_pts,
+        "champions": champions,
+        "match_names": _award_names(match_leaders) if match_leaders else None,
+        "match_hits": match_hits,
+        "match_exact": int(match_leaders[0]["exact_scores"] or 0) if match_leaders else 0,
+        "match_results": int(match_leaders[0]["correct_results"] or 0) if match_leaders else 0,
+        "match_leaders": match_leaders,
+        "tournament_names": _award_names(tourney_leaders) if tourney_leaders else None,
+        "tournament_points": tourney_pts,
+        "tournament_leaders": tourney_leaders,
+        "wc_winner": (results.get("winner") or "").strip() or None,
+    }
+
+
 def get_leader_message(leaderboard: list[dict]) -> str | None:
     if not leaderboard or leaderboard[0]["total_points"] == 0:
         return None
 
     top_score = leaderboard[0]["total_points"]
     leaders = [e["display_name"] for e in leaderboard if e["total_points"] == top_score]
+
+    if world_cup_final_is_finished():
+        if len(leaders) == 1:
+            return f"{leaders[0]} is the pool champion — {top_score} pts"
+        return f"{' · '.join(leaders)} are joint pool champions — {top_score} pts"
 
     if len(leaders) == 1:
         return f"{leaders[0]} leads with {top_score} pts"
